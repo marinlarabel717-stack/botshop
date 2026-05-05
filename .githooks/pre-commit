@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+version_file="VERSION"
+if [ ! -f "$version_file" ]; then
+  echo "0.1.0" > "$version_file"
+fi
+
+version="$(tr -d '\r\n' < "$version_file")"
+IFS='.' read -r major minor patch <<< "$version"
+major=${major:-0}
+minor=${minor:-1}
+patch=${patch:-0}
+patch=$((patch + 1))
+printf '%s.%s.%s\n' "$major" "$minor" "$patch" > "$version_file"
+git add "$version_file"
+echo "Version bumped to $(cat "$version_file")"

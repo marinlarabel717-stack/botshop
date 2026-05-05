@@ -1,0 +1,6 @@
+python-telegram-bot==13.15
+pymongo==4.6.3
+qrcode[pil]
+Pillow
+python-dotenv
+requests
