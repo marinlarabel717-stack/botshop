@@ -104,6 +104,65 @@ def needs_dynamic_emoji_parse(text):
     return isinstance(text, str) and ('[emoji:' in text or '[ce:' in text or '[custom_emoji:' in text)
 
 
+def get_entity_custom_emoji_id(entity):
+    custom_emoji_id = getattr(entity, 'custom_emoji_id', None)
+    if custom_emoji_id:
+        return str(custom_emoji_id)
+    api_kwargs = getattr(entity, 'api_kwargs', None) or {}
+    if isinstance(api_kwargs, dict) and api_kwargs.get('custom_emoji_id'):
+        return str(api_kwargs['custom_emoji_id'])
+    return None
+
+
+def extract_custom_emoji_from_message(message):
+    if not message:
+        return None, None
+    for entity_attr, text_attr in (('entities', 'text'), ('caption_entities', 'caption')):
+        entities = getattr(message, entity_attr, None) or []
+        source_text = getattr(message, text_attr, None) or ''
+        for entity in entities:
+            custom_emoji_id = get_entity_custom_emoji_id(entity)
+            if getattr(entity, 'type', None) == 'custom_emoji' or custom_emoji_id:
+                alt = ''
+                try:
+                    alt = source_text[entity.offset:entity.offset + entity.length]
+                except Exception:
+                    alt = ''
+                return custom_emoji_id, (alt or '✨')
+    return None, None
+
+
+def emojiid(update: Update, context: CallbackContext):
+    chat = update.effective_chat
+    if chat.type != 'private':
+        return
+    message = update.effective_message
+    args = context.args or []
+
+    reply_custom_id, reply_alt = extract_custom_emoji_from_message(message.reply_to_message)
+    own_custom_id, own_alt = extract_custom_emoji_from_message(message)
+
+    custom_emoji_id = reply_custom_id or own_custom_id
+    alt = reply_alt or own_alt or (args[0] if args else '✨')
+
+    if reply_custom_id:
+        label = ' '.join(args).strip() or '这里填写文字'
+    else:
+        label = ' '.join(args[1:]).strip() if len(args) > 1 else '这里填写文字'
+
+    if not custom_emoji_id:
+        fstext = (
+            '用法：\n'
+            '1. 直接发送：/emojiid 💬 商品列表\n'
+            '2. 或先发一个自定义 emoji，再回复那条消息发送：/emojiid 商品列表'
+        )
+        context.bot.send_message(chat_id=chat.id, text=fstext)
+        return
+
+    result = f'[emoji:{custom_emoji_id}:{alt}]{label}'
+    context.bot.send_message(chat_id=chat.id, text=result)
+
+
 def InlineKeyboardButton(text, *args, **kwargs):
     """Backward-compatible inline button with optional dynamic emoji icon.
 
@@ -4753,6 +4812,7 @@ def main():
     patch_bot_dynamic_emoji(updater.bot)
     dispatcher = updater.dispatcher
     dispatcher.add_handler(CommandHandler('start', start, run_async=True))
+    dispatcher.add_handler(CommandHandler('emojiid', emojiid, run_async=True))
     dispatcher.add_handler(CommandHandler('add', adm, run_async=True))
     dispatcher.add_handler(CommandHandler('cha', cha, run_async=True))
     dispatcher.add_handler(CommandHandler('gg', fbgg, run_async=True))
