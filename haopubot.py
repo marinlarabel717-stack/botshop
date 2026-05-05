@@ -70,21 +70,22 @@ OKPAY_BOT = None
 OKPAY_HTTPD = None
 
 
-DYNAMIC_EMOJI_RE = re.compile(r'\[(?:emoji|ce|custom_emoji):([0-9]+)(?::([^\]]+))?\]')
-DYNAMIC_EMOJI_PREFIX_RE = re.compile(r'^\s*\[(?:emoji|ce|custom_emoji):([0-9]+)(?::([^\]]+))?\]\s*(.*)$', re.S)
+DYNAMIC_EMOJI_RE = re.compile(r'\[(?:emoji|ce|custom_emoji):([0-9]+)(?::([^:\]]+))?(?::(danger|success|primary))?\]')
+DYNAMIC_EMOJI_PREFIX_RE = re.compile(r'^\s*\[(?:emoji|ce|custom_emoji):([0-9]+)(?::([^:\]]+))?(?::(danger|success|primary))?\]\s*(.*)$', re.S)
 
 
 def parse_dynamic_emoji_prefix(text):
-    """Parse button prefix: [emoji:custom_emoji_id:📱]按钮文字"""
+    """Parse button prefix: [emoji:custom_emoji_id:📱]按钮文字 or [emoji:id:📱:primary]按钮文字"""
     if not isinstance(text, str):
-        return None, None, text
+        return None, None, None, text
     m = DYNAMIC_EMOJI_PREFIX_RE.match(text)
     if not m:
-        return None, None, text
+        return None, None, None, text
     emoji_id = m.group(1)
     alt = m.group(2) or '✨'
-    rest = m.group(3) or ''
-    return emoji_id, alt, rest
+    style = m.group(3) or None
+    rest = m.group(4) or ''
+    return emoji_id, alt, style, rest
 
 
 def dynamic_emoji_to_html(text):
@@ -172,11 +173,13 @@ def InlineKeyboardButton(text, *args, **kwargs):
 
     Usage: InlineKeyboardButton('[emoji:5368324170671202286:📱]商品列表', callback_data='...')
     """
-    emoji_id, alt, clean_text = parse_dynamic_emoji_prefix(text)
+    emoji_id, alt, style, clean_text = parse_dynamic_emoji_prefix(text)
     if emoji_id:
         try:
             api_kwargs = dict(kwargs.pop('api_kwargs', {}) or {})
             api_kwargs['icon_custom_emoji_id'] = emoji_id
+            if style:
+                api_kwargs['style'] = style
             return TGInlineKeyboardButton(clean_text, *args, api_kwargs=api_kwargs, **kwargs)
         except TypeError:
             return TGInlineKeyboardButton(f'{alt}{clean_text}', *args, **kwargs)
@@ -185,11 +188,13 @@ def InlineKeyboardButton(text, *args, **kwargs):
 
 def KeyboardButton(text, *args, **kwargs):
     """Backward-compatible reply keyboard button with optional dynamic emoji icon."""
-    emoji_id, alt, clean_text = parse_dynamic_emoji_prefix(text)
+    emoji_id, alt, style, clean_text = parse_dynamic_emoji_prefix(text)
     if emoji_id:
         try:
             api_kwargs = dict(kwargs.pop('api_kwargs', {}) or {})
             api_kwargs['icon_custom_emoji_id'] = emoji_id
+            if style:
+                api_kwargs['style'] = style
             return TGKeyboardButton(clean_text, *args, api_kwargs=api_kwargs, **kwargs)
         except TypeError:
             return TGKeyboardButton(f'{alt}{clean_text}', *args, **kwargs)
