@@ -143,23 +143,27 @@ def emojiid(update: Update, context: CallbackContext):
     own_custom_id, own_alt = extract_custom_emoji_from_message(message)
 
     custom_emoji_id = reply_custom_id or own_custom_id
-    alt = reply_alt or own_alt or (args[0] if args else '✨')
 
     if reply_custom_id:
-        label = ' '.join(args).strip() or '这里填写文字'
+        alt = args[0] if args else (reply_alt or '✨')
+        label = ' '.join(args[1:]).strip() if len(args) > 1 else ''
     else:
-        label = ' '.join(args[1:]).strip() if len(args) > 1 else '这里填写文字'
+        alt = args[0] if args else (own_alt or '✨')
+        label = ' '.join(args[1:]).strip() if len(args) > 1 else ''
 
     if not custom_emoji_id:
         fstext = (
             '用法：\n'
-            '1. 直接发送：/emojiid 💬 商品列表\n'
-            '2. 或先发一个自定义 emoji，再回复那条消息发送：/emojiid 商品列表'
+            '1. 直接发送：/emojiid 自定义emoji 商品列表\n'
+            '2. 或先发一个自定义 emoji，再回复那条消息发送：/emojiid 💬 商品列表\n'
+            '注意：这里必须是 Telegram 自定义 emoji，不是普通系统 emoji。'
         )
         context.bot.send_message(chat_id=chat.id, text=fstext)
         return
 
-    result = f'[emoji:{custom_emoji_id}:{alt}]{label}'
+    result = f'[emoji:{custom_emoji_id}:{alt}]'
+    if label:
+        result += label
     context.bot.send_message(chat_id=chat.id, text=result)
 
 
