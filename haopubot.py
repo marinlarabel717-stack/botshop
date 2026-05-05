@@ -83,7 +83,7 @@ def parse_dynamic_emoji_prefix(text):
         return None, None, None, text
     emoji_id = m.group(1)
     alt = m.group(2) or '✨'
-    style = m.group(3) or None
+    style = m.group(3) or 'primary'
     rest = m.group(4) or ''
     return emoji_id, alt, style, rest
 
