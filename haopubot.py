@@ -1,4 +1,6 @@
+import asyncio
 import datetime, qrcode, socket, struct, threading, hashlib, uuid
+import inspect
 import telegram
 import os
 import logging, os, shutil
@@ -11,8 +13,8 @@ from multiprocessing import Process
 from telegram.ext import handler
 from telegram.utils import helpers
 from mongo import *
-from telegram.ext import Updater, CommandHandler, CallbackContext, MessageHandler, Filters, CallbackQueryHandler, \
-    InlineQueryHandler
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackContext, MessageHandler, CallbackQueryHandler, \
+    InlineQueryHandler, filters
 from telegram import InlineKeyboardMarkup,ForceReply, InlineKeyboardButton as TGInlineKeyboardButton, Update, ChatMemberRestricted, ChatPermissions, \
     ChatMemberRestricted, ChatMember, ChatMemberAdministrator, KeyboardButton as TGKeyboardButton, ReplyKeyboardMarkup, \
     InlineQueryResultArticle, InputTextMessageContent,InputMediaPhoto
@@ -68,6 +70,7 @@ OKPAY_CALLBACK_HOST = os.getenv('OKPAY_CALLBACK_HOST', '0.0.0.0')
 OKPAY_CALLBACK_PORT = int(os.getenv('OKPAY_CALLBACK_PORT', '8088'))
 OKPAY_BOT = None
 OKPAY_HTTPD = None
+APP_EVENT_LOOP = None
 
 
 DYNAMIC_EMOJI_RE = re.compile(r'\[(?:emoji|ce|custom_emoji):([0-9]+)(?::([^:\]]+))?(?::(danger|success|primary))?\]')
@@ -235,6 +238,8 @@ def patch_bot_dynamic_emoji(bot):
         ('send_message', 'text'),
         ('edit_message_text', 'text'),
         ('send_photo', 'caption'),
+        ('send_animation', 'caption'),
+        ('send_video', 'caption'),
         ('sendAnimation', 'caption'),
         ('sendVideo', 'caption'),
         ('edit_message_caption', 'caption')
@@ -242,6 +247,83 @@ def patch_bot_dynamic_emoji(bot):
         if hasattr(bot, name):
             wrap_text_method(name, key)
     bot._dynamic_emoji_patched = True
+
+
+class SyncTelegramProxy:
+    METHOD_ALIASES = {
+        'sendAnimation': 'send_animation',
+        'sendVideo': 'send_video',
+        'sendPhoto': 'send_photo',
+        'editMessageText': 'edit_message_text',
+        'editMessageCaption': 'edit_message_caption',
+    }
+
+    def __init__(self, obj, loop_ref):
+        self._obj = obj
+        self._loop_ref = loop_ref
+
+    def _get_loop(self):
+        loop = self._loop_ref() if callable(self._loop_ref) else self._loop_ref
+        if loop is None:
+            raise RuntimeError('Telegram event loop 尚未初始化')
+        return loop
+
+    def __getattr__(self, name):
+        target_name = self.METHOD_ALIASES.get(name, name)
+        attr = getattr(self._obj, target_name)
+
+        if callable(attr):
+            def wrapped(*args, **kwargs):
+                result = attr(*args, **kwargs)
+                if inspect.isawaitable(result):
+                    result = asyncio.run_coroutine_threadsafe(result, self._get_loop()).result()
+                return wrap_sync_telegram_value(result, self._loop_ref)
+
+            return wrapped
+
+        return wrap_sync_telegram_value(attr, self._loop_ref)
+
+
+class SyncCallbackContextProxy:
+    def __init__(self, context, loop_ref):
+        self._context = context
+        self._loop_ref = loop_ref
+        self.bot = SyncTelegramProxy(context.bot, loop_ref)
+
+    def __getattr__(self, name):
+        return wrap_sync_telegram_value(getattr(self._context, name), self._loop_ref)
+
+
+def wrap_sync_telegram_value(value, loop_ref):
+    if isinstance(value, (str, bytes, int, float, bool, type(None))):
+        return value
+    if isinstance(value, list):
+        return [wrap_sync_telegram_value(item, loop_ref) for item in value]
+    if isinstance(value, tuple):
+        return tuple(wrap_sync_telegram_value(item, loop_ref) for item in value)
+    module_name = getattr(value.__class__, '__module__', '')
+    if module_name.startswith('telegram'):
+        return SyncTelegramProxy(value, loop_ref)
+    return value
+
+
+def sync_handler(callback):
+    async def wrapped(update, context):
+        loop = asyncio.get_running_loop()
+        sync_update = wrap_sync_telegram_value(update, loop)
+        sync_context = SyncCallbackContextProxy(context, loop)
+        return await asyncio.to_thread(callback, sync_update, sync_context)
+
+    return wrapped
+
+
+def sync_job(callback):
+    async def wrapped(context):
+        loop = asyncio.get_running_loop()
+        sync_context = SyncCallbackContextProxy(context, loop)
+        return await asyncio.to_thread(callback, sync_context)
+
+    return wrapped
 
 
 def make_directory(path):
@@ -2903,6 +2985,13 @@ def start_okpay_callback_server(bot):
         print(f'OKPay回调服务启动失败: {exc}')
 
 
+async def on_post_init(application):
+    global APP_EVENT_LOOP
+    APP_EVENT_LOOP = asyncio.get_running_loop()
+    patch_bot_dynamic_emoji(application.bot)
+    start_okpay_callback_server(SyncTelegramProxy(application.bot, lambda: APP_EVENT_LOOP))
+
+
 def create_okpay_deposit_order(context, user_id, amount):
     if not okpay_enabled():
         context.bot.send_message(chat_id=user_id, text='OKPay未配置，请先联系管理员配置商户ID和Token')
@@ -4816,101 +4905,52 @@ def main():
     bot_token = os.getenv('BOT_TOKEN')
     if not bot_token:
         raise RuntimeError('缺少 BOT_TOKEN，请先在 .env 里配置 Telegram Bot Token')
-    updater = Updater(token=bot_token, use_context=True, workers=128,
-                      request_kwargs={'read_timeout': 20, 'connect_timeout': 20})
-    patch_bot_dynamic_emoji(updater.bot)
-    dispatcher = updater.dispatcher
-    dispatcher.add_handler(CommandHandler('start', start, run_async=True))
-    dispatcher.add_handler(CommandHandler('emojiid', emojiid, run_async=True))
-    dispatcher.add_handler(CommandHandler('add', adm, run_async=True))
-    dispatcher.add_handler(CommandHandler('cha', cha, run_async=True))
-    dispatcher.add_handler(CommandHandler('gg', fbgg, run_async=True))
-    # dispatcher.add_error_handler(error_callback)
 
-    dispatcher.add_handler(CallbackQueryHandler(startupdate, pattern='startupdate'))
+    application = ApplicationBuilder().token(bot_token).post_init(on_post_init).build()
 
-    dispatcher.add_handler(CallbackQueryHandler(delrow, pattern='delrow'))
-    dispatcher.add_handler(CallbackQueryHandler(newrow, pattern='newrow'))
-    dispatcher.add_handler(CallbackQueryHandler(newkey, pattern='newkey'))
-    dispatcher.add_handler(CallbackQueryHandler(backstart, pattern='backstart'))
-    dispatcher.add_handler(CallbackQueryHandler(paixurow, pattern='paixurow'))
-    dispatcher.add_handler(CallbackQueryHandler(addzdykey, pattern='addzdykey'))
-    dispatcher.add_handler(CallbackQueryHandler(qrscdelrow, pattern='qrscdelrow '))
-    dispatcher.add_handler(CallbackQueryHandler(addhangkey, pattern='addhangkey '))
-    dispatcher.add_handler(CallbackQueryHandler(delhangkey, pattern='delhangkey '))
-    dispatcher.add_handler(CallbackQueryHandler(qrdelliekey, pattern='qrdelliekey '))
-    dispatcher.add_handler(CallbackQueryHandler(keyxq, pattern='keyxq '))
-    dispatcher.add_handler(CallbackQueryHandler(setkeyname, pattern='setkeyname '))
-    dispatcher.add_handler(CallbackQueryHandler(settuwenset, pattern='settuwenset '))
-    dispatcher.add_handler(CallbackQueryHandler(setkeyboard, pattern='setkeyboard '))
-    dispatcher.add_handler(CallbackQueryHandler(cattuwenset, pattern='cattuwenset '))
-    dispatcher.add_handler(CallbackQueryHandler(paixuyidong, pattern='paixuyidong '))
-    dispatcher.add_handler(CallbackQueryHandler(close, pattern='close '))
-    dispatcher.add_handler(CallbackQueryHandler(yuecz, pattern='yuecz '))
-    dispatcher.add_handler(CallbackQueryHandler(settrc20, pattern='settrc20'))
-    dispatcher.add_handler(CallbackQueryHandler(spgli, pattern='spgli'))
-    dispatcher.add_handler(CallbackQueryHandler(newfl, pattern='newfl'))
-    dispatcher.add_handler(CallbackQueryHandler(flxxi, pattern='flxxi '))
-    dispatcher.add_handler(CallbackQueryHandler(upspname, pattern='upspname '))
-    dispatcher.add_handler(CallbackQueryHandler(newejfl, pattern='newejfl '))
-    dispatcher.add_handler(CallbackQueryHandler(fejxxi, pattern='fejxxi '))
-    dispatcher.add_handler(CallbackQueryHandler(upejflname, pattern='upejflname '))
-    dispatcher.add_handler(CallbackQueryHandler(catejflsp, pattern='catejflsp '))
-    dispatcher.add_handler(CallbackQueryHandler(backzcd, pattern='backzcd'))
-    dispatcher.add_handler(CallbackQueryHandler(paixufl, pattern='paixufl'))
-    dispatcher.add_handler(CallbackQueryHandler(flpxyd, pattern='flpxyd '))
-    dispatcher.add_handler(CallbackQueryHandler(delfl, pattern='delfl'))
-    dispatcher.add_handler(CallbackQueryHandler(qrscflrow, pattern='qrscflrow '))
-    dispatcher.add_handler(CallbackQueryHandler(paixuejfl, pattern='paixuejfl '))
-    dispatcher.add_handler(CallbackQueryHandler(ejfpaixu, pattern='ejfpaixu '))
-    dispatcher.add_handler(CallbackQueryHandler(delejfl, pattern='delejfl '))
-    dispatcher.add_handler(CallbackQueryHandler(qrscejrow, pattern='qrscejrow '))
-    dispatcher.add_handler(CallbackQueryHandler(update_hb, pattern='update_hb '))
-    dispatcher.add_handler(CallbackQueryHandler(gmsp, pattern='gmsp '))
-    dispatcher.add_handler(CallbackQueryHandler(upmoney, pattern='upmoney '))
-    dispatcher.add_handler(CallbackQueryHandler(sysming, pattern='sysming'))
-    dispatcher.add_handler(CallbackQueryHandler(gmqq, pattern='gmqq'))
-    dispatcher.add_handler(CallbackQueryHandler(qrgaimai, pattern='qrgaimai '))
-    dispatcher.add_handler(CallbackQueryHandler(update_xyh, pattern='update_xyh '))
-    dispatcher.add_handler(CallbackQueryHandler(update_hy, pattern='update_hy '))
-    dispatcher.add_handler(CallbackQueryHandler(yhnext, pattern='yhnext '))
-    dispatcher.add_handler(CallbackQueryHandler(yhlist, pattern='yhlist'))
-    dispatcher.add_handler(CallbackQueryHandler(gmaijilu, pattern='gmaijilu'))
-    dispatcher.add_handler(CallbackQueryHandler(zcfshuo, pattern='zcfshuo'))
-    dispatcher.add_handler(CallbackQueryHandler(gmainext, pattern='gmainext '))
-    dispatcher.add_handler(CallbackQueryHandler(update_txt, pattern='update_txt '))
-    dispatcher.add_handler(CallbackQueryHandler(backgmjl, pattern='backgmjl '))
-    dispatcher.add_handler(CallbackQueryHandler(qchuall, pattern='qchuall '))
-    dispatcher.add_handler(CallbackQueryHandler(update_wbts, pattern='update_wbts '))
-    dispatcher.add_handler(CallbackQueryHandler(update_gg, pattern='update_gg '))
-    dispatcher.add_handler(CallbackQueryHandler(zdycz, pattern='zdycz'))
+    for command_name, callback in [
+        ('start', start),
+        ('emojiid', emojiid),
+        ('add', adm),
+        ('cha', cha),
+        ('gg', fbgg),
+    ]:
+        application.add_handler(CommandHandler(command_name, sync_handler(callback)))
 
-    dispatcher.add_handler(CallbackQueryHandler(addhb, pattern='addhb'))
-    dispatcher.add_handler(CallbackQueryHandler(lqhb, pattern='lqhb '))
-    dispatcher.add_handler(CallbackQueryHandler(xzhb, pattern='xzhb '))
-    dispatcher.add_handler(CallbackQueryHandler(yjshb, pattern='yjshb'))
-    dispatcher.add_handler(CallbackQueryHandler(jxzhb, pattern='jxzhb'))
-    dispatcher.add_handler(CallbackQueryHandler(shokuan, pattern='shokuan '))
-    dispatcher.add_handler(CallbackQueryHandler(update_sysm, pattern='update_sysm '))
-    dispatcher.add_handler(InlineQueryHandler(inline_query))
+    callback_handlers = [
+        ('startupdate', startupdate), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
+        ('backstart', backstart), ('paixurow', paixurow), ('addzdykey', addzdykey),
+        ('qrscdelrow ', qrscdelrow), ('addhangkey ', addhangkey), ('delhangkey ', delhangkey),
+        ('qrdelliekey ', qrdelliekey), ('keyxq ', keyxq), ('setkeyname ', setkeyname),
+        ('settuwenset ', settuwenset), ('setkeyboard ', setkeyboard), ('cattuwenset ', cattuwenset),
+        ('paixuyidong ', paixuyidong), ('close ', close), ('yuecz ', yuecz), ('settrc20', settrc20),
+        ('spgli', spgli), ('newfl', newfl), ('flxxi ', flxxi), ('upspname ', upspname),
+        ('newejfl ', newejfl), ('fejxxi ', fejxxi), ('upejflname ', upejflname),
+        ('catejflsp ', catejflsp), ('backzcd', backzcd), ('paixufl', paixufl), ('flpxyd ', flpxyd),
+        ('delfl', delfl), ('qrscflrow ', qrscflrow), ('paixuejfl ', paixuejfl), ('ejfpaixu ', ejfpaixu),
+        ('delejfl ', delejfl), ('qrscejrow ', qrscejrow), ('update_hb ', update_hb), ('gmsp ', gmsp),
+        ('upmoney ', upmoney), ('sysming', sysming), ('gmqq', gmqq), ('qrgaimai ', qrgaimai),
+        ('update_xyh ', update_xyh), ('update_hy ', update_hy), ('yhnext ', yhnext), ('yhlist', yhlist),
+        ('gmaijilu', gmaijilu), ('zcfshuo', zcfshuo), ('gmainext ', gmainext), ('update_txt ', update_txt),
+        ('backgmjl ', backgmjl), ('qchuall ', qchuall), ('update_wbts ', update_wbts),
+        ('update_gg ', update_gg), ('zdycz', zdycz), ('addhb', addhb), ('lqhb ', lqhb),
+        ('xzhb ', xzhb), ('yjshb', yjshb), ('jxzhb', jxzhb), ('shokuan ', shokuan),
+        ('update_sysm ', update_sysm), ('qxdingdan ', qxdingdan), ('sifa', sifa),
+        ('kaiqisifa', kaiqisifa), ('tuwen', tuwen), ('anniu', anniu), ('cattu', cattu),
+    ]
+    for pattern, callback in callback_handlers:
+        application.add_handler(CallbackQueryHandler(sync_handler(callback), pattern=pattern))
 
-    dispatcher.add_handler(CallbackQueryHandler(qxdingdan, pattern='qxdingdan ', run_async=True))
-    
-    dispatcher.add_handler(CallbackQueryHandler(sifa, pattern='sifa'))
-    dispatcher.add_handler(CallbackQueryHandler(kaiqisifa, pattern='kaiqisifa', run_async=True))
-    dispatcher.add_handler(CallbackQueryHandler(tuwen, pattern='tuwen', run_async=True))
-    dispatcher.add_handler(CallbackQueryHandler(anniu, pattern='anniu', run_async=True))
-    dispatcher.add_handler(CallbackQueryHandler(cattu, pattern='cattu', run_async=True))
-    
-    dispatcher.add_handler(MessageHandler(Filters.chat_type.private & Filters.reply, huifu), )
-    dispatcher.add_handler(MessageHandler(
-        (Filters.text | Filters.photo | Filters.animation | Filters.video | Filters.document) & ~(Filters.command),
-        textkeyboard, run_async=True))
-    updater.job_queue.run_repeating(suoyouchengxu, 1, 1, name='suoyouchengxu')
-    updater.job_queue.run_repeating(jiexi, 3, 1, name='chongzhi')
-    start_okpay_callback_server(updater.bot)
-    updater.start_polling(timeout=600)
-    updater.idle()
+    application.add_handler(InlineQueryHandler(sync_handler(inline_query)))
+    application.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.REPLY, sync_handler(huifu)))
+    application.add_handler(MessageHandler(
+        (filters.TEXT | filters.PHOTO | filters.ANIMATION | filters.VIDEO | filters.Document.ALL) & (~filters.COMMAND),
+        sync_handler(textkeyboard)
+    ))
+
+    application.job_queue.run_repeating(sync_job(suoyouchengxu), interval=1, first=1, name='suoyouchengxu')
+    application.job_queue.run_repeating(sync_job(jiexi), interval=3, first=1, name='chongzhi')
+    application.run_polling(timeout=600)
 
 
 if __name__ == '__main__':
