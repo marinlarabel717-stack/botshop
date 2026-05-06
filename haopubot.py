@@ -74,6 +74,71 @@ APP_EVENT_LOOP = None
 
 DYNAMIC_EMOJI_RE = re.compile(r'\[(?:emoji|ce|custom_emoji):([0-9]+)(?::([^:\]]+))?(?::(danger|success|primary))?\]')
 DYNAMIC_EMOJI_PREFIX_RE = re.compile(r'^\s*\[(?:emoji|ce|custom_emoji):([0-9]+)(?::([^:\]]+))?(?::(danger|success|primary))?\]\s*(.*)$', re.S)
+KNOWN_DYNAMIC_EMOJI_IDS = OrderedDict([
+    ('🔔', '5458603043203327669'),
+    ('📱', '5330237710655306682'),
+    ('👑', '5217822164362739968'),
+    ('📊', '5231200819986047254'),
+    ('👛', '4972482444025398275'),
+    ('❌', '5210952531676504517'),
+    ('💰', '5224257782013769471'),
+    ('✅', '5429381339851796035'),
+    ('🛒', '5312361253610475399'),
+    ('⚠️', '5447644880824181073'),
+    ('⚠', '5447644880824181073'),
+    ('❗️', '5274099962655816924'),
+    ('❗', '5274099962655816924'),
+    ('➕', '6320823470246600333'),
+    ('💸', '5424925715009118244'),
+    ('💳', '5445353829304387411'),
+    ('🚫', '5240241223632954241'),
+    ('🏠', '5416041192905265756'),
+    ('💡', '5190691070702279446'),
+    ('📥', '5443127283898405358'),
+    ('🔴', '5411225014148014586'),
+    ('🟢', '5416081784641168838'),
+    ('👤', '6321041414067068140'),
+    ('💬', '5456535802429330837'),
+    ('🛫', '5201691993775818138'),
+    ('🎉', '5193209274452425995'),
+    ('🥳', '5458824569026532353'),
+    ('💫', '5469744063815102906'),
+    ('✈️', '5300866598276450274'),
+    ('✈', '5300866598276450274'),
+    ('✍️', '5458382591121964689'),
+    ('✍', '5458382591121964689'),
+    ('🌎', '5224450179368767019'),
+    ('🥇', '5440539497383087970'),
+    ('🥈', '5447203607294265305'),
+    ('🥉', '5453902265922376865'),
+    ('🇨🇳', '5224435456220868088'),
+])
+KNOWN_DYNAMIC_EMOJI_PATTERN = re.compile('|'.join(sorted((re.escape(k) for k in KNOWN_DYNAMIC_EMOJI_IDS.keys()), key=len, reverse=True)))
+PROTECTED_DYNAMIC_EMOJI_SEGMENT_RE = re.compile(r'(<tg-emoji\b[^>]*>.*?</tg-emoji>|\[(?:emoji|ce|custom_emoji):[0-9]+(?::[^:\]]+)?(?::(?:danger|success|primary))?\])', re.S)
+
+
+def known_plain_emoji_to_dynamic_html(text):
+    if not isinstance(text, str) or not text:
+        return text
+    if not KNOWN_DYNAMIC_EMOJI_PATTERN.search(text):
+        return text
+
+    def repl(m):
+        emoji_text = m.group(0)
+        emoji_id = KNOWN_DYNAMIC_EMOJI_IDS.get(emoji_text)
+        if not emoji_id:
+            return emoji_text
+        return f'<tg-emoji emoji-id="{emoji_id}">{emoji_text}</tg-emoji>'
+
+    parts = []
+    last = 0
+    for m in PROTECTED_DYNAMIC_EMOJI_SEGMENT_RE.finditer(text):
+        if m.start() > last:
+            parts.append(KNOWN_DYNAMIC_EMOJI_PATTERN.sub(repl, text[last:m.start()]))
+        parts.append(m.group(0))
+        last = m.end()
+    parts.append(KNOWN_DYNAMIC_EMOJI_PATTERN.sub(repl, text[last:]))
+    return ''.join(parts)
 
 
 def parse_dynamic_emoji_prefix(text):
@@ -92,19 +157,27 @@ def parse_dynamic_emoji_prefix(text):
 
 def dynamic_emoji_to_html(text):
     """Convert [emoji:id:alt] in message text to Telegram HTML custom emoji tags."""
-    if not isinstance(text, str) or '[emoji:' not in text and '[ce:' not in text and '[custom_emoji:' not in text:
+    if not isinstance(text, str):
         return text
 
-    def repl(m):
-        emoji_id = m.group(1)
-        alt = m.group(2) or '✨'
-        return f'<tg-emoji emoji-id="{emoji_id}">{alt}</tg-emoji>'
+    if '[emoji:' in text or '[ce:' in text or '[custom_emoji:' in text:
+        def repl(m):
+            emoji_id = m.group(1)
+            alt = m.group(2) or '✨'
+            return f'<tg-emoji emoji-id="{emoji_id}">{alt}</tg-emoji>'
 
-    return DYNAMIC_EMOJI_RE.sub(repl, text)
+        text = DYNAMIC_EMOJI_RE.sub(repl, text)
+
+    return known_plain_emoji_to_dynamic_html(text)
 
 
 def needs_dynamic_emoji_parse(text):
-    return isinstance(text, str) and ('[emoji:' in text or '[ce:' in text or '[custom_emoji:' in text)
+    if not isinstance(text, str):
+        return False
+    return (
+        '[emoji:' in text or '[ce:' in text or '[custom_emoji:' in text or
+        bool(KNOWN_DYNAMIC_EMOJI_PATTERN.search(text))
+    )
 
 
 def get_entity_custom_emoji_id(entity):
