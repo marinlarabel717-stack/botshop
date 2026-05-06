@@ -3332,7 +3332,7 @@ def okpay_post(api_name, data):
     return response.json()
 
 
-def okpay_pay_link(unique_id, amount, coin='USDT'):
+def okpay_pay_link(unique_id, amount, coin='USDT', include_callback=True):
     data = {
         'unique_id': unique_id,
         'name': f'{OKPAY_NAME}充值',
@@ -3340,7 +3340,7 @@ def okpay_pay_link(unique_id, amount, coin='USDT'):
         'return_url': f'https://t.me/{OKPAY_BOT_USERNAME}' if OKPAY_BOT_USERNAME else 'https://t.me/',
         'coin': coin
     }
-    if OKPAY_CALLBACK_URL:
+    if include_callback and OKPAY_CALLBACK_URL:
         data['callback_url'] = OKPAY_CALLBACK_URL
     return okpay_post('payLink', data)
 
@@ -3638,6 +3638,15 @@ def create_okpay_deposit_order(context, user_id, amount):
     except Exception as exc:
         context.bot.send_message(chat_id=user_id, text=f'创建OKPay充值订单失败：{exc}')
         return
+
+    if isinstance(result, dict) and result.get('status') == 'error':
+        msg = str(result.get('msg') or '')
+        if 'callback_url' in msg and ('验证失败' in msg or '安全风险' in msg):
+            try:
+                result = okpay_pay_link(bianhao, amount, 'USDT', include_callback=False)
+            except Exception as exc:
+                context.bot.send_message(chat_id=user_id, text=f'创建OKPay充值订单失败：{exc}')
+                return
 
     data = result.get('data') or {}
     pay_url = data.get('pay_url') or result.get('pay_url')
