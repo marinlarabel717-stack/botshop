@@ -4261,7 +4261,7 @@ def notify_restock_broadcast(context, nowuid, added_count=0):
     bot_username = str(getattr(context.bot, 'username', '') or '').strip()
     buy_url = build_product_purchase_deep_link(bot_username, nowuid)
     if buy_url:
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton('[emoji:5451937962629544243:🛍]购买商品（Buy Goods）', url=buy_url)]])
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton('[emoji:5451937962629544243:🛍]购买商品', url=buy_url)]])
     try:
         context.bot.send_message(chat_id=target, text=text, entities=entities, reply_markup=keyboard)
     except Exception as exc:
