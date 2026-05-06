@@ -651,6 +651,8 @@ def build_storage_text_from_entities(source_text, entities):
 def send_key_content_preview(context, chat_id, text='', file_type='text', file_id='', entities=None, keyboard=None):
     entities = entities or []
     keyboard = keyboard or []
+    if needs_dynamic_emoji_parse(text):
+        entities = []
     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
     if file_type == 'photo':
         return context.bot.send_photo(chat_id=chat_id, caption=text or '', photo=file_id,
@@ -663,6 +665,13 @@ def send_key_content_preview(context, chat_id, text='', file_type='text', file_i
                                      reply_markup=reply_markup, caption_entities=entities)
     return context.bot.send_message(chat_id=chat_id, text=text or '', reply_markup=reply_markup,
                                     entities=entities)
+
+
+def has_custom_emoji_entities(entities):
+    for entity in entities or []:
+        if getattr(entity, 'type', None) == 'custom_emoji' or get_entity_custom_emoji_id(entity):
+            return True
+    return False
 
 
 def should_preserve_sign_on_menu_match(sign):
@@ -5683,13 +5692,14 @@ def textkeyboard(update: Update, context: CallbackContext):
                     first = int(qudataall[1])
                     entities = update.message.entities or []
                     save_text = stored_text or raw_text
+                    save_entities = [] if has_custom_emoji_entities(entities) or needs_dynamic_emoji_parse(save_text) else entities
                     get_key.update_one({'Row': row, 'first': first}, {'$set': {'text': save_text}})
                     get_key.update_one({'Row': row, 'first': first}, {'$set': {'file_id': ''}})
                     get_key.update_one({'Row': row, 'first': first}, {'$set': {'file_type': 'text'}})
-                    get_key.update_one({'Row': row, 'first': first}, {'$set': {'entities': pickle.dumps(entities)}})
+                    get_key.update_one({'Row': row, 'first': first}, {'$set': {'entities': pickle.dumps(save_entities)}})
                     user.update_one({'user_id': user_id}, {"$set": {"sign": 0}})
                     message_id = send_key_content_preview(context, user_id, text=save_text, file_type='text',
-                                                          entities=entities)
+                                                          entities=save_entities)
                     timer11 = Timer(3, del_message, args=[message_id])
                     timer11.start()
                 elif 'setkeyboard' in sign:
@@ -6040,6 +6050,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                 caption = update.message.caption or ''
                 entities = update.message.caption_entities or []
                 stored_caption = build_storage_text_from_entities(caption, entities)
+                save_entities = [] if has_custom_emoji_entities(entities) or needs_dynamic_emoji_parse(stored_caption) else entities
 
                 if 'settuwenset' in sign:
                     qudata = sign.replace('settuwenset ', '')
@@ -6052,9 +6063,9 @@ def textkeyboard(update: Update, context: CallbackContext):
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'file_id': file}})
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'file_type': 'photo'}})
                         user.update_one({'user_id': user_id}, {"$set": {"sign": 0}})
-                        get_key.update_one({'Row': row, 'first': first}, {'$set': {'entities': pickle.dumps(entities)}})
+                        get_key.update_one({'Row': row, 'first': first}, {'$set': {'entities': pickle.dumps(save_entities)}})
                         message_id = send_key_content_preview(context, user_id, text=stored_caption,
-                                                              file_type='photo', file_id=file, entities=entities)
+                                                              file_type='photo', file_id=file, entities=save_entities)
                         timer11 = Timer(3, del_message, args=[message_id])
                         timer11.start()
                     elif update.message.animation:
@@ -6064,9 +6075,9 @@ def textkeyboard(update: Update, context: CallbackContext):
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'file_type': 'animation'}})
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'state': 1}})
                         user.update_one({'user_id': user_id}, {"$set": {"sign": 0}})
-                        get_key.update_one({'Row': row, 'first': first}, {'$set': {'entities': pickle.dumps(entities)}})
+                        get_key.update_one({'Row': row, 'first': first}, {'$set': {'entities': pickle.dumps(save_entities)}})
                         message_id = send_key_content_preview(context, user_id, text=stored_caption,
-                                                              file_type='animation', file_id=file, entities=entities)
+                                                              file_type='animation', file_id=file, entities=save_entities)
                         timer11 = Timer(3, del_message, args=[message_id])
                         timer11.start()
                     else:
@@ -6076,9 +6087,9 @@ def textkeyboard(update: Update, context: CallbackContext):
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'file_type': 'video'}})
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'state': 1}})
                         user.update_one({'user_id': user_id}, {"$set": {"sign": 0}})
-                        get_key.update_one({'Row': row, 'first': first}, {'$set': {'entities': pickle.dumps(entities)}})
+                        get_key.update_one({'Row': row, 'first': first}, {'$set': {'entities': pickle.dumps(save_entities)}})
                         message_id = send_key_content_preview(context, user_id, text=stored_caption,
-                                                              file_type='video', file_id=file, entities=entities)
+                                                              file_type='video', file_id=file, entities=save_entities)
                         timer11 = Timer(3, del_message, args=[message_id])
                         timer11.start()
         else:
