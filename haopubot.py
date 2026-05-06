@@ -1541,7 +1541,7 @@ def gmaijilu(update: Update, context: CallbackContext):
         count += 1
     if len(list(gmjlu.find({'user_id': df_id}))) > 10:
         keyboard.append([InlineKeyboardButton('下一页', callback_data=f'gmainext {df_id}:10')])
-    keyboard.append([InlineKeyboardButton('返回', callback_data=f'backgmjl {df_id}')])
+    keyboard.append([InlineKeyboardButton('⬅️返回', callback_data=f'backgmjl {df_id}')])
     try:
         query.edit_message_text(text='🛒您的购物记录', parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
     except:
@@ -1575,7 +1575,7 @@ def gmainext(update: Update, context: CallbackContext):
     else:
         keyboard.append([InlineKeyboardButton('上一页', callback_data=f'gmainext {df_id}:{int(page) - 10}')])
 
-    keyboard.append([InlineKeyboardButton('返回', callback_data=f'backgmjl {df_id}')])
+    keyboard.append([InlineKeyboardButton('⬅️返回', callback_data=f'backgmjl {df_id}')])
     try:
         query.edit_message_text(text='🛒您的购物记录', parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
     except:
@@ -1657,7 +1657,7 @@ def yhlist(update: Update, context: CallbackContext):
     if len(list(user.find({}))) > 10:
         keyboard.append([InlineKeyboardButton('下一页', callback_data=f'yhnext 10:{count}')])
 
-    keyboard.append([InlineKeyboardButton('返回主界面', callback_data=f'backstart')])
+    keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
 
     text_list = '\n'.join(text_list)
     try:
@@ -1693,7 +1693,7 @@ def yhnext(update: Update, context: CallbackContext):
         keyboard.append([InlineKeyboardButton('上一页', callback_data=f'yhnext {int(page) - 10}:{count - 20}')])
 
     text_list = '\n'.join(text_list)
-    keyboard.append([InlineKeyboardButton('返回主界面', callback_data=f'backstart')])
+    keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
     query.bot.edit_message_text(text=text_list, chat_id=query.message.chat_id,
                                 message_id=query.message.message_id, reply_markup=InlineKeyboardMarkup(keyboard),
                                 parse_mode='HTML')
@@ -1728,7 +1728,7 @@ def spgli(update: Update, context: CallbackContext):
         keyboard.append([InlineKeyboardButton("新建一行", callback_data='newfl'),
                          InlineKeyboardButton('调整行排序', callback_data='paixufl'),
                          InlineKeyboardButton('删除一行', callback_data='delfl')])
-    keyboard.append([InlineKeyboardButton('返回', callback_data='backstart'),InlineKeyboardButton('关闭', callback_data=f'close {user_id}')])
+    keyboard.append([InlineKeyboardButton('⬅️返回', callback_data='backstart'),InlineKeyboardButton('关闭', callback_data=f'close {user_id}')])
     text = f'''
 商品管理
     '''
@@ -1801,7 +1801,7 @@ def flxxi(update: Update, context: CallbackContext):
                      InlineKeyboardButton('新增二级分类', callback_data=f'newejfl {uid}')])
     keyboard.append([InlineKeyboardButton('调整二级分类排序', callback_data=f'paixuejfl {uid}'),
                      InlineKeyboardButton('删除二级分类', callback_data=f'delejfl {uid}')])
-    keyboard.append([InlineKeyboardButton('返回', callback_data=f'spgli')])
+    keyboard.append([InlineKeyboardButton('⬅️返回', callback_data=f'spgli')])
     fstext = f'''
 分类: {fl_pro}
     '''
@@ -1831,7 +1831,7 @@ def fejxxi(update: Update, context: CallbackContext):
          InlineKeyboardButton('上传协议号', callback_data=f'update_xyh {nowuid}')],
         [InlineKeyboardButton('修改二级分类名', callback_data=f'upejflname {nowuid}'),
          InlineKeyboardButton('修改价格', callback_data=f'upmoney {nowuid}')],
-        [InlineKeyboardButton('返回', callback_data=f'flxxi {uid}')]
+        [InlineKeyboardButton('⬅️返回', callback_data=f'flxxi {uid}')]
     ]
     kc = len(list(hb.find({'nowuid': nowuid, 'state': 0})))
     ys = len(list(hb.find({'nowuid': nowuid, 'state': 1})))
@@ -2068,7 +2068,7 @@ def addzdykey(update: Update, context: CallbackContext):
                          InlineKeyboardButton('调整行排序', callback_data='paixurow')])
         keyboard.append([InlineKeyboardButton('修改按钮', callback_data='newkey')])
         
-    keyboard.append([InlineKeyboardButton('返回主界面', callback_data=f'backstart')])
+    keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
     text = f'''
 自定义按钮
     '''
@@ -2101,7 +2101,7 @@ def newkey(update: Update, context: CallbackContext):
                              InlineKeyboardButton('➕', callback_data=f'addhangkey {i + 1}'),
                              InlineKeyboardButton('➖', callback_data=f'delhangkey {i + 1}')])
         keyboard.append([InlineKeyboardButton('❌关闭', callback_data=f'close {user_id}')])
-        keyboard.append([InlineKeyboardButton('返回主界面', callback_data=f'backstart')])
+        keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
         query.edit_message_text(text='自定义按钮', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -2131,7 +2131,7 @@ def newrow(update: Update, context: CallbackContext):
                      InlineKeyboardButton('删除一行', callback_data='delrow'),
                      InlineKeyboardButton('调整行排序', callback_data='paixurow')])
     keyboard.append([InlineKeyboardButton('修改按钮', callback_data='newkey')])
-    keyboard.append([InlineKeyboardButton('返回主界面', callback_data=f'backstart')])
+    keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
     context.bot.send_message(chat_id=user_id, text='自定义按钮', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -2184,7 +2184,7 @@ def paixurow(update: Update, context: CallbackContext):
                         [InlineKeyboardButton(f'第{i + 1}行上移', callback_data=f'paixuyidong shangyi:{i + 1}'),
                          InlineKeyboardButton(f'第{i + 1}行下移', callback_data=f'paixuyidong xiayi:{i + 1}')])
             keyboard.append([InlineKeyboardButton('❌关闭', callback_data=f'close {user_id}')])
-            keyboard.append([InlineKeyboardButton('返回主界面', callback_data=f'backstart')])
+            keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
             query.edit_message_text(text='自定义按钮', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -2219,7 +2219,7 @@ def paixuyidong(update: Update, context: CallbackContext):
                      InlineKeyboardButton('删除一行', callback_data='delrow'),
                      InlineKeyboardButton('调整行排序', callback_data='paixurow')])
     keyboard.append([InlineKeyboardButton('修改按钮', callback_data='newkey')])
-    keyboard.append([InlineKeyboardButton('返回主界面', callback_data=f'backstart')])
+    keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
     query.edit_message_text(text='自定义按钮', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -2247,7 +2247,7 @@ def delrow(update: Update, context: CallbackContext):
         for i in range(0, maxrow):
             keyboard.append([InlineKeyboardButton(f'删除第{i + 1}行', callback_data=f'qrscdelrow {i + 1}')])
         keyboard.append([InlineKeyboardButton('❌关闭', callback_data=f'close {user_id}')])
-        keyboard.append([InlineKeyboardButton('返回主界面', callback_data=f'backstart')])
+        keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
         query.edit_message_text(text='自定义按钮', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -2283,7 +2283,7 @@ def qrscdelrow(update: Update, context: CallbackContext):
                      InlineKeyboardButton('删除一行', callback_data='delrow'),
                      InlineKeyboardButton('调整行排序', callback_data='paixurow')])
     keyboard.append([InlineKeyboardButton('修改按钮', callback_data='newkey')])
-    keyboard.append([InlineKeyboardButton('返回主界面', callback_data=f'backstart')])
+    keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
     context.bot.send_message(chat_id=user_id,text='自定义按钮', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -2313,7 +2313,7 @@ def delhangkey(update: Update, context: CallbackContext):
         for i in range(0, len(count)):
             keyboard[count[i]].append(InlineKeyboardButton('➖', callback_data=f'qrdelliekey {row}:{i + 1}'))
         keyboard.append([InlineKeyboardButton('❌关闭', callback_data=f'close {user_id}')])
-        keyboard.append([InlineKeyboardButton('返回主界面', callback_data=f'backstart')])
+        keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
         query.edit_message_text(text='自定义按钮', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -2343,7 +2343,7 @@ def keyxq(update: Update, context: CallbackContext):
         [InlineKeyboardButton('❌关闭', callback_data=f'close {user_id}')]
     ]
 
-    keyboard.append([InlineKeyboardButton('返回主界面', callback_data=f'backstart')])
+    keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
     query.edit_message_text(text=print_text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -2361,7 +2361,7 @@ def setkeyname(update: Update, context: CallbackContext):
     '''
     user.update_one({'user_id': user_id}, {"$set": {"sign": f'setkeyname {row}:{first}'}})
     keyboard = [[InlineKeyboardButton('❌关闭', callback_data=f'close {user_id}')]]
-    keyboard.append([InlineKeyboardButton('返回主界面', callback_data=f'backstart')])
+        keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
     query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -2385,7 +2385,7 @@ def setkeyboard(update: Update, context: CallbackContext):
         context.bot.send_message(chat_id=user_id, text=key_text)
     user.update_one({'user_id': user_id}, {"$set": {"sign": f'setkeyboard {row}:{first}'}})
     keyboard = [[InlineKeyboardButton('❌关闭', callback_data=f'close {user_id}')]]
-    keyboard.append([InlineKeyboardButton('返回主界面', callback_data=f'backstart')])
+        keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
     query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -2625,7 +2625,7 @@ def catejflsp(update: Update, context: CallbackContext):
     '''
 
     keyboard.append([InlineKeyboardButton('🏠主菜单', callback_data='backzcd'),
-                     InlineKeyboardButton('返回↩️', callback_data=f'backzcd')])
+                     InlineKeyboardButton('⬅️返回', callback_data=f'backzcd')])
     query.edit_message_text(fstext, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
