@@ -648,13 +648,16 @@ def unwrap_sync_value(value):
         return [unwrap_sync_value(item) for item in value]
     if isinstance(value, tuple):
         return tuple(unwrap_sync_value(item) for item in value)
+    if isinstance(value, dict):
+        return {unwrap_sync_value(k): unwrap_sync_value(v) for k, v in value.items()}
     return value
 
 
 def safe_pickle_loads(value, default=None):
     raw_value = unwrap_sync_value(value)
     try:
-        return pickle.loads(raw_value)
+        loaded = pickle.loads(raw_value)
+        return unwrap_sync_value(loaded)
     except Exception:
         return [] if default is None else default
 
