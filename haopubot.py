@@ -2680,11 +2680,23 @@ def startupdate(update: Update, context: CallbackContext):
     context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
+def recharge_menu(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
+    fstext = '请选择支付方式'
+    keyboard = [
+        [InlineKeyboardButton('😄 USDT 直充 | 链上到账', callback_data='recharge_trc20')],
+        [InlineKeyboardButton('😄 OKPay支付 | 秒速到账', callback_data='recharge_okpay')],
+        [InlineKeyboardButton('取消充值', callback_data=f'close {user_id}')]
+    ]
+    context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
 def zdycz(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
     query.answer()
-    bot_id = context.bot.id
     text = f'''
 输入充值金额
 '''
@@ -2695,12 +2707,86 @@ def zdycz(update: Update, context: CallbackContext):
     user.update_one({'user_id': user_id}, {"$set": {"sign": f'zdycz {message_id.message_id}'}})
 
 
+def okzdycz(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
+    text = f'''
+输入OKPay充值金额
+'''
+    keyboard = [[InlineKeyboardButton('取消', callback_data=f'close {user_id}')]]
+
+    message_id = context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+    user.update_one({'user_id': user_id}, {"$set": {"sign": f'okzdycz {message_id.message_id}'}})
+
+
 def yuecz(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
     money = int(query.data.replace('yuecz ', ''))
     user_id = query.from_user.id
     create_trc20_deposit_order(context, user_id, money)
+
+
+def okyuecz(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    money = int(query.data.replace('okyuecz ', ''))
+    user_id = query.from_user.id
+    create_okpay_deposit_order(context, user_id, money)
+
+
+def recharge_trc20(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    user_id = query.from_user.id
+    fstext = f'''
+<b>💰请选择下面 TRC20-USDT 充值金额
+
+♥系统会生成唯一小数金额，请严格按订单金额转账[emoji:5219866512961062330:⁉️]</b>
+    '''
+    keyboard = [
+        [InlineKeyboardButton('10USDT', callback_data='yuecz 10'),
+         InlineKeyboardButton('30USDT', callback_data='yuecz 30'),
+         InlineKeyboardButton('50USDT', callback_data='yuecz 50')],
+        [InlineKeyboardButton('100USDT', callback_data='yuecz 100'),
+         InlineKeyboardButton('200USDT', callback_data='yuecz 200'),
+         InlineKeyboardButton('500USDT', callback_data='yuecz 500')],
+        [InlineKeyboardButton('1000USDT', callback_data='yuecz 1000'),
+         InlineKeyboardButton('1500USDT', callback_data='yuecz 1500'),
+         InlineKeyboardButton('2000USDT', callback_data='yuecz 2000')],
+        [InlineKeyboardButton('自定义充值金额', callback_data='zdycz')],
+        [InlineKeyboardButton('返回支付方式', callback_data='recharge_menu')],
+        [InlineKeyboardButton('取消充值', callback_data=f'close {user_id}')]
+    ]
+    context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
+                             reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+def recharge_okpay(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    user_id = query.from_user.id
+    fstext = f'''
+<b>请选择下面 OKPay 充值金额</b>
+    '''
+    keyboard = [
+        [InlineKeyboardButton('10USDT', callback_data='okyuecz 10'),
+         InlineKeyboardButton('30USDT', callback_data='okyuecz 30'),
+         InlineKeyboardButton('50USDT', callback_data='okyuecz 50')],
+        [InlineKeyboardButton('100USDT', callback_data='okyuecz 100'),
+         InlineKeyboardButton('200USDT', callback_data='okyuecz 200'),
+         InlineKeyboardButton('500USDT', callback_data='okyuecz 500')],
+        [InlineKeyboardButton('1000USDT', callback_data='okyuecz 1000'),
+         InlineKeyboardButton('1500USDT', callback_data='okyuecz 1500'),
+         InlineKeyboardButton('2000USDT', callback_data='okyuecz 2000')],
+        [InlineKeyboardButton('自定义充值金额', callback_data='okzdycz')],
+        [InlineKeyboardButton('返回支付方式', callback_data='recharge_menu')],
+        [InlineKeyboardButton('取消充值', callback_data=f'close {user_id}')]
+    ]
+    context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
+                             reply_markup=InlineKeyboardMarkup(keyboard))
 
 def catejflsp(update: Update, context: CallbackContext):
     query = update.callback_query
@@ -4243,6 +4329,22 @@ def textkeyboard(update: Update, context: CallbackContext):
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                     context.bot.send_message(chat_id=user_id, text=f'当前欢迎语为: {text}', parse_mode='HTML',
                                              entities=entities)
+                elif 'okzdycz' in sign:
+                    if is_number(text):
+                        del_message(update.message)
+                        del_message_id = sign.replace('okzdycz ', '')
+                        try:
+                            context.bot.deleteMessage(chat_id=user_id, message_id=del_message_id)
+                        except:
+                            pass
+                        money = float(text)
+                        user.update_one({'user_id': user_id}, {"$set": {"sign": 0}})
+                        create_okpay_deposit_order(context, user_id, money)
+
+                    else:
+                        keyboard = [[InlineKeyboardButton('❌取消输入', callback_data=f'close {user_id}')]]
+                        context.bot.send_message(chat_id=user_id, text='请输入数字',
+                                                 reply_markup=InlineKeyboardMarkup(keyboard))
                 elif 'zdycz' in sign:
                     if is_number(text):
                         del_message(update.message)
@@ -4973,25 +5075,13 @@ def textkeyboard(update: Update, context: CallbackContext):
                                          reply_markup=InlineKeyboardMarkup(keyboard), disable_web_page_preview=True)
             elif normalized_text == normalize_menu_text('💸我要充值'):
                 del_message(update.message)
-                fstext = f'''
-<b>💰请选择下面 TRC20-USDT 充值金额
-
-♥系统会生成唯一小数金额，请严格按订单金额转账[emoji:5219866512961062330:⁉️]</b>
-                '''
+                fstext = '请选择支付方式'
                 keyboard = [
-                    [InlineKeyboardButton('10USDT', callback_data='yuecz 10'),
-                     InlineKeyboardButton('30USDT', callback_data='yuecz 30'),
-                     InlineKeyboardButton('50USDT', callback_data='yuecz 50')],
-                    [InlineKeyboardButton('100USDT', callback_data='yuecz 100'),
-                     InlineKeyboardButton('200USDT', callback_data='yuecz 200'),
-                     InlineKeyboardButton('500USDT', callback_data='yuecz 500')],
-                    [InlineKeyboardButton('1000USDT', callback_data='yuecz 1000'),
-                     InlineKeyboardButton('1500USDT', callback_data='yuecz 1500'),
-                     InlineKeyboardButton('2000USDT', callback_data='yuecz 2000')],
-                    [InlineKeyboardButton('自定义充值金额', callback_data='zdycz')],
+                    [InlineKeyboardButton('😄 USDT 直充 | 链上到账', callback_data='recharge_trc20')],
+                    [InlineKeyboardButton('😄 OKPay支付 | 秒速到账', callback_data='recharge_okpay')],
                     [InlineKeyboardButton('取消充值', callback_data=f'close {user_id}')]
                 ]
-                context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
+                context.bot.send_message(chat_id=user_id, text=fstext,
                                          reply_markup=InlineKeyboardMarkup(keyboard))
 
             elif '红包' in text:
@@ -5448,7 +5538,7 @@ def main():
         ('qrscdelrow ', qrscdelrow), ('addhangkey ', addhangkey), ('delhangkey ', delhangkey),
         ('qrdelliekey ', qrdelliekey), ('keyxq ', keyxq), ('setkeyname ', setkeyname),
         ('settuwenset ', settuwenset), ('setkeyboard ', setkeyboard), ('cattuwenset ', cattuwenset),
-        ('paixuyidong ', paixuyidong), ('close ', close), ('yuecz ', yuecz), ('settrc20', settrc20),
+        ('paixuyidong ', paixuyidong), ('close ', close), ('yuecz ', yuecz), ('okyuecz ', okyuecz), ('settrc20', settrc20),
         ('spgli', spgli), ('newfl', newfl), ('flxxi ', flxxi), ('upspname ', upspname),
         ('newejfl ', newejfl), ('fejxxi ', fejxxi), ('upejflname ', upejflname),
         ('catejflsp ', catejflsp), ('backzcd', backzcd), ('paixufl', paixufl), ('flpxyd ', flpxyd),
@@ -5458,7 +5548,7 @@ def main():
         ('update_xyh ', update_xyh), ('update_hy ', update_hy), ('yhnext ', yhnext), ('yhlist', yhlist),
         ('gmaijilu', gmaijilu), ('zcfshuo', zcfshuo), ('gmainext ', gmainext), ('update_txt ', update_txt),
         ('backgmjl ', backgmjl), ('qchuall ', qchuall), ('update_wbts ', update_wbts),
-        ('update_gg ', update_gg), ('zdycz', zdycz), ('addhb', addhb), ('lqhb ', lqhb),
+        ('update_gg ', update_gg), ('zdycz', zdycz), ('okzdycz', okzdycz), ('recharge_menu', recharge_menu), ('recharge_trc20', recharge_trc20), ('recharge_okpay', recharge_okpay), ('addhb', addhb), ('lqhb ', lqhb),
         ('xzhb ', xzhb), ('yjshb', yjshb), ('jxzhb', jxzhb), ('shokuan ', shokuan),
         ('update_sysm ', update_sysm), ('qxdingdan ', qxdingdan), ('sifa', sifa),
         ('kaiqisifa', kaiqisifa), ('tuwen', tuwen), ('anniu', anniu), ('cattu', cattu),
