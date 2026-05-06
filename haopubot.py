@@ -615,6 +615,10 @@ def get_message_storage_text(message):
         return ''
     source_text = getattr(message, 'text', None) or ''
     entities = getattr(message, 'entities', None) or []
+    return build_storage_text_from_entities(source_text, entities)
+
+
+def build_storage_text_from_entities(source_text, entities):
     if not source_text or not entities:
         return source_text
 
@@ -644,6 +648,23 @@ def get_message_storage_text(message):
     return ''.join(parts)
 
 
+def send_key_content_preview(context, chat_id, text='', file_type='text', file_id='', entities=None, keyboard=None):
+    entities = entities or []
+    keyboard = keyboard or []
+    reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
+    if file_type == 'photo':
+        return context.bot.send_photo(chat_id=chat_id, caption=text or '', photo=file_id,
+                                      reply_markup=reply_markup, caption_entities=entities)
+    if file_type == 'animation':
+        return context.bot.sendAnimation(chat_id=chat_id, caption=text or '', animation=file_id,
+                                         reply_markup=reply_markup, caption_entities=entities)
+    if file_type == 'video':
+        return context.bot.sendVideo(chat_id=chat_id, caption=text or '', video=file_id,
+                                     reply_markup=reply_markup, caption_entities=entities)
+    return context.bot.send_message(chat_id=chat_id, text=text or '', reply_markup=reply_markup,
+                                    entities=entities)
+
+
 def should_preserve_sign_on_menu_match(sign):
     if not sign:
         return False
@@ -653,6 +674,8 @@ def should_preserve_sign_on_menu_match(sign):
         'upejflname ',
         'upspname ',
         'setkeyname ',
+        'settuwenset ',
+        'setkeyboard ',
         'update_sysm ',
         'update_wbts ',
         'settrc20',
@@ -2869,18 +2892,8 @@ def settuwenset(update: Update, context: CallbackContext):
     if text == '' and file_id == '':
         pass
     else:
-        if file_type == 'text':
-            message_id = context.bot.send_message(chat_id=user_id, text=text,
-                                                  reply_markup=InlineKeyboardMarkup(keyboard), entities=entities)
-        else:
-            if file_type == 'photo':
-                message_id = context.bot.send_photo(chat_id=user_id, caption=text, photo=file_id,
-                                                    reply_markup=InlineKeyboardMarkup(keyboard),
-                                                    caption_entities=entities)
-            else:
-                message_id = context.bot.sendAnimation(chat_id=user_id, caption=text, animation=file_id,
-                                                       reply_markup=InlineKeyboardMarkup(keyboard),
-                                                       caption_entities=entities)
+        send_key_content_preview(context, user_id, text=text, file_type=file_type, file_id=file_id,
+                                 entities=entities, keyboard=keyboard)
     text = f'''
 ✍️ 发送你的图文设置
 
@@ -2912,18 +2925,8 @@ def cattuwenset(update: Update, context: CallbackContext):
         timer11 = Timer(3, del_message, args=[message_id])
         timer11.start()
     else:
-        if file_type == 'text':
-            message_id = context.bot.send_message(chat_id=user_id, text=text,
-                                                  reply_markup=InlineKeyboardMarkup(keyboard), entities=entities)
-        else:
-            if file_type == 'photo':
-                message_id = context.bot.send_photo(chat_id=user_id, caption=text, photo=file_id,
-                                                    reply_markup=InlineKeyboardMarkup(keyboard),
-                                                    caption_entities=entities)
-            else:
-                message_id = context.bot.sendAnimation(chat_id=user_id, caption=text, animation=file_id,
-                                                       reply_markup=InlineKeyboardMarkup(keyboard),
-                                                       caption_entities=entities)
+        message_id = send_key_content_preview(context, user_id, text=text, file_type=file_type, file_id=file_id,
+                                              entities=entities, keyboard=keyboard)
         timer11 = Timer(3, del_message, args=[message_id])
         timer11.start()
 
@@ -5678,13 +5681,15 @@ def textkeyboard(update: Update, context: CallbackContext):
                     qudataall = qudata.split(':')
                     row = int(qudataall[0])
                     first = int(qudataall[1])
-                    entities = update.message.entities
-                    get_key.update_one({'Row': row, 'first': first}, {'$set': {'text': text}})
+                    entities = update.message.entities or []
+                    save_text = stored_text or raw_text
+                    get_key.update_one({'Row': row, 'first': first}, {'$set': {'text': save_text}})
                     get_key.update_one({'Row': row, 'first': first}, {'$set': {'file_id': ''}})
                     get_key.update_one({'Row': row, 'first': first}, {'$set': {'file_type': 'text'}})
                     get_key.update_one({'Row': row, 'first': first}, {'$set': {'entities': pickle.dumps(entities)}})
                     user.update_one({'user_id': user_id}, {"$set": {"sign": 0}})
-                    message_id = context.bot.send_message(chat_id=user_id, text=text, entities=entities)
+                    message_id = send_key_content_preview(context, user_id, text=save_text, file_type='text',
+                                                          entities=entities)
                     timer11 = Timer(3, del_message, args=[message_id])
                     timer11.start()
                 elif 'setkeyboard' in sign:
@@ -6032,8 +6037,9 @@ def textkeyboard(update: Update, context: CallbackContext):
                     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
             else:
-                caption = update.message.caption
-                entities = update.message.caption_entities
+                caption = update.message.caption or ''
+                entities = update.message.caption_entities or []
+                stored_caption = build_storage_text_from_entities(caption, entities)
 
                 if 'settuwenset' in sign:
                     qudata = sign.replace('settuwenset ', '')
@@ -6042,37 +6048,37 @@ def textkeyboard(update: Update, context: CallbackContext):
                     first = int(qudataall[1])
                     if update.message.photo:
                         file = update.message.photo[-1].file_id
-                        get_key.update_one({'Row': row, 'first': first}, {'$set': {'text': caption}})
+                        get_key.update_one({'Row': row, 'first': first}, {'$set': {'text': stored_caption}})
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'file_id': file}})
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'file_type': 'photo'}})
                         user.update_one({'user_id': user_id}, {"$set": {"sign": 0}})
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'entities': pickle.dumps(entities)}})
-                        message_id = context.bot.send_photo(chat_id=user_id, caption=caption, photo=file,
-                                                            caption_entities=entities)
+                        message_id = send_key_content_preview(context, user_id, text=stored_caption,
+                                                              file_type='photo', file_id=file, entities=entities)
                         timer11 = Timer(3, del_message, args=[message_id])
                         timer11.start()
                     elif update.message.animation:
                         file = update.message.animation.file_id
-                        get_key.update_one({'Row': row, 'first': first}, {'$set': {'text': caption}})
+                        get_key.update_one({'Row': row, 'first': first}, {'$set': {'text': stored_caption}})
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'file_id': file}})
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'file_type': 'animation'}})
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'state': 1}})
                         user.update_one({'user_id': user_id}, {"$set": {"sign": 0}})
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'entities': pickle.dumps(entities)}})
-                        message_id = context.bot.sendAnimation(chat_id=user_id, caption=caption, animation=file,
-                                                               caption_entities=entities)
+                        message_id = send_key_content_preview(context, user_id, text=stored_caption,
+                                                              file_type='animation', file_id=file, entities=entities)
                         timer11 = Timer(3, del_message, args=[message_id])
                         timer11.start()
                     else:
                         file = update.message.video.file_id
-                        get_key.update_one({'Row': row, 'first': first}, {'$set': {'text': caption}})
+                        get_key.update_one({'Row': row, 'first': first}, {'$set': {'text': stored_caption}})
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'file_id': file}})
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'file_type': 'video'}})
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'state': 1}})
                         user.update_one({'user_id': user_id}, {"$set": {"sign": 0}})
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'entities': pickle.dumps(entities)}})
-                        message_id = context.bot.sendVideo(chat_id=user_id, caption=caption, video=file,
-                                                           caption_entities=entities)
+                        message_id = send_key_content_preview(context, user_id, text=stored_caption,
+                                                              file_type='video', file_id=file, entities=entities)
                         timer11 = Timer(3, del_message, args=[message_id])
                         timer11.start()
         else:
@@ -6177,21 +6183,8 @@ def textkeyboard(update: Update, context: CallbackContext):
                         if print_text == '' and file_id == '':
                             context.bot.send_message(chat_id=user_id, text=text)
                         else:
-                            if file_type == 'text':
-                                message_id = context.bot.send_message(chat_id=user_id, text=print_text,
-                                                                      reply_markup=InlineKeyboardMarkup(keyboard),
-                                                                      entities=entities)
-                            else:
-                                if file_type == 'photo':
-                                    message_id = context.bot.send_photo(chat_id=user_id, caption=print_text,
-                                                                        photo=file_id,
-                                                                        reply_markup=InlineKeyboardMarkup(keyboard),
-                                                                        caption_entities=entities)
-                                else:
-                                    message_id = context.bot.sendAnimation(chat_id=user_id, caption=print_text,
-                                                                           animation=file_id,
-                                                                           reply_markup=InlineKeyboardMarkup(keyboard),
-                                                                           caption_entities=entities)
+                            send_key_content_preview(context, user_id, text=print_text, file_type=file_type,
+                                                     file_id=file_id, entities=entities, keyboard=keyboard)
 
 
 def del_message(message):
