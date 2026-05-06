@@ -2709,7 +2709,7 @@ def send_recharge_method_menu(context, user_id):
     if not SHOW_TRC20_RECHARGE_ENTRY and not SHOW_OKPAY_RECHARGE_ENTRY:
         context.bot.send_message(chat_id=user_id, text='当前未开启任何充值方式，请联系管理员')
         return
-    fstext = '请选择支付方式'
+    fstext = '[emoji:5080312910866024090:😀] 请选择支付方式'
     keyboard = build_recharge_method_keyboard(user_id)
     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
