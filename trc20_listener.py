@@ -25,7 +25,7 @@ MONGO_CHAIN_DB_NAME = os.getenv('MONGO_CHAIN_DB_NAME', MONGO_DB_NAME)
 TRONGRID_API_BASE = os.getenv('TRONGRID_API_BASE', 'https://api.trongrid.io/v1').rstrip('/')
 TRONGRID_API_KEY = os.getenv('TRONGRID_API_KEY', '').strip()
 TRONGRID_REQUEST_TIMEOUT = int(os.getenv('TRONGRID_REQUEST_TIMEOUT', '20'))
-TRONGRID_POLL_SECONDS = int(os.getenv('TRONGRID_POLL_SECONDS', '10'))
+TRONGRID_POLL_SECONDS = int(os.getenv('TRONGRID_POLL_SECONDS', '3'))
 TRONGRID_PAGE_LIMIT = max(1, min(int(os.getenv('TRONGRID_PAGE_LIMIT', '100')), 200))
 TRONGRID_LOOKBACK_MINUTES = max(1, int(os.getenv('TRONGRID_LOOKBACK_MINUTES', '30')))
 TRONGRID_MONITOR_ADDRESSES = os.getenv('TRONGRID_MONITOR_ADDRESSES', '')
@@ -122,10 +122,24 @@ def fetch_trc20_transactions(address, min_timestamp):
         'order_by': 'block_timestamp,desc',
         'min_timestamp': str(max(0, int(min_timestamp or 0))),
     }
-    response = requests.get(url, params=params, headers=build_headers(), timeout=TRONGRID_REQUEST_TIMEOUT)
-    response.raise_for_status()
-    payload = response.json()
-    return payload.get('data') or []
+    if TRC20_USDT_CONTRACT:
+        params['contract_address'] = TRC20_USDT_CONTRACT
+
+    items = []
+    fingerprint = None
+    while True:
+        req_params = dict(params)
+        if fingerprint:
+            req_params['fingerprint'] = fingerprint
+        response = requests.get(url, params=req_params, headers=build_headers(), timeout=TRONGRID_REQUEST_TIMEOUT)
+        response.raise_for_status()
+        payload = response.json()
+        data = payload.get('data') or []
+        items.extend(data)
+        fingerprint = ((payload.get('meta') or {}).get('fingerprint'))
+        if not fingerprint or not data:
+            break
+    return items
 
 
 def normalize_quant_raw(value, decimals):
@@ -145,18 +159,33 @@ def upsert_transfer(item, address):
     if not txid:
         return False
 
-    to_address = item.get('to') or item.get('to_address') or address
-    from_address = item.get('from') or item.get('from_address') or ''
+    event_type = str(item.get('type') or item.get('event_type') or '').strip().lower()
+    if any(keyword in event_type for keyword in ('approve', 'approval', 'authorize', 'authorization')):
+        return False
+
+    if item.get('confirmed') is False:
+        return False
+
+    tx_result = str(item.get('result') or item.get('transaction_result') or '').strip().upper()
+    if tx_result and tx_result not in ('SUCCESS', 'SUCESS'):
+        return False
+
+    to_address = (item.get('to') or item.get('to_address') or address or '').strip()
+    from_address = (item.get('from') or item.get('from_address') or '').strip()
     token_info = item.get('token_info') or {}
-    contract_address = token_info.get('address') or item.get('contract_address') or ''
-    symbol = token_info.get('symbol') or item.get('tokenName') or 'USDT'
-    decimals = token_info.get('decimals', 6)
+    contract_address = (token_info.get('address') or item.get('contract_address') or '').strip()
+    symbol = (token_info.get('symbol') or item.get('tokenName') or 'USDT').strip()
+    decimals = int(token_info.get('decimals', 6) or 6)
     block_timestamp = int(item.get('block_timestamp') or item.get('block_ts') or 0)
     quant_raw = normalize_quant_raw(item.get('value') or '0', decimals)
 
-    if TRC20_USDT_CONTRACT and contract_address and contract_address != TRC20_USDT_CONTRACT:
+    if TRC20_USDT_CONTRACT and contract_address != TRC20_USDT_CONTRACT:
         return False
     if to_address != address:
+        return False
+    if not from_address:
+        return False
+    if Decimal(quant_raw) <= 0:
         return False
 
     doc = {
@@ -166,8 +195,11 @@ def upsert_transfer(item, address):
         'to_address': to_address,
         'state': 0,
         'token_symbol': symbol,
+        'token_decimals': decimals,
         'contract_address': contract_address,
         'block_timestamp': block_timestamp,
+        'confirmed': True,
+        'event_type': event_type or 'transfer',
         'listener': 'trongrid',
         'timer': now_str(),
     }

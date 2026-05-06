@@ -5024,7 +5024,10 @@ def jiexi(context: CallbackContext):
     if not is_valid_trc20_address(trc20):
         return
 
-    qukuai_list = qukuai.find({'state': 0, 'to_address': trc20})
+    qukuai_query = {'state': 0, 'to_address': trc20}
+    if TRC20_USDT_CONTRACT:
+        qukuai_query['contract_address'] = TRC20_USDT_CONTRACT
+    qukuai_list = qukuai.find(qukuai_query)
     for i in qukuai_list:
         txid = i['txid']
         quant = i['quant']
