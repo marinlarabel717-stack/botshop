@@ -3946,8 +3946,11 @@ def get_user_clone_credit(user_id):
         return 0
 
 
-def notify_source_admins(context, text, reply_markup=None):
+def notify_source_admins(context, text, reply_markup=None, exclude_user_ids=None):
+    excluded = {str(i) for i in (exclude_user_ids or [])}
     for admin_id in get_source_admin_user_ids():
+        if str(admin_id) in excluded:
+            continue
         try:
             context.bot.send_message(chat_id=admin_id, text=text, parse_mode='HTML', reply_markup=reply_markup,
                                      disable_web_page_preview=True)
@@ -4078,7 +4081,8 @@ def finish_clone_delete_in_background(context, user_id, bot_id, source_bot_id=No
 
     notify_source_admins(
         context,
-        f'<b>{ADMIN_EMOJI_CLOSE}克隆实例已删除</b>\n\n[emoji:5287684458881756303:🤖] 机器人：{display_bot}\n[emoji:6321041414067068140:👤] 管理员：<code>{requester_user_id}</code>\n[emoji:6321041414067068140:👤] 删除人：<code>{user_id}</code>'
+        f'<b>{ADMIN_EMOJI_CLOSE}克隆实例已删除</b>\n\n[emoji:5287684458881756303:🤖] 机器人：{display_bot}\n[emoji:6321041414067068140:👤] 管理员：<code>{requester_user_id}</code>\n[emoji:6321041414067068140:👤] 删除人：<code>{user_id}</code>',
+        exclude_user_ids=[user_id]
     )
 
 
