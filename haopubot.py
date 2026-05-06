@@ -111,6 +111,48 @@ def run_system_command(args, cwd=None, timeout=None):
     return result.stdout.strip()
 
 
+def get_systemd_unit_state(service_unit):
+    result = subprocess.run(['systemctl', 'is-active', service_unit], capture_output=True, text=True, timeout=10)
+    state = (result.stdout or result.stderr or '').strip()
+    return state or 'unknown'
+
+
+def get_systemd_unit_logs(service_unit, lines=20):
+    commands = [
+        ['journalctl', '-u', service_unit, '-n', str(lines), '--no-pager'],
+        ['systemctl', 'status', service_unit, '--no-pager', '--lines', str(lines)],
+    ]
+    for cmd in commands:
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        except Exception:
+            continue
+        output = (result.stdout or result.stderr or '').strip()
+        if output:
+            return output[-1200:]
+    return ''
+
+
+def ensure_systemd_unit_active(service_unit, label='服务', wait_seconds=8):
+    deadline = time.time() + max(wait_seconds, 1)
+    last_state = 'unknown'
+    while time.time() < deadline:
+        state = get_systemd_unit_state(service_unit)
+        last_state = state
+        if state == 'active':
+            return
+        if state in ('activating', 'reloading'):
+            time.sleep(2)
+            continue
+        time.sleep(1)
+
+    logs = get_systemd_unit_logs(service_unit)
+    detail = f'当前状态：{last_state}'
+    if logs:
+        detail += f'\n\n最近日志：\n{logs}'
+    raise RuntimeError(f'{label} 启动失败：{service_unit}\n\n{detail}')
+
+
 def get_clone_repo_url():
     if BOT_CLONE_REPO_URL:
         return BOT_CLONE_REPO_URL
@@ -258,6 +300,7 @@ def clone_bot_instance(bot_token, admin_user_id):
     run_system_command(['systemctl', 'daemon-reload'])
     run_system_command(['systemctl', 'enable', '--now', f'{service_name}.service'])
     run_system_command(['systemctl', 'enable', '--now', f'{listener_service_name}.service'])
+    ensure_systemd_unit_active(f'{service_name}.service', label='克隆 Bot 服务', wait_seconds=10)
 
     return {
         'bot_id': bot_id,
@@ -3949,7 +3992,7 @@ def send_clone_success_notice(context, requester_user_id, result, fee_paid='0'):
     requester_username = str(requester.get('username', '') or '').strip()
     fee_text = format_clone_price(fee_paid)
     text = f'''
-<b>🤖 有人克隆了你的机器人</b>
+<b>[emoji:4988174149991007503:🥳] 有人克隆了你的机器人</b>
 
 克隆用户：<a href="tg://user?id={requester_user_id}">{requester_name}</a> @{requester_username}
 机器人：@{result['bot_username']}
