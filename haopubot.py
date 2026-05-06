@@ -3345,6 +3345,12 @@ def okpay_pay_link(unique_id, amount, coin='USDT'):
     return okpay_post('payLink', data)
 
 
+def okpay_check_deposit(unique_id):
+    return okpay_post('checkDeposit', {
+        'unique_id': unique_id,
+    })
+
+
 def okpay_build_query(data):
     pairs = []
     for key in sorted(data.keys()):
@@ -3451,6 +3457,33 @@ def okpay_mark_deposit_paid(payload):
         except Exception as exc:
             print(f'OKPay到账通知失败: {exc}')
     return True, 'paid'
+
+
+def okpay_normalize_check_deposit_result(result):
+    data = result.get('data') if isinstance(result, dict) else None
+    if not isinstance(data, dict):
+        data = result if isinstance(result, dict) else {}
+    unique_id = data.get('unique_id') or result.get('unique_id') if isinstance(result, dict) else None
+    order_id = data.get('order_id') or result.get('order_id') if isinstance(result, dict) else None
+    amount = data.get('amount') or result.get('amount') if isinstance(result, dict) else None
+    status = str(data.get('status') or result.get('status') or '') if isinstance(result, dict) else ''
+    return {
+        'unique_id': unique_id,
+        'order_id': order_id,
+        'amount': amount,
+        'status': status,
+        'coin': 'USDT',
+        'type': 'deposit',
+    }
+
+
+def okpay_check_and_credit(unique_id):
+    result = okpay_check_deposit(unique_id)
+    payload = okpay_normalize_check_deposit_result(result)
+    if payload.get('status') != '1':
+        return False, 'not_paid', result
+    ok, msg = okpay_mark_deposit_paid(payload)
+    return ok, msg, result
 
 
 class OkpayCallbackHandler(BaseHTTPRequestHandler):
@@ -3623,6 +3656,7 @@ def create_okpay_deposit_order(context, user_id, amount):
     '''
     keyboard = [
         [InlineKeyboardButton('💳 打开OKPay支付', url=pay_url)],
+        [InlineKeyboardButton('✅ 我已支付', callback_data=f'okpay_paid {bianhao}')],
         [InlineKeyboardButton('❌取消订单', callback_data=f'qxdingdan {user_id}')]
     ]
     message_id = context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
@@ -4234,6 +4268,52 @@ def qxdingdan(update: Update, context: CallbackContext):
 
     topup.delete_one({'user_id': user_id, 'state': {'$ne': 1}})
     context.bot.delete_message(chat_id=query.from_user.id, message_id=query.message.message_id)
+
+
+def okpay_paid(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer('正在检查支付状态，请稍候...')
+    user_id = query.from_user.id
+    unique_id = query.data.replace('okpay_paid ', '', 1).strip()
+    order = topup.find_one({'bianhao': unique_id})
+    if order is None or order.get('type') != 'okpay':
+        context.bot.send_message(chat_id=user_id, text='未找到对应的OKPay充值订单，请重新创建订单')
+        return
+    if order.get('user_id') != user_id:
+        context.bot.send_message(chat_id=user_id, text='这笔订单不属于你，无法主动查单')
+        return
+    if order.get('state') == 1:
+        context.bot.send_message(chat_id=user_id, text='这笔OKPay订单已经到账，无需重复检查')
+        return
+
+    try:
+        ok, msg, result = okpay_check_and_credit(unique_id)
+    except Exception as exc:
+        context.bot.send_message(chat_id=user_id, text=f'查询OKPay订单失败：{exc}')
+        return
+
+    if ok:
+        keyboard = [[InlineKeyboardButton('✅已到账（点击关闭）', callback_data=f'close {user_id}')]]
+        try:
+            context.bot.edit_message_text(
+                chat_id=user_id,
+                message_id=query.message.message_id,
+                text='✅ OKPay订单已确认支付，余额已自动到账。',
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        except Exception:
+            pass
+        return
+
+    if msg == 'already_paid':
+        context.bot.send_message(chat_id=user_id, text='这笔OKPay订单已经到账，无需重复检查')
+        return
+
+    context.bot.send_message(
+        chat_id=user_id,
+        text='暂未查询到这笔OKPay订单已付款，请确认支付成功后稍等几秒再点一次“我已支付”。'
+    )
+
 
 def textkeyboard(update: Update, context: CallbackContext):
     chat = update.effective_chat
@@ -5571,7 +5651,7 @@ def main():
         ('backgmjl ', backgmjl), ('qchuall ', qchuall), ('update_wbts ', update_wbts),
         ('update_gg ', update_gg), ('zdycz', zdycz), ('okzdycz', okzdycz), ('recharge_menu', recharge_menu), ('recharge_trc20', recharge_trc20), ('recharge_okpay', recharge_okpay), ('addhb', addhb), ('lqhb ', lqhb),
         ('xzhb ', xzhb), ('yjshb', yjshb), ('jxzhb', jxzhb), ('shokuan ', shokuan),
-        ('update_sysm ', update_sysm), ('qxdingdan ', qxdingdan), ('sifa', sifa),
+        ('update_sysm ', update_sysm), ('qxdingdan ', qxdingdan), ('okpay_paid ', okpay_paid), ('sifa', sifa),
         ('kaiqisifa', kaiqisifa), ('tuwen', tuwen), ('anniu', anniu), ('cattu', cattu),
     ]
     for pattern, callback in callback_handlers:
