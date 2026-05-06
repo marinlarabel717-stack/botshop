@@ -2421,7 +2421,7 @@ def setkeyboard(update: Update, context: CallbackContext):
         context.bot.send_message(chat_id=user_id, text=key_text)
     user.update_one({'user_id': user_id}, {"$set": {"sign": f'setkeyboard {row}:{first}'}})
     keyboard = [[InlineKeyboardButton('❌关闭', callback_data=f'close {user_id}')]]
-        keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
+    keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
     query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
