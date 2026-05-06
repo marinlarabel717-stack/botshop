@@ -4234,11 +4234,11 @@ def build_restock_push_broadcast_text(category_name, projectname, money, added_c
     projectname = str(projectname or '商品')
     category_and_product = f'{category_name}/{projectname}'
     return (
-        '🔴🔴库存更新 🔴🔴\n\n'
+        '[emoji:5301246586918024418:⚠️][emoji:5301246586918024418:⚠️]库存更新[emoji:5301246586918024418:⚠️][emoji:5301246586918024418:⚠️]\n\n'
         f'{category_and_product}\n\n'
-        f'➕添加库存 {added_count} 个\n\n'
-        f'💰商品单价 {money} U\n\n'
-        f'🖥剩余库存 {stock_count} 个'
+        f'[emoji:5217818964612108191:✨]添加库存 {added_count} 个\n\n'
+        f'[emoji:4965219701572503640:💰]商品单价 {money} U\n\n'
+        f'[emoji:5028746137645876535:📈]剩余库存 {stock_count} 个'
     )
 
 
