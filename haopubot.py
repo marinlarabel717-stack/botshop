@@ -3040,23 +3040,23 @@ def send_clonebot_prompt(context, user_id):
     if fee > 0 and not is_clone_fee_exempt(user_id, state) and clone_credit <= 0:
         balance = Decimal(str(user_list.get('USDT', 0) or 0)).quantize(Decimal('0.01'))
         text = f'''
-当前一键克隆为付费模式
+[emoji:5445353829304387411:💳] 当前一键克隆为付费模式
 
-克隆价格：<code>{format_clone_price(fee)} USDT</code>
-当前余额：<code>{format_clone_price(balance)} USDT</code>
+[emoji:4965219701572503640:💰] 克隆价格：<code>{format_clone_price(fee)} USDT</code>
+[emoji:4972482444025398275:👛] 当前余额：<code>{format_clone_price(balance)} USDT</code>
 
-支付成功后，才能继续发送新 Bot Token 进行克隆。
+[emoji:5301246586918024418:⚠️] 支付成功后，才能继续发送新 Bot Token 进行克隆。
         '''
         keyboard = build_clone_purchase_keyboard(user_id, balance, fee)
         context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
         return
     text = '''
-请发送你要克隆的新 Bot Token
+[emoji:5287684458881756303:🤖] 请发送你要克隆的新 Bot Token
 
-例如：
+[emoji:5217818964612108191:✨] 例如：
 123456789:ABCdefGhIJKlmNoPQRsTUVwxyz123456789
 
-默认会把当前操作用户设为新 Bot 管理员，并自动拉起新 Bot。
+[emoji:5220195537520711716:⚡️] 默认会把当前操作用户设为新 Bot 管理员，并自动拉起新 Bot。
 '''
     keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
     user.update_one({'user_id': user_id}, {"$set": {"sign": 'clonebottoken'}})
@@ -5448,11 +5448,11 @@ def textkeyboard(update: Update, context: CallbackContext):
                         upsert=True
                     )
                     clone_text = f'''
-✅ 一键克隆成功
+[emoji:5312028599803460968:🆗] 一键克隆成功
 
-机器人：@{result['bot_username']}
-Bot ID：{result['bot_id']}
-管理员：{user_id}
+[emoji:5287684458881756303:🤖] 机器人：@{result['bot_username']}
+[emoji:5220064167356025824:⭐️] Bot ID：{result['bot_id']}
+[emoji:6321041414067068140:👤] 管理员：{user_id}
                     '''
                     context.bot.send_message(chat_id=user_id, text=clone_text, parse_mode='HTML')
                     send_clone_success_notice(context, user_id, result, fee_paid=(float(fee) if fee > 0 and not fee_exempt else 0))
