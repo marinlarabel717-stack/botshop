@@ -1487,7 +1487,7 @@ def kaiqisifa(update: Update, context: CallbackContext):
              InlineKeyboardButton('开启私发', callback_data='kaiqisifa')],
             [InlineKeyboardButton('关闭❌', callback_data=f'close {user_id}')]]
         query.edit_message_text(text='私发状态:已开启🟢', reply_markup=InlineKeyboardMarkup(keyboard))
-        context.job_queue.run_once(usersifa, 1, data={"user_id": user_id}, name=f'sifa')
+        context.job_queue.run_once(sync_job(usersifa), 1, data={"user_id": user_id}, name=f'sifa')
         message_id = context.bot.send_message(chat_id=user_id, text='开启私发')
         context.user_data['sifa'] = message_id
     else:
