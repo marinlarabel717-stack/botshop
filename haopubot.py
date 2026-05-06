@@ -972,25 +972,7 @@ def inline_query(update: Update, context: CallbackContext):
     """Handle the inline query. This is run when you type: @botusername <query>"""
     query = update.inline_query.query
     if not query:  # empty query should not be handled
-    
-        hyy = shangtext.find_one({'projectname': '欢迎语'})['text']
-        hyyys = shangtext.find_one({'projectname': '欢迎语样式'})['text']
-    
-        entities = safe_pickle_loads(hyyys)
-
-        keyboard = [[InlineKeyboardButton(context.bot.first_name, url=f'https://t.me/{context.bot.username}')]]
-        results = [
-            InlineQueryResultArticle(
-                id=str(uuid.uuid4()),
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                title=context.bot.first_name,
-                input_message_content=InputTextMessageContent(
-                    hyy,entities=entities
-                )
-            ),
-        ]
-
-        update.inline_query.answer(results=results, cache_time=0)
+        update.inline_query.answer(results=[], cache_time=0)
         return
 
     yh_list = update['inline_query']['from_user']
