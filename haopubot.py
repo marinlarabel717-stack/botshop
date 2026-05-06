@@ -191,6 +191,56 @@ def get_message_match_text(message):
     return get_button_match_text(text).strip()
 
 
+def get_message_storage_text(message):
+    if not message:
+        return ''
+    source_text = getattr(message, 'text', None) or ''
+    entities = getattr(message, 'entities', None) or []
+    if not source_text or not entities:
+        return source_text
+
+    parts = []
+    last = 0
+    custom_entities = []
+    for entity in entities:
+        custom_emoji_id = get_entity_custom_emoji_id(entity)
+        if getattr(entity, 'type', None) == 'custom_emoji' or custom_emoji_id:
+            start = getattr(entity, 'offset', None)
+            length = getattr(entity, 'length', None)
+            if isinstance(start, int) and isinstance(length, int) and custom_emoji_id:
+                py_start = utf16_index_to_py_index(source_text, start)
+                py_end = utf16_index_to_py_index(source_text, start + length)
+                alt = source_text[py_start:py_end] or '✨'
+                custom_entities.append((py_start, py_end, custom_emoji_id, alt))
+
+    if not custom_entities:
+        return source_text
+
+    for py_start, py_end, custom_emoji_id, alt in sorted(custom_entities):
+        if py_start > last:
+            parts.append(source_text[last:py_start])
+        parts.append(f'[emoji:{custom_emoji_id}:{alt}]')
+        last = max(last, py_end)
+    parts.append(source_text[last:])
+    return ''.join(parts)
+
+
+def should_preserve_sign_on_menu_match(sign):
+    if not sign:
+        return False
+    sign = str(sign)
+    editable_prefixes = (
+        'startupdate',
+        'upejflname ',
+        'upspname ',
+        'setkeyname ',
+        'update_sysm ',
+        'update_wbts ',
+        'settrc20',
+    )
+    return sign.startswith(editable_prefixes)
+
+
 def emojiid(update: Update, context: CallbackContext):
     chat = update.effective_chat
     if chat.type != 'private':
@@ -3746,6 +3796,7 @@ def textkeyboard(update: Update, context: CallbackContext):
         zgje = user_list['zgje']
         zgsl = user_list['zgsl']
         raw_text = update.message.text or ''
+        stored_text = get_message_storage_text(update.message) or raw_text
         text = get_message_match_text(update.message) or raw_text
         normalized_text = normalize_menu_text(text)
         zxh = update.message.text_html
@@ -3766,7 +3817,7 @@ def textkeyboard(update: Update, context: CallbackContext):
             normalized_key_map.setdefault(normalize_menu_text(projectname), i)
             normalized_key_map.setdefault(normalize_menu_text(button_match_text), i)
         if update.message.text:
-            if raw_text in get_prolist or text in get_prolist or normalized_text in normalized_key_map:
+            if (raw_text in get_prolist or text in get_prolist or normalized_text in normalized_key_map) and not should_preserve_sign_on_menu_match(sign):
                 sign = 0
         if sign != 0:
             if update.message.text:
@@ -3961,7 +4012,7 @@ def textkeyboard(update: Update, context: CallbackContext):
 
                 elif 'upejflname' in sign:
                     nowuid = sign.replace('upejflname ', '')
-                    ejfl.update_one({"nowuid": nowuid}, {"$set": {"projectname": text}})
+                    ejfl.update_one({"nowuid": nowuid}, {"$set": {"projectname": stored_text}})
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                     uid = ejfl.find_one({'nowuid': nowuid})['uid']
                     fl_pro = fenlei.find_one({'uid': uid})['projectname']
@@ -3990,7 +4041,7 @@ def textkeyboard(update: Update, context: CallbackContext):
 
                 elif 'upspname' in sign:
                     uid = sign.replace('upspname ', '')
-                    fenlei.update_one({"uid": uid}, {"$set": {"projectname": text}})
+                    fenlei.update_one({"uid": uid}, {"$set": {"projectname": stored_text}})
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
 
                     keylist = list(fenlei.find({}, sort=[('row', 1)]))
@@ -4021,7 +4072,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                     qudataall = qudata.split(':')
                     row = int(qudataall[0])
                     first = int(qudataall[1])
-                    get_key.update_one({'Row': row, 'first': first}, {'$set': {'projectname': text}})
+                    get_key.update_one({'Row': row, 'first': first}, {'$set': {'projectname': stored_text}})
                     keylist = list(get_key.find({}, sort=[('Row', 1), ('first', 1)]))
                     keyboard = [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
                                 [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
