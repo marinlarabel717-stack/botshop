@@ -4201,12 +4201,13 @@ def build_restock_push_config_keyboard(user_id):
 
 def build_restock_push_broadcast_text(category_name, projectname, money, added_count, stock_count):
     category_name = str(category_name or '未分类')
+    projectname = str(projectname or '商品')
+    category_and_product = f'{category_name}/{projectname}'
     return (
-        f'{ADMIN_EMOJI_NOTICE}补货通知\n'
-        f'{MOOD_EMOJI_STAR} {MOOD_EMOJI_FAST}OK 库存更新 {MOOD_EMOJI_FAST} {MOOD_EMOJI_STAR}\n\n'
-        f'{ADMIN_EMOJI_GOODS} 商品分类：{category_name}\n\n'
-        f'[emoji:5287684458881756303:🤖] 商品名字：{projectname}\n\n'
-        f'{MOOD_EMOJI_SPARKLE} 添加库存 {added_count} 个\n\n'
+        '[emoji:5301246586918024418:⚠️]补货通知群\n'
+        '[emoji:5220064167356025824:⭐️] [emoji:5220195537520711716:⚡️] OK 库存更新 [emoji:5220195537520711716:⚡️] [emoji:5220064167356025824:⭐️]\n\n'
+        f'[emoji:5312361253610475399:🛒] 商品分类/商品名字：{category_and_product}\n\n'
+        f'[emoji:5217818964612108191:✨] 添加库存 {added_count} 个\n\n'
         f'[emoji:4965219701572503640:💰] 单价 {money} U\n\n'
         f'[emoji:5028746137645876535:📈] 剩余库存：{stock_count} 个'
     )
