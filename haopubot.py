@@ -10,7 +10,6 @@ import urllib.parse
 from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from multiprocessing import Process
-from telegram.ext import handler
 from telegram.utils import helpers
 from mongo import *
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackContext, MessageHandler, CallbackQueryHandler, \
