@@ -1,4 +1,5 @@
 import asyncio
+import io
 import datetime, qrcode, socket, struct, threading, hashlib, uuid
 import inspect
 import telegram
@@ -3374,7 +3375,7 @@ def create_trc20_deposit_order(context, user_id, amount):
     bianhao = 'TRC20' + time.strftime('%Y%m%d%H%M%S', time.localtime()) + str(user_id)
     topup.delete_many({'user_id': user_id, 'state': {'$ne': 1}})
 
-    text = f'''
+    caption = f'''
 <b>TRC20充值订单已创建</b>
 
 订单号：<code>{bianhao}</code>
@@ -3383,14 +3384,23 @@ def create_trc20_deposit_order(context, user_id, amount):
 本单应付金额：<code>{pay_amount_text} USDT</code>
 
 请使用 <b>TRC20-USDT</b> 向上方地址转账，并严格按订单金额精确支付到小数点后三位。
+扫码默认识别收款地址，金额请按上面的订单金额手动填写。
 系统检测到账后会自动加余额，本订单 10 分钟内有效。
     '''
     keyboard = [
         [InlineKeyboardButton('❌取消订单', callback_data=f'qxdingdan {user_id}')]
     ]
-    message_id = context.bot.send_message(
+
+    qr_image = qrcode.make(data=trc20)
+    qr_buffer = io.BytesIO()
+    qr_image.save(qr_buffer, format='PNG')
+    qr_buffer.seek(0)
+    qr_buffer.name = f'{bianhao}.png'
+
+    message_id = context.bot.send_photo(
         chat_id=user_id,
-        text=text,
+        photo=qr_buffer,
+        caption=caption,
         parse_mode='HTML',
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
@@ -3403,6 +3413,7 @@ def create_trc20_deposit_order(context, user_id, amount):
         'pay_amount_text': pay_amount_text,
         'timer': timer,
         'message_id': message_id.message_id,
+        'message_kind': 'photo',
         'type': 'trc20',
         'state': 0,
         'status': 0,
@@ -5078,8 +5089,8 @@ def jiexi(context: CallbackContext):
 💳 当前余额：<code>{now_price} USDT</code>
             '''
             try:
-                context.bot.edit_message_text(chat_id=user_id, message_id=message_id, text=text,
-                                              reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+                context.bot.edit_message_caption(chat_id=user_id, message_id=message_id, caption=text,
+                                                 reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
             except:
                 pass
             us_firstname = us_list['fullname'].replace('<', '').replace('>', '')
@@ -5121,9 +5132,9 @@ def jianceguoqi(context: CallbackContext):
                                                       text='❌ OKPay充值订单已超时，请重新创建订单。',
                                                       reply_markup=InlineKeyboardMarkup(keyboard))
                     elif i.get('type') == 'trc20':
-                        context.bot.edit_message_text(chat_id=user_id, message_id=message_id,
-                                                      text='❌ TRC20充值订单已超时，请重新创建订单。',
-                                                      reply_markup=InlineKeyboardMarkup(keyboard))
+                        context.bot.edit_message_caption(chat_id=user_id, message_id=message_id,
+                                                         caption='❌ TRC20充值订单已超时，请重新创建订单。',
+                                                         reply_markup=InlineKeyboardMarkup(keyboard))
                     else:
                         context.bot.edit_message_media(chat_id=user_id, message_id=message_id, media=InputMediaPhoto(media='AgACAgQAAxkBAAI4Nmagu-8nD4AQrv6ftlzrLjLSxlOnAAJavzEbAZYIUch6ykGfk6CaAQADAgADeQADNQQ', caption='❌ 订单支付超时(或金额错误)'),reply_markup=InlineKeyboardMarkup(keyboard))
 
