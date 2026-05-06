@@ -141,7 +141,7 @@ def ensure_systemd_unit_active(service_unit, label='服务', wait_seconds=8):
         last_state = state
         if state == 'active':
             return
-        if state in ('activating', 'reloading'):
+        if state in ('activating', 'reloading', 'deactivating'):
             time.sleep(2)
             continue
         time.sleep(1)
@@ -153,7 +153,7 @@ def ensure_systemd_unit_active(service_unit, label='服务', wait_seconds=8):
     raise RuntimeError(f'{label} 启动失败：{service_unit}\n\n{detail}')
 
 
-def restart_systemd_unit(service_unit, label='服务', wait_seconds=45):
+def restart_systemd_unit(service_unit, label='服务', wait_seconds=120):
     try:
         run_system_command(['systemctl', 'restart', '--no-block', service_unit], timeout=15)
     except subprocess.TimeoutExpired:
@@ -257,12 +257,45 @@ WorkingDirectory={working_directory}
 ExecStart={exec_start}
 Restart=always
 RestartSec=3
+TimeoutStopSec=15
+KillSignal=SIGKILL
 User=root
 Environment=PYTHONUNBUFFERED=1
 
 [Install]
 WantedBy=multi-user.target
 '''
+
+
+def refresh_clone_service_files(record):
+    clone_dir = Path(str(record.get('clone_dir') or '').strip())
+    if not clone_dir:
+        return
+    python_exec = get_python_exec_path()
+    bot_username = str(record.get('bot_username') or record.get('bot_id') or 'bot').strip()
+    service_name = str(record.get('service_name') or '').strip()
+    listener_service_name = str(record.get('listener_service_name') or '').strip()
+    if service_name:
+        service_path = Path('/etc/systemd/system') / f'{service_name}.service'
+        service_path.write_text(
+            build_clone_service_content(
+                f'botshop cloned telegram bot {bot_username}',
+                str(clone_dir),
+                f'{python_exec} {clone_dir / "haopubot.py"}'
+            ),
+            encoding='utf-8'
+        )
+    if listener_service_name:
+        listener_service_path = Path('/etc/systemd/system') / f'{listener_service_name}.service'
+        listener_service_path.write_text(
+            build_clone_service_content(
+                f'botshop cloned TRC20 listener {bot_username}',
+                str(clone_dir),
+                f'{python_exec} {clone_dir / "trc20_listener.py"}'
+            ),
+            encoding='utf-8'
+        )
+    run_system_command(['systemctl', 'daemon-reload'], timeout=20)
 
 
 def clone_bot_instance(bot_token, admin_user_id, source_bot_id=None):
@@ -3329,9 +3362,10 @@ def finish_clone_restart_in_background(context, user_id, bot_id):
     try:
         if not service_name:
             raise RuntimeError('未找到 Bot 服务名')
-        restart_systemd_unit(f'{service_name}.service', label='克隆 Bot 服务', wait_seconds=45)
+        refresh_clone_service_files(row)
+        restart_systemd_unit(f'{service_name}.service', label='克隆 Bot 服务', wait_seconds=120)
         if listener_service_name:
-            restart_systemd_unit(f'{listener_service_name}.service', label='监听服务', wait_seconds=45)
+            restart_systemd_unit(f'{listener_service_name}.service', label='监听服务', wait_seconds=120)
     except Exception as exc:
         try:
             context.bot.send_message(chat_id=user_id, text=f'重启克隆失败：{exc}')
