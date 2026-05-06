@@ -187,6 +187,8 @@ def write_clone_env(clone_dir, bot_token, admin_user_id, bot_info):
     env_map['OKPAY_CALLBACK_URL'] = ''
     env_map['TRONGRID_MONITOR_ADDRESSES'] = ''
     env_map['SHOW_OKPAY_RECHARGE_ENTRY'] = 'false'
+    env_map['BOT_CLONE_ENABLED'] = 'false'
+    env_map['ALLOW_PUBLIC_BOT_CLONE'] = 'false'
     env_map['BOT_CLONE_ROOT'] = BOT_CLONE_ROOT
     env_map['BOT_CLONE_REPO_URL'] = get_clone_repo_url()
 
@@ -3096,6 +3098,9 @@ def clonebot(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
     query.answer()
+    if not BOT_CLONE_ENABLED:
+        context.bot.send_message(chat_id=user_id, text='当前机器人未开放克隆功能')
+        return
     send_clonebot_prompt(context, user_id)
 
 
@@ -3103,6 +3108,9 @@ def clonelist(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
     query.answer()
+    if not BOT_CLONE_ENABLED:
+        context.bot.send_message(chat_id=user_id, text='当前机器人未开放克隆管理')
+        return
     user_list = user.find_one({'user_id': user_id}) or {}
     if str(user_list.get('state')) != '4' and user_id not in get_source_admin_user_ids():
         context.bot.send_message(chat_id=user_id, text='只有源机器人管理员可以查看克隆列表')
@@ -3132,6 +3140,9 @@ def cloneinfo(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
     query.answer()
+    if not BOT_CLONE_ENABLED:
+        context.bot.send_message(chat_id=user_id, text='当前机器人未开放克隆管理')
+        return
     user_list = user.find_one({'user_id': user_id}) or {}
     if str(user_list.get('state')) != '4' and user_id not in get_source_admin_user_ids():
         context.bot.send_message(chat_id=user_id, text='只有源机器人管理员可以查看克隆详情')
@@ -3173,6 +3184,9 @@ def clonedelete(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
     query.answer()
+    if not BOT_CLONE_ENABLED:
+        context.bot.send_message(chat_id=user_id, text='当前机器人未开放克隆管理')
+        return
     user_list = user.find_one({'user_id': user_id}) or {}
     if str(user_list.get('state')) != '4' and user_id not in get_source_admin_user_ids():
         context.bot.send_message(chat_id=user_id, text='只有源机器人管理员可以删除克隆实例')
@@ -3202,6 +3216,9 @@ def setcloneprice(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
     query.answer()
+    if not BOT_CLONE_ENABLED:
+        context.bot.send_message(chat_id=user_id, text='当前机器人未开放克隆管理')
+        return
     user_list = user.find_one({'user_id': user_id}) or {}
     if str(user_list.get('state')) != '4' and user_id not in get_source_admin_user_ids():
         context.bot.send_message(chat_id=user_id, text='只有源机器人管理员可以设置克隆价格')
@@ -3910,8 +3927,6 @@ def remove_clone_instance(bot_id, deleted_by=None):
     record = clone_instances.find_one({'bot_id': str(bot_id), 'state': {'$ne': 'deleted'}})
     if record is None:
         raise RuntimeError('未找到这个克隆实例')
-    if hasattr(os, 'geteuid') and os.geteuid() != 0:
-        raise RuntimeError('当前进程不是 root，无法删除克隆实例')
 
     for service_name in [record.get('service_name'), record.get('listener_service_name')]:
         if not service_name:
