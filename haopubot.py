@@ -23,7 +23,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackContext, Me
 from telegram import InlineKeyboardMarkup,ForceReply, InlineKeyboardButton as TGInlineKeyboardButton, Update, ChatMemberRestricted, ChatPermissions, \
     ChatMemberRestricted, ChatMember, ChatMemberAdministrator, KeyboardButton as TGKeyboardButton, ReplyKeyboardMarkup, \
     InlineQueryResultArticle, InputTextMessageContent,InputMediaPhoto
-from telegram.error import BadRequest, Forbidden
+from telegram.error import BadRequest, Forbidden, NetworkError, TimedOut
 import time, json, pickle, re
 from threading import Timer
 from decimal import Decimal
@@ -925,6 +925,14 @@ def sync_job(callback):
         return await asyncio.to_thread(callback, sync_context)
 
     return wrapped
+
+
+async def global_error_handler(update, context):
+    err = context.error
+    if isinstance(err, (NetworkError, TimedOut)):
+        logging.warning('Telegram network error: %s', err)
+        return
+    logging.exception('Unhandled bot error', exc_info=err)
 
 
 def make_directory(path):
@@ -3183,7 +3191,10 @@ Bot服务：<code>{row.get('service_name', '')}.service</code>
 def clonedelete(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
-    query.answer('正在删除，请稍候...')
+    try:
+        query.answer('正在删除，请稍候...')
+    except Exception:
+        pass
     if not BOT_CLONE_ENABLED:
         context.bot.send_message(chat_id=user_id, text='当前机器人未开放克隆管理')
         return
@@ -3200,7 +3211,10 @@ def clonedelete(update: Update, context: CallbackContext):
     try:
         record = remove_clone_instance(bot_id, deleted_by=user_id)
     except Exception as exc:
-        context.bot.send_message(chat_id=user_id, text=f'删除克隆失败：{exc}')
+        try:
+            context.bot.send_message(chat_id=user_id, text=f'删除克隆失败：{exc}')
+        except Exception:
+            pass
         return
 
     requester_user_id = record.get('requester_user_id')
@@ -3209,7 +3223,10 @@ def clonedelete(update: Update, context: CallbackContext):
     try:
         query.edit_message_text(text=text, reply_markup=keyboard)
     except Exception:
-        context.bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
+        try:
+            context.bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
+        except Exception:
+            pass
 
     notify_source_admins(
         context,
@@ -6403,6 +6420,8 @@ def main():
     ]
     for pattern, callback in callback_handlers:
         application.add_handler(CallbackQueryHandler(sync_handler(callback), pattern=pattern))
+
+    application.add_error_handler(global_error_handler)
 
     application.add_handler(InlineQueryHandler(sync_handler(inline_query)))
     application.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.REPLY, sync_handler(huifu)))
