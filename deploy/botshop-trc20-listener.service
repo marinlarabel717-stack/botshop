@@ -1,0 +1,15 @@
+[Unit]
+Description=botshop TRC20 listener
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/www/wwwroot/botshop
+ExecStart=/usr/bin/python3.10 /www/wwwroot/botshop/trc20_listener.py
+Restart=always
+RestartSec=3
+User=root
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

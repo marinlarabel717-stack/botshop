@@ -1,0 +1,31 @@
+1. 进入项目目录
+cd /www/wwwroot/botshop
+
+2. 拉最新代码
+git checkout -- haopubot.py trc20_listener.py .env.example VERSION
+git pull
+
+3. 编辑 .env，至少补这几个：
+TRONGRID_API_BASE=https://api.trongrid.io/v1
+TRONGRID_API_KEY=你的TronGridKey
+TRC20_USDT_CONTRACT=TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t
+TRONGRID_POLL_SECONDS=3
+TRONGRID_LOOKBACK_MINUTES=30
+
+4. 先手动测试监听器
+python3.10 trc20_listener.py
+
+5. 安装 systemd 服务
+cp deploy/botshop-bot.service /etc/systemd/system/
+cp deploy/botshop-trc20-listener.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now botshop-bot.service
+systemctl enable --now botshop-trc20-listener.service
+
+6. 查看状态
+systemctl status botshop-bot.service
+systemctl status botshop-trc20-listener.service
+
+7. 查看日志
+journalctl -u botshop-bot.service -f
+journalctl -u botshop-trc20-listener.service -f
