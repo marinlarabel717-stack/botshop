@@ -256,6 +256,14 @@ class SyncTelegramProxy:
         'editMessageText': 'edit_message_text',
         'editMessageCaption': 'edit_message_caption',
     }
+    TEXT_METHOD_KEYS = {
+        'send_message': 'text',
+        'edit_message_text': 'text',
+        'send_photo': 'caption',
+        'send_animation': 'caption',
+        'send_video': 'caption',
+        'edit_message_caption': 'caption',
+    }
 
     def __init__(self, obj, loop_ref):
         self._obj = obj
@@ -267,12 +275,37 @@ class SyncTelegramProxy:
             raise RuntimeError('Telegram event loop 尚未初始化')
         return loop
 
+    def _prepare_dynamic_emoji_args(self, method_name, args, kwargs):
+        text_key = self.TEXT_METHOD_KEYS.get(method_name)
+        if not text_key:
+            return args, kwargs
+
+        args = list(args)
+        kwargs = dict(kwargs)
+        entity_key = 'entities' if text_key == 'text' else 'caption_entities'
+        if kwargs.get(entity_key) and not kwargs.get('parse_mode'):
+            return args, kwargs
+
+        value = kwargs.get(text_key)
+        arg_index = 1 if method_name.startswith('send_') else None
+        if value is None and arg_index is not None and len(args) > arg_index:
+            value = args[arg_index]
+            if needs_dynamic_emoji_parse(value):
+                args[arg_index] = dynamic_emoji_to_html(value)
+        elif needs_dynamic_emoji_parse(value):
+            kwargs[text_key] = dynamic_emoji_to_html(value)
+
+        if needs_dynamic_emoji_parse(value) and not kwargs.get('parse_mode') and not kwargs.get(entity_key):
+            kwargs['parse_mode'] = 'HTML'
+        return args, kwargs
+
     def __getattr__(self, name):
         target_name = self.METHOD_ALIASES.get(name, name)
         attr = getattr(self._obj, target_name)
 
         if callable(attr):
             def wrapped(*args, **kwargs):
+                args, kwargs = self._prepare_dynamic_emoji_args(target_name, args, kwargs)
                 result = attr(*args, **kwargs)
                 if inspect.isawaitable(result):
                     result = asyncio.run_coroutine_threadsafe(result, self._get_loop()).result()
@@ -2987,7 +3020,6 @@ def start_okpay_callback_server(bot):
 async def on_post_init(application):
     global APP_EVENT_LOOP
     APP_EVENT_LOOP = asyncio.get_running_loop()
-    patch_bot_dynamic_emoji(application.bot)
     start_okpay_callback_server(SyncTelegramProxy(application.bot, lambda: APP_EVENT_LOOP))
 
 
