@@ -1786,12 +1786,16 @@ def start(update: Update, context: CallbackContext):
              InlineKeyboardButton(f'{ADMIN_EMOJI_OKPAY}OKPay配置', callback_data='okpaycfg')],
             [InlineKeyboardButton(f'{ADMIN_EMOJI_GOODS}商品管理', callback_data='spgli'),
              InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}欢迎语修改', callback_data='startupdate')],
-            [InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}菜单按钮', callback_data='addzdykey'),
-             InlineKeyboardButton(f'{ADMIN_EMOJI_NOTICE}补货通知', callback_data='restockpushcfg')],
+            [InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}菜单按钮', callback_data='addzdykey')],
         ]
         if BOT_CLONE_ENABLED:
-            keyboard[-1].append(InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}一键克隆同款', callback_data='clonebot'))
+            keyboard.append([
+                InlineKeyboardButton(f'{ADMIN_EMOJI_NOTICE}补货通知', callback_data='restockpushcfg'),
+                InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}一键克隆同款', callback_data='clonebot')
+            ])
             keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}克隆列表', callback_data='clonelist 0')])
+        else:
+            keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_NOTICE}补货通知', callback_data='restockpushcfg')])
         keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
         jqrsyrs = len(list(user.find({})))
         numu = 0
@@ -2048,12 +2052,16 @@ def backstart(update: Update, context: CallbackContext):
          InlineKeyboardButton(f'{ADMIN_EMOJI_OKPAY}OKPay配置', callback_data='okpaycfg')],
         [InlineKeyboardButton(f'{ADMIN_EMOJI_GOODS}商品管理', callback_data='spgli'),
          InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}欢迎语修改', callback_data='startupdate')],
-        [InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}菜单按钮', callback_data='addzdykey'),
-         InlineKeyboardButton(f'{ADMIN_EMOJI_NOTICE}补货通知', callback_data='restockpushcfg')],
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}菜单按钮', callback_data='addzdykey')],
     ]
     if BOT_CLONE_ENABLED:
-        keyboard[-1].append(InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}一键克隆同款', callback_data='clonebot'))
+        keyboard.append([
+            InlineKeyboardButton(f'{ADMIN_EMOJI_NOTICE}补货通知', callback_data='restockpushcfg'),
+            InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}一键克隆同款', callback_data='clonebot')
+        ])
         keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}克隆列表', callback_data='clonelist 0')])
+    else:
+        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_NOTICE}补货通知', callback_data='restockpushcfg')])
     keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
     jqrsyrs = len(list(user.find({})))
 
