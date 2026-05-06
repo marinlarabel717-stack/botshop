@@ -4967,7 +4967,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                 fstext = f'''
 <b>💰请选择下面 TRC20-USDT 充值金额
 
-💹系统会生成唯一小数金额，请严格按订单金额转账‼️</b>
+♥系统会生成唯一小数金额，请严格按订单金额转账‼️</b>
                 '''
                 keyboard = [
                     [InlineKeyboardButton('10USDT', callback_data='yuecz 10'),
