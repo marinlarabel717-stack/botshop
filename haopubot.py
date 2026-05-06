@@ -3247,7 +3247,7 @@ def clonedelete(update: Update, context: CallbackContext):
 
     notify_source_admins(
         context,
-        f'<b>🧹 克隆实例已删除</b>\n\n机器人ID：<code>{record.get("bot_id")}</code>\n管理员：<code>{requester_user_id}</code>\n删除人：<code>{user_id}</code>'
+        f'<b>{ADMIN_EMOJI_CLOSE}克隆实例已删除</b>\n\n[emoji:5287684458881756303:🤖] 机器人ID：<code>{record.get("bot_id")}</code>\n[emoji:6321041414067068140:👤] 管理员：<code>{requester_user_id}</code>\n[emoji:6321041414067068140:👤] 删除人：<code>{user_id}</code>'
     )
 
 
@@ -5455,6 +5455,11 @@ def textkeyboard(update: Update, context: CallbackContext):
                         user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                         send_clonebot_prompt(context, user_id)
                         return
+                    context.bot.send_message(
+                        chat_id=user_id,
+                        text='[emoji:5220195537520711716:⚡️] 正在克隆中，请稍等…\n\n[emoji:5287684458881756303:🤖] 已收到新的 Bot Token，正在为你创建并启动新 Bot。',
+                        parse_mode='HTML'
+                    )
                     try:
                         result = clone_bot_instance(text.strip(), user_id)
                     except Exception as exc:
