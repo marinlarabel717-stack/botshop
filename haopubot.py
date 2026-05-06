@@ -551,6 +551,24 @@ class SyncTelegramProxy:
             kwargs['parse_mode'] = 'HTML'
         return args, kwargs
 
+    def __getitem__(self, key):
+        if hasattr(self._obj, '__getitem__'):
+            try:
+                return wrap_sync_telegram_value(self._obj[key], self._loop_ref)
+            except Exception:
+                pass
+        return wrap_sync_telegram_value(getattr(self._obj, key), self._loop_ref)
+
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except Exception:
+            return default
+
+    def __contains__(self, key):
+        sentinel = object()
+        return self.get(key, sentinel) is not sentinel
+
     def __getattr__(self, name):
         target_name = self.METHOD_ALIASES.get(name, name)
         attr = getattr(self._obj, target_name)
