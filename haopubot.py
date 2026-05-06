@@ -22,7 +22,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackContext, Me
     InlineQueryHandler, filters
 from telegram import InlineKeyboardMarkup,ForceReply, InlineKeyboardButton as TGInlineKeyboardButton, Update, ChatMemberRestricted, ChatPermissions, \
     ChatMemberRestricted, ChatMember, ChatMemberAdministrator, KeyboardButton as TGKeyboardButton, ReplyKeyboardMarkup, \
-    InlineQueryResultArticle, InputTextMessageContent,InputMediaPhoto
+    InlineQueryResultArticle, InputTextMessageContent,InputMediaPhoto, MessageEntity
 from telegram.error import BadRequest, Forbidden, NetworkError, TimedOut
 import time, json, pickle, re
 from threading import Timer
@@ -578,6 +578,36 @@ def needs_dynamic_emoji_parse(text):
         '[emoji:' in text or '[ce:' in text or '[custom_emoji:' in text or
         bool(KNOWN_DYNAMIC_EMOJI_PATTERN.search(text))
     )
+
+
+def utf16_len(text):
+    if not isinstance(text, str):
+        return 0
+    return len(text.encode('utf-16-le')) // 2
+
+
+def build_custom_emoji_text_entities(text):
+    if not isinstance(text, str) or not text:
+        return text or '', []
+    plain_parts = []
+    entities = []
+    last = 0
+    utf16_offset = 0
+    for m in DYNAMIC_EMOJI_RE.finditer(text):
+        prefix = text[last:m.start()]
+        if prefix:
+            plain_parts.append(prefix)
+            utf16_offset += utf16_len(prefix)
+        alt = m.group(2) or '?'
+        custom_emoji_id = str(m.group(1) or '').strip()
+        plain_parts.append(alt)
+        entities.append(MessageEntity(type='custom_emoji', offset=utf16_offset, length=utf16_len(alt), custom_emoji_id=custom_emoji_id))
+        utf16_offset += utf16_len(alt)
+        last = m.end()
+    tail = text[last:]
+    if tail:
+        plain_parts.append(tail)
+    return ''.join(plain_parts), entities
 
 
 def get_entity_custom_emoji_id(entity):
@@ -4227,13 +4257,14 @@ def notify_restock_broadcast(context, nowuid, added_count=0):
     money = payload['money']
     stock_count = payload['stock_count']
     text = build_restock_push_broadcast_text(category_name, projectname, money, added_count, stock_count)
+    text, entities = build_custom_emoji_text_entities(text)
     keyboard = None
     bot_username = str(getattr(context.bot, 'username', '') or '').strip()
     buy_url = build_product_purchase_deep_link(bot_username, nowuid)
     if buy_url:
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton('[emoji:5451937962629544243:🛍]购买商品（Buy Goods）', url=buy_url)]])
     try:
-        context.bot.send_message(chat_id=target, text=text, reply_markup=keyboard, parse_mode='HTML')
+        context.bot.send_message(chat_id=target, text=text, entities=entities, reply_markup=keyboard)
     except Exception as exc:
         logging.warning('restock broadcast failed for %s: %s', target, exc)
 
@@ -4799,7 +4830,6 @@ def start_okpay_callback_server(bot):
 async def on_post_init(application):
     global APP_EVENT_LOOP
     APP_EVENT_LOOP = asyncio.get_running_loop()
-    patch_bot_dynamic_emoji(application.bot)
     start_okpay_callback_server(SyncTelegramProxy(application.bot, lambda: APP_EVENT_LOOP))
 
 
