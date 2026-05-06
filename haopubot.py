@@ -18,7 +18,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackContext, Me
 from telegram import InlineKeyboardMarkup,ForceReply, InlineKeyboardButton as TGInlineKeyboardButton, Update, ChatMemberRestricted, ChatPermissions, \
     ChatMemberRestricted, ChatMember, ChatMemberAdministrator, KeyboardButton as TGKeyboardButton, ReplyKeyboardMarkup, \
     InlineQueryResultArticle, InputTextMessageContent,InputMediaPhoto
-from telegram.error import BadRequest
+from telegram.error import BadRequest, Forbidden
 import time, json, pickle, re
 from threading import Timer
 from decimal import Decimal
@@ -579,16 +579,33 @@ class SyncTelegramProxy:
         return self.get(key, sentinel) is not sentinel
 
     def __getattr__(self, name):
+        if name.startswith('_'):
+            raise AttributeError(name)
+
         target_name = self.METHOD_ALIASES.get(name, name)
         attr = getattr(self._obj, target_name)
 
         if callable(attr):
             def wrapped(*args, **kwargs):
                 args, kwargs = self._prepare_dynamic_emoji_args(target_name, args, kwargs)
-                result = attr(*args, **kwargs)
-                if inspect.isawaitable(result):
-                    result = asyncio.run_coroutine_threadsafe(result, self._get_loop()).result()
-                return wrap_sync_telegram_value(result, self._loop_ref)
+                try:
+                    result = attr(*args, **kwargs)
+                    if inspect.isawaitable(result):
+                        result = asyncio.run_coroutine_threadsafe(result, self._get_loop()).result()
+                    return wrap_sync_telegram_value(result, self._loop_ref)
+                except BadRequest as exc:
+                    exc_text = str(exc)
+                    if target_name in ('answer', 'answer_callback_query') and (
+                        'Query is too old' in exc_text or 'query id is invalid' in exc_text
+                    ):
+                        return None
+                    if 'Message is not modified' in exc_text:
+                        return None
+                    raise
+                except Forbidden as exc:
+                    if 'bot was blocked by the user' in str(exc):
+                        return None
+                    raise
 
             return wrapped
 
@@ -616,6 +633,24 @@ def wrap_sync_telegram_value(value, loop_ref):
     if module_name.startswith('telegram'):
         return SyncTelegramProxy(value, loop_ref)
     return value
+
+
+def unwrap_sync_value(value):
+    if isinstance(value, SyncTelegramProxy):
+        return unwrap_sync_value(value._obj)
+    if isinstance(value, list):
+        return [unwrap_sync_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(unwrap_sync_value(item) for item in value)
+    return value
+
+
+def safe_pickle_loads(value, default=None):
+    raw_value = unwrap_sync_value(value)
+    try:
+        return pickle.loads(raw_value)
+    except Exception:
+        return [] if default is None else default
 
 
 def sync_handler(callback):
@@ -661,7 +696,7 @@ def inline_query(update: Update, context: CallbackContext):
         hyy = shangtext.find_one({'projectname': '欢迎语'})['text']
         hyyys = shangtext.find_one({'projectname': '欢迎语样式'})['text']
     
-        entities = pickle.loads(hyyys)
+        entities = safe_pickle_loads(hyyys)
 
         keyboard = [[InlineKeyboardButton(context.bot.first_name, url=f'https://t.me/{context.bot.username}')]]
         results = [
@@ -700,7 +735,7 @@ def inline_query(update: Update, context: CallbackContext):
                 hyy = shangtext.find_one({'projectname': '欢迎语'})['text']
                 hyyys = shangtext.find_one({'projectname': '欢迎语样式'})['text']
             
-                entities = pickle.loads(hyyys)
+                entities = safe_pickle_loads(hyyys)
 
                 results = [
                     InlineQueryResultArticle(
@@ -762,7 +797,7 @@ def inline_query(update: Update, context: CallbackContext):
             hyy = shangtext.find_one({'projectname': '欢迎语'})['text']
             hyyys = shangtext.find_one({'projectname': '欢迎语样式'})['text']
         
-            entities = pickle.loads(hyyys)
+            entities = safe_pickle_loads(hyyys)
 
             results = [
                 InlineQueryResultArticle(
@@ -1303,7 +1338,7 @@ def start(update: Update, context: CallbackContext):
         row = i['Row']
         first = i['first']
         keyboard[i["Row"] - 1].append(KeyboardButton(projectname))
-    entities = pickle.loads(hyyys)
+    entities = safe_pickle_loads(hyyys)
     context.bot.send_message(chat_id=user_id, text=hyy, reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True,
                                                                                          one_time_keyboard=False),
                              entities=entities)
@@ -1439,7 +1474,7 @@ def cattu(update: Update, context: CallbackContext):
     file_text = fqdtw_list['text']
     file_type = fqdtw_list['send_type']
     key_text = fqdtw_list['key_text']
-    keyboard = pickle.loads(fqdtw_list['keyboard'])
+    keyboard = safe_pickle_loads(fqdtw_list['keyboard'])
     keyboard.append([InlineKeyboardButton('✅已读（点击销毁此消息）', callback_data=f'close {user_id}')])
     if fqdtw_list['text'] == '' and fqdtw_list['file_id'] == '':
         message_id = context.bot.send_message(chat_id=user_id, text='请设置图文后点击')
@@ -1517,7 +1552,7 @@ def usersifa(context: CallbackContext):
     file_text = fqdtw_list['text']
     file_type = fqdtw_list['send_type']
     key_text = fqdtw_list['key_text']
-    keyboard = pickle.loads(fqdtw_list['keyboard'])
+    keyboard = safe_pickle_loads(fqdtw_list['keyboard'])
     
     
     keyboard.append([InlineKeyboardButton('✅已读（点击销毁此消息）', callback_data=f'close 12321')])
@@ -2473,8 +2508,8 @@ def settuwenset(update: Update, context: CallbackContext):
     text = key_list['text']
     file_type = key_list['file_type']
     file_id = key_list['file_id']
-    entities = pickle.loads(key_list['entities'])
-    keyboard = pickle.loads(key_list['keyboard'])
+    entities = safe_pickle_loads(key_list['entities'])
+    keyboard = safe_pickle_loads(key_list['keyboard'])
     if text == '' and file_id == '':
         pass
     else:
@@ -2514,8 +2549,8 @@ def cattuwenset(update: Update, context: CallbackContext):
     text = key_list['text']
     file_type = key_list['file_type']
     file_id = key_list['file_id']
-    entities = pickle.loads(key_list['entities'])
-    keyboard = pickle.loads(key_list['keyboard'])
+    entities = safe_pickle_loads(key_list['entities'])
+    keyboard = safe_pickle_loads(key_list['keyboard'])
     if text == '' and file_id == '':
         message_id = context.bot.send_message(chat_id=user_id, text='请设置图文后点击')
         timer11 = Timer(3, del_message, args=[message_id])
@@ -5000,7 +5035,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                     print_text = key_list['text']
                     file_type = key_list['file_type']
                     file_id = key_list['file_id']
-                    entities = pickle.loads(key_list['entities'])
+                    entities = safe_pickle_loads(key_list['entities'])
                     keyboard = [[InlineKeyboardButton("关闭", callback_data=f'close {user_id}')]]
                     if context.bot.username in ['TelergamKFbot', 'Tclelgnam_bot']:
                         pass
