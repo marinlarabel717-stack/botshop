@@ -390,11 +390,23 @@ def ensure_topup_indexes():
 ensure_topup_indexes()
 
 clone_instances = mydb['clone_instances']
+restock_notices = mydb['restock_notices']
 
 
 def ensure_clone_indexes():
     try:
         clone_instances.create_index([('bot_id', 1)], name='uniq_clone_bot_id', unique=True)
+    except Exception:
+        pass
+
+
+def ensure_restock_notice_indexes():
+    try:
+        restock_notices.create_index([('nowuid', 1), ('user_id', 1)], name='uniq_restock_notice', unique=True)
+    except Exception:
+        pass
+    try:
+        restock_notices.create_index([('nowuid', 1), ('created_at', -1)], name='restock_notice_nowuid_created')
     except Exception:
         pass
     try:
@@ -404,6 +416,7 @@ def ensure_clone_indexes():
 
 
 ensure_clone_indexes()
+ensure_restock_notice_indexes()
 
 
 DYNAMIC_EMOJI_RE = re.compile(r'\[(?:emoji|ce|custom_emoji):([0-9]+)(?::([^:\]]+))?(?::(danger|success|primary))?\]')
@@ -3625,7 +3638,8 @@ def gmsp(update: Update, context: CallbackContext):
     #         return
     # else:
     query.answer()
-    fstext = f'''
+    if hsl > 0:
+        fstext = f'''
 <b>✅您正在购买:  {projectname}
 
 💰 价格： {money} USDT
@@ -3634,14 +3648,73 @@ def gmsp(update: Update, context: CallbackContext):
 
 ❗️ 未使用过的本店商品的，请先少量购买测试，以免造成不必要的争执！谢谢合作！</b>
     '''
+    else:
+        fstext = f'''
+<b>✅您正在购买:  {projectname}
 
-    keyboard = [
-        [InlineKeyboardButton('✅购买', callback_data=f'gmqq {nowuid}')],
-        [InlineKeyboardButton('🏠主菜单', callback_data='backzcd'),
-         InlineKeyboardButton('⬅️返回', callback_data=f'catejflsp {uid}:1000')]
+💰 价格： {money} USDT
 
-    ]
+📊 库存： 0
+
+❗️ 当前暂时无库存，你可以先开启补货通知。</b>
+    '''
+
+    keyboard = build_product_purchase_keyboard(nowuid, uid, user_id, hsl)
     query.edit_message_text(fstext, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+def restocknotice(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
+    nowuid = str(query.data.replace('restocknotice ', '', 1)).strip()
+    ejfl_list = ejfl.find_one({'nowuid': nowuid}) or {}
+    if not ejfl_list:
+        context.bot.send_message(chat_id=user_id, text='未找到这个商品')
+        return
+    uid = ejfl_list.get('uid')
+    projectname = str(ejfl_list.get('projectname') or '商品')
+    money = ejfl_list.get('money', 0)
+    stock_count = get_stock_count(nowuid)
+    if stock_count > 0:
+        keyboard = build_product_purchase_keyboard(nowuid, uid, user_id, stock_count)
+        text = f'''<b>✅您正在购买:  {projectname}
+
+💰 价格： {money} USDT
+
+📊 库存： {stock_count}
+
+❗️ 未使用过的本店商品的，请先少量购买测试，以免造成不必要的争执！谢谢合作！</b>
+    '''
+        try:
+            query.edit_message_text(text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
+        except Exception:
+            pass
+        return
+    if is_restock_notice_subscribed(nowuid, user_id):
+        restock_notices.delete_one({'nowuid': nowuid, 'user_id': user_id})
+        notice_tip = '已取消这个商品的补货通知'
+    else:
+        restock_notices.update_one(
+            {'nowuid': nowuid, 'user_id': user_id},
+            {'$set': {'nowuid': nowuid, 'user_id': user_id, 'created_at': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}},
+            upsert=True
+        )
+        notice_tip = '已开启补货通知，商品补货后我会提醒你'
+    keyboard = build_product_purchase_keyboard(nowuid, uid, user_id, 0)
+    text = f'''<b>✅您正在购买:  {projectname}
+
+💰 价格： {money} USDT
+
+📊 库存： 0
+
+❗️ 当前暂时无库存，你可以先开启补货通知。</b>
+    '''
+    try:
+        query.edit_message_text(text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
+    except Exception:
+        pass
+    context.bot.send_message(chat_id=user_id, text=notice_tip)
 
 
 def gmqq(update: Update, context: CallbackContext):
@@ -4044,6 +4117,74 @@ def format_clone_price(value=None):
     price = price.quantize(Decimal('0.01'))
     text = format(price, 'f').rstrip('0').rstrip('.')
     return text or '0'
+
+
+def get_stock_count(nowuid):
+    return hb.count_documents({'nowuid': str(nowuid), 'state': 0})
+
+
+def is_restock_notice_subscribed(nowuid, user_id):
+    return restock_notices.find_one({'nowuid': str(nowuid), 'user_id': int(user_id)}) is not None
+
+
+def build_product_purchase_keyboard(nowuid, uid, user_id, stock_count=None):
+    stock_count = get_stock_count(nowuid) if stock_count is None else int(stock_count)
+    keyboard = []
+    if stock_count > 0:
+        keyboard.append([InlineKeyboardButton('✅购买', callback_data=f'gmqq {nowuid}')])
+    else:
+        notice_text = '🔔补货通知'
+        if is_restock_notice_subscribed(nowuid, user_id):
+            notice_text = '✅已开启补货通知'
+        keyboard.append([InlineKeyboardButton(notice_text, callback_data=f'restocknotice {nowuid}')])
+    keyboard.append([
+        InlineKeyboardButton('🏠主菜单', callback_data='backzcd'),
+        InlineKeyboardButton('⬅️返回', callback_data=f'catejflsp {uid}:1000')
+    ])
+    return keyboard
+
+
+def notify_restock_subscribers(context, nowuid):
+    nowuid = str(nowuid)
+    stock_count = get_stock_count(nowuid)
+    if stock_count <= 0:
+        return
+    ejfl_list = ejfl.find_one({'nowuid': nowuid}) or {}
+    if not ejfl_list:
+        return
+    projectname = str(ejfl_list.get('projectname') or '商品')
+    money = ejfl_list.get('money', 0)
+    rows = list(restock_notices.find({'nowuid': nowuid}))
+    if not rows:
+        return
+    text = (
+        f'[emoji:5312028599803460968:🆗] 你关注的商品已补货\n\n'
+        f'[emoji:5312361253610475399:🛒] 商品：{projectname}\n'
+        f'[emoji:4965219701572503640:💰] 价格：{money} USDT\n'
+        f'[emoji:5028746137645876535:📈] 当前库存：{stock_count}'
+    )
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton('🛒立即购买', callback_data=f'gmsp {nowuid}:{stock_count}')]])
+    sent_user_ids = set()
+    for row in rows:
+        target_user_id = row.get('user_id')
+        if not target_user_id or target_user_id in sent_user_ids:
+            continue
+        sent_user_ids.add(target_user_id)
+        try:
+            context.bot.send_message(chat_id=target_user_id, text=text, reply_markup=keyboard)
+        except Exception:
+            pass
+    restock_notices.delete_many({'nowuid': nowuid})
+
+
+def notify_restock_if_needed(context, nowuid, previous_stock, added_count=0):
+    if added_count <= 0:
+        return
+    if int(previous_stock or 0) > 0:
+        return
+    if get_stock_count(nowuid) <= 0:
+        return
+    notify_restock_subscribers(context, nowuid)
 
 
 def get_source_admin_user_ids():
@@ -5832,6 +5973,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                 elif 'update_hy' in sign:
                     nowuid = sign.replace('update_hy ', '')
                     uid = ejfl.find_one({'nowuid': nowuid})['uid']
+                    previous_stock = get_stock_count(nowuid)
 
                     text = text.split('\n')
                     count = 0
@@ -5844,6 +5986,7 @@ def textkeyboard(update: Update, context: CallbackContext):
 
                     update.message.reply_text(f'本次上传了{count}个链接')
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                    notify_restock_if_needed(context, nowuid, previous_stock, count)
 
                     ej_list = ejfl.find_one({'nowuid': nowuid})
                     uid = ej_list['uid']
@@ -5867,6 +6010,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                 if 'update_hb' in sign:
                     nowuid = sign.replace('update_hb ', '')
                     uid = ejfl.find_one({'nowuid': nowuid})['uid']
+                    previous_stock = get_stock_count(nowuid)
 
                     file = update.message.document
                     # 获取文件名
@@ -5898,6 +6042,7 @@ def textkeyboard(update: Update, context: CallbackContext):
 
                     update.message.reply_text(f'解压并处理完成！本次上传了{count}个号')
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                    notify_restock_if_needed(context, nowuid, previous_stock, count)
 
                     ej_list = ejfl.find_one({'nowuid': nowuid})
                     uid = ej_list['uid']
@@ -5920,6 +6065,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                 elif 'update_gg' in sign:
                     nowuid = sign.replace('update_gg ', '')
                     uid = ejfl.find_one({'nowuid': nowuid})['uid']
+                    previous_stock = get_stock_count(nowuid)
 
                     file = update.message.document
                     # 获取文件名
@@ -5959,6 +6105,7 @@ def textkeyboard(update: Update, context: CallbackContext):
 
                     update.message.reply_text(f'处理完成！本次上传了{count}个谷歌号')
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                    notify_restock_if_needed(context, nowuid, previous_stock, count)
 
                     ej_list = ejfl.find_one({'nowuid': nowuid})
                     uid = ej_list['uid']
@@ -5981,6 +6128,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                 elif 'update_txt' in sign:
                     nowuid = sign.replace('update_txt ', '')
                     uid = ejfl.find_one({'nowuid': nowuid})['uid']
+                    previous_stock = get_stock_count(nowuid)
 
                     file = update.message.document
                     # 获取文件名
@@ -6012,6 +6160,7 @@ def textkeyboard(update: Update, context: CallbackContext):
 
                     update.message.reply_text(f'处理完成！本次上传了{count}个api链接')
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                    notify_restock_if_needed(context, nowuid, previous_stock, count)
 
                     ej_list = ejfl.find_one({'nowuid': nowuid})
                     uid = ej_list['uid']
@@ -6033,6 +6182,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                 elif 'update_xyh' in sign:
                     nowuid = sign.replace('update_xyh ', '')
                     uid = ejfl.find_one({'nowuid': nowuid})['uid']
+                    previous_stock = get_stock_count(nowuid)
 
                     file = update.message.document
                     # 获取文件名
@@ -6074,6 +6224,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                     update.message.reply_text(f'解压并处理完成！本次上传了{count}个协议号')
 
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                    notify_restock_if_needed(context, nowuid, previous_stock, count)
 
                     ej_list = ejfl.find_one({'nowuid': nowuid})
                     uid = ej_list['uid']
@@ -6616,7 +6767,7 @@ def main():
         application.add_handler(CommandHandler(command_name, sync_handler(callback)))
 
     callback_handlers = [
-        ('startupdate', startupdate), ('clonebot', clonebot), ('clonepay', clonepay), ('clonelist', clonelist), ('cloneinfo ', cloneinfo), ('clonerestart ', clonerestart), ('clonedelete ', clonedelete), ('setcloneprice', setcloneprice), ('okpaycfg', okpaycfg), ('setokpayid', setokpayid), ('setokpaytoken', setokpaytoken), ('setokpayname', setokpayname), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
+        ('startupdate', startupdate), ('clonebot', clonebot), ('clonepay', clonepay), ('clonelist', clonelist), ('cloneinfo ', cloneinfo), ('clonerestart ', clonerestart), ('clonedelete ', clonedelete), ('setcloneprice', setcloneprice), ('restocknotice ', restocknotice), ('okpaycfg', okpaycfg), ('setokpayid', setokpayid), ('setokpaytoken', setokpaytoken), ('setokpayname', setokpayname), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
         ('backstart', backstart), ('paixurow', paixurow), ('addzdykey', addzdykey),
         ('qrscdelrow ', qrscdelrow), ('addhangkey ', addhangkey), ('delhangkey ', delhangkey),
         ('qrdelliekey ', qrdelliekey), ('keyxq ', keyxq), ('setkeyname ', setkeyname),
