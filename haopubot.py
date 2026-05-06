@@ -1607,7 +1607,7 @@ def start(update: Update, context: CallbackContext):
             username = f'<a href="https://t.me/{username}">{username}</a>'
         fstext = f'''
 <b>[emoji:6321041414067068140:👤] 您的ID:</b>  <code>{user_id}</code>
-<b>[emoji:5287684458881756303:🤖] 您的用户名:</b>  {username} 
+<b>[emoji:5287684458881756303:🤖] 您的用户名:</b>  {username}
 <b>[emoji:5217818964612108191:✨] 注册日期:</b>  {creation_time}
 
 <b>[emoji:5220064167356025824:⭐️] 总购数量:</b>  {zgsl}
@@ -5955,7 +5955,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                     username = f'<a href="https://t.me/{username}">{username}</a>'
                 fstext = f'''
 <b>[emoji:6321041414067068140:👤] 您的ID:</b>  <code>{user_id}</code>
-<b>[emoji:5287684458881756303:🤖] 您的用户名:</b>  {username} 
+<b>[emoji:5287684458881756303:🤖] 您的用户名:</b>  {username}
 <b>[emoji:5217818964612108191:✨] 注册日期:</b>  {creation_time}
 
 <b>[emoji:5220064167356025824:⭐️] 总购数量:</b>  {zgsl}
@@ -6341,7 +6341,7 @@ def cha(update: Update, context: CallbackContext):
                 USDT = df_list['USDT']
                 fstext = f'''
 <b>[emoji:6321041414067068140:👤] 用户ID:</b>  <code>{df_id}</code>
-<b>[emoji:5287684458881756303:🤖] 用户名:</b>  {df_username} 
+<b>[emoji:5287684458881756303:🤖] 用户名:</b>  {df_username}
 <b>[emoji:5217818964612108191:✨] 注册日期:</b>  {creation_time}
 
 <b>[emoji:5220064167356025824:⭐️] 总购数量:</b>  {zgsl}
