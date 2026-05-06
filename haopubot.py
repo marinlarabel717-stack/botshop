@@ -4107,8 +4107,15 @@ def textkeyboard(update: Update, context: CallbackContext):
                     money = ejfl_list['money']
                     uid = ejfl_list['uid']
                     kc = len(list(hb.find({'nowuid': nowuid, 'state': 0})))
-                    if is_number(text):
-                        gmsl = int(text)
+                    clean_text = text.strip()
+                    if clean_text.isdigit():
+                        gmsl = int(clean_text)
+                        if gmsl <= 0:
+                            keyboard = [[InlineKeyboardButton('❌取消购买', callback_data=f'close {user_id}')]]
+                            context.bot.send_message(chat_id=user_id, text='购买数量只能输入大于0的整数',
+                                                     reply_markup=InlineKeyboardMarkup(keyboard))
+                            return
+
                         zxymoney = standard_num(gmsl * money)
                         zxymoney = float(zxymoney) if str((zxymoney)).count('.') > 0 else int(standard_num(zxymoney))
                         if kc < gmsl:
@@ -4139,7 +4146,7 @@ def textkeyboard(update: Update, context: CallbackContext):
 
                     else:
                         keyboard = [[InlineKeyboardButton('❌取消购买', callback_data=f'close {user_id}')]]
-                        context.bot.send_message(chat_id=user_id, text='请输入数字，不购买请点击取消',
+                        context.bot.send_message(chat_id=user_id, text='购买数量只能输入大于0的整数，不购买请点击取消',
                                                  reply_markup=InlineKeyboardMarkup(keyboard))
                         # user.update_one({'user_id': user_id},{"$set":{'sign': 0}})
 
