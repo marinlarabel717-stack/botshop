@@ -1567,11 +1567,12 @@ def start(update: Update, context: CallbackContext):
         keyboard = [
             [InlineKeyboardButton('用户列表', callback_data='yhlist'),InlineKeyboardButton('对话用户私发', callback_data='sifa')],
             [InlineKeyboardButton('充值地址设置', callback_data='settrc20'),
-             InlineKeyboardButton('商品管理', callback_data='spgli')],
-            [InlineKeyboardButton('欢迎语修改', callback_data='startupdate'), 
-             InlineKeyboardButton('菜单按钮', callback_data='addzdykey')],
-            [InlineKeyboardButton('一键克隆Bot', callback_data='clonebot'),
-             InlineKeyboardButton('关闭', callback_data=f'close {user_id}')]
+             InlineKeyboardButton('OKPay配置', callback_data='okpaycfg')],
+            [InlineKeyboardButton('商品管理', callback_data='spgli'),
+             InlineKeyboardButton('欢迎语修改', callback_data='startupdate')],
+            [InlineKeyboardButton('菜单按钮', callback_data='addzdykey'),
+             InlineKeyboardButton('一键克隆Bot', callback_data='clonebot')],
+            [InlineKeyboardButton('关闭', callback_data=f'close {user_id}')]
         ]
         jqrsyrs = len(list(user.find({})))
         numu = 0
@@ -1820,11 +1821,12 @@ def backstart(update: Update, context: CallbackContext):
     keyboard = [
         [InlineKeyboardButton('用户列表', callback_data='yhlist'),InlineKeyboardButton('对话用户私发', callback_data='sifa')],
         [InlineKeyboardButton('充值地址设置', callback_data='settrc20'),
-         InlineKeyboardButton('商品管理', callback_data='spgli')],
-        [InlineKeyboardButton('欢迎语修改', callback_data='startupdate'), 
-         InlineKeyboardButton('菜单按钮', callback_data='addzdykey')],
-        [InlineKeyboardButton('一键克隆Bot', callback_data='clonebot'),
-         InlineKeyboardButton('关闭', callback_data=f'close {user_id}')]
+         InlineKeyboardButton('OKPay配置', callback_data='okpaycfg')],
+        [InlineKeyboardButton('商品管理', callback_data='spgli'),
+         InlineKeyboardButton('欢迎语修改', callback_data='startupdate')],
+        [InlineKeyboardButton('菜单按钮', callback_data='addzdykey'),
+         InlineKeyboardButton('一键克隆Bot', callback_data='clonebot')],
+        [InlineKeyboardButton('关闭', callback_data=f'close {user_id}')]
     ]
     jqrsyrs = len(list(user.find({})))
 
@@ -2881,6 +2883,68 @@ def settrc20(update: Update, context: CallbackContext):
     context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
+def build_okpay_config_text():
+    shop_id = get_okpay_shop_id()
+    token = get_okpay_shop_token()
+    name = get_okpay_name()
+    enabled = '已开启' if refresh_okpay_entry_status() else '未开启'
+    masked_token = (token[:6] + '******' + token[-4:]) if len(token) >= 12 else ('已设置' if token else '未设置')
+    return f'''
+<b>OKPay 当前配置</b>
+
+商户ID：<code>{shop_id or '未设置'}</code>
+Token：<code>{masked_token}</code>
+名称：<code>{name or '未设置'}</code>
+充值入口：<code>{enabled}</code>
+
+当 商户ID / Token / 名称 三项都配置完成后，会自动开启 OKPay 充值入口。
+'''
+
+
+def build_okpay_config_keyboard(user_id):
+    return [
+        [InlineKeyboardButton('设置商户ID', callback_data='setokpayid'), InlineKeyboardButton('设置Token', callback_data='setokpaytoken')],
+        [InlineKeyboardButton('设置名称', callback_data='setokpayname')],
+        [InlineKeyboardButton('⬅️返回主界面', callback_data='backstart')],
+        [InlineKeyboardButton('关闭', callback_data=f'close {user_id}')]
+    ]
+
+
+def okpaycfg(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
+    keyboard = build_okpay_config_keyboard(user_id)
+    query.edit_message_text(text=build_okpay_config_text(), parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+def setokpayid(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
+    keyboard = [[InlineKeyboardButton('取消', callback_data=f'close {user_id}')]]
+    user.update_one({'user_id': user_id}, {"$set": {"sign": 'setokpayid'}})
+    context.bot.send_message(chat_id=user_id, text='请输入 OKPay 商户ID', reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+def setokpaytoken(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
+    keyboard = [[InlineKeyboardButton('取消', callback_data=f'close {user_id}')]]
+    user.update_one({'user_id': user_id}, {"$set": {"sign": 'setokpaytoken'}})
+    context.bot.send_message(chat_id=user_id, text='请输入 OKPay Token', reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+def setokpayname(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
+    keyboard = [[InlineKeyboardButton('取消', callback_data=f'close {user_id}')]]
+    user.update_one({'user_id': user_id}, {"$set": {"sign": 'setokpayname'}})
+    context.bot.send_message(chat_id=user_id, text='请输入 OKPay 名称（例如：号铺）', reply_markup=InlineKeyboardMarkup(keyboard))
+
+
 def can_use_clonebot(state):
     return ALLOW_PUBLIC_BOT_CLONE or str(state) == '4'
 
@@ -2927,14 +2991,14 @@ def build_recharge_method_keyboard(user_id):
     keyboard = []
     if SHOW_TRC20_RECHARGE_ENTRY:
         keyboard.append([InlineKeyboardButton('[emoji:5080312910866024090:😀] USDT 直充 | 链上到账', callback_data='recharge_trc20')])
-    if SHOW_OKPAY_RECHARGE_ENTRY:
+    if okpay_entry_enabled():
         keyboard.append([InlineKeyboardButton('[emoji:6321339712430676611:😄] OKPay支付 | 秒速到账', callback_data='recharge_okpay')])
     keyboard.append([InlineKeyboardButton('取消充值', callback_data=f'close {user_id}')])
     return keyboard
 
 
 def send_recharge_method_menu(context, user_id):
-    if not SHOW_TRC20_RECHARGE_ENTRY and not SHOW_OKPAY_RECHARGE_ENTRY:
+    if not SHOW_TRC20_RECHARGE_ENTRY and not okpay_entry_enabled():
         context.bot.send_message(chat_id=user_id, text='当前未开启任何充值方式，请联系管理员')
         return
     fstext = '[emoji:5197474438970363734:⤵️] 请选择支付方式'
@@ -3506,6 +3570,57 @@ def get_trc20_address():
     return str(row.get('text', '') or '').strip()
 
 
+def get_text_config(projectname, default=''):
+    row = shangtext.find_one({'projectname': projectname}) or {}
+    value = row.get('text', default)
+    if value is None:
+        return default
+    return value
+
+
+def set_text_config(projectname, value):
+    shangtext.update_one({'projectname': projectname}, {'$set': {'text': value}}, upsert=True)
+
+
+def get_okpay_shop_id():
+    return str(get_text_config('OKPay商户ID', OKPAY_SHOP_ID) or '').strip()
+
+
+def get_okpay_shop_token():
+    return str(get_text_config('OKPayToken', OKPAY_SHOP_TOKEN) or '').strip()
+
+
+def get_okpay_name():
+    return str(get_text_config('OKPay名称', OKPAY_NAME) or '').strip()
+
+
+def get_okpay_bot_username(bot=None):
+    if bot is not None:
+        username = getattr(bot, 'username', '') or ''
+        if username:
+            return str(username).strip().lstrip('@')
+    username = getattr(OKPAY_BOT, 'username', '') if OKPAY_BOT is not None else ''
+    if username:
+        return str(username).strip().lstrip('@')
+    return str(get_text_config('OKPay机器人用户名', OKPAY_BOT_USERNAME) or '').strip().lstrip('@')
+
+
+def refresh_okpay_entry_status():
+    enabled = bool(get_okpay_shop_id() and get_okpay_shop_token() and get_okpay_name())
+    set_text_config('OKPay入口开启', 1 if enabled else 0)
+    return enabled
+
+
+def okpay_entry_enabled():
+    row = shangtext.find_one({'projectname': 'OKPay入口开启'})
+    if row is not None:
+        value = row.get('text')
+        return str(value).strip() in ('1', 'true', 'True', 'yes', 'on')
+    if okpay_enabled():
+        return True
+    return SHOW_OKPAY_RECHARGE_ENTRY
+
+
 def is_valid_trc20_address(address):
     if not isinstance(address, str):
         return False
@@ -3539,17 +3654,21 @@ def allocate_trc20_pay_amount(base_amount, user_id):
 
 
 def okpay_enabled():
-    return bool(OKPAY_SHOP_ID and OKPAY_SHOP_TOKEN)
+    return bool(get_okpay_shop_id() and get_okpay_shop_token())
 
 
 def okpay_sign(data):
+    shop_id = get_okpay_shop_id()
+    shop_token = get_okpay_shop_token()
+    if not shop_id or not shop_token:
+        raise RuntimeError('OKPay未配置，请先在后台设置商户ID和Token')
     data = dict(data)
-    data['id'] = OKPAY_SHOP_ID
+    data['id'] = shop_id
     data = {k: v for k, v in data.items() if v is not None and v != ''}
     data = OrderedDict(sorted(data.items()))
     query = urllib.parse.urlencode(data, quote_via=urllib.parse.quote)
     query = urllib.parse.unquote(query)
-    data['sign'] = hashlib.md5((query + '&token=' + OKPAY_SHOP_TOKEN).encode()).hexdigest().upper()
+    data['sign'] = hashlib.md5((query + '&token=' + shop_token).encode()).hexdigest().upper()
     return dict(data)
 
 
@@ -3560,12 +3679,14 @@ def okpay_post(api_name, data):
     return response.json()
 
 
-def okpay_pay_link(unique_id, amount, coin='USDT', include_callback=True):
+def okpay_pay_link(unique_id, amount, coin='USDT', include_callback=True, bot=None):
+    okpay_name = get_okpay_name() or 'OKPay'
+    okpay_bot_username = get_okpay_bot_username(bot)
     data = {
         'unique_id': unique_id,
-        'name': f'{OKPAY_NAME}充值',
+        'name': f'{okpay_name}充值',
         'amount': amount,
-        'return_url': f'https://t.me/{OKPAY_BOT_USERNAME}' if OKPAY_BOT_USERNAME else 'https://t.me/',
+        'return_url': f'https://t.me/{okpay_bot_username}' if okpay_bot_username else 'https://t.me/',
         'coin': coin
     }
     if include_callback and OKPAY_CALLBACK_URL:
@@ -3624,13 +3745,14 @@ def okpay_build_nested_callback_query(data):
 
 def okpay_verify_callback(data):
     data = dict(data)
+    shop_token = get_okpay_shop_token()
     in_sign = data.pop('sign', '')
-    if not in_sign or not OKPAY_SHOP_TOKEN:
+    if not in_sign or not shop_token:
         return False
     data = {k: v for k, v in data.items() if v is not None and v != ''}
     queries = [okpay_build_query(data), okpay_build_nested_callback_query(data)]
     for query in queries:
-        sign = hashlib.md5((query + '&token=' + OKPAY_SHOP_TOKEN).encode()).hexdigest().upper()
+        sign = hashlib.md5((query + '&token=' + shop_token).encode()).hexdigest().upper()
         if sign == in_sign:
             return True
     return False
@@ -3869,8 +3991,8 @@ def create_trc20_deposit_order(context, user_id, amount):
 
 
 def create_okpay_deposit_order(context, user_id, amount):
-    if not okpay_enabled():
-        context.bot.send_message(chat_id=user_id, text='OKPay未配置，请先联系管理员配置商户ID和Token')
+    if not refresh_okpay_entry_status():
+        context.bot.send_message(chat_id=user_id, text='OKPay未配置，请先联系管理员在后台配置商户ID、Token 和 名称')
         return
 
     amount = standard_num(amount)
@@ -3883,7 +4005,7 @@ def create_okpay_deposit_order(context, user_id, amount):
     bianhao = 'OKPAY' + time.strftime('%Y%m%d%H%M%S', time.localtime()) + str(user_id)
     timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
     try:
-        result = okpay_pay_link(bianhao, amount, 'USDT')
+        result = okpay_pay_link(bianhao, amount, 'USDT', bot=context.bot)
     except Exception as exc:
         context.bot.send_message(chat_id=user_id, text=f'创建OKPay充值订单失败：{exc}')
         return
@@ -3892,7 +4014,7 @@ def create_okpay_deposit_order(context, user_id, amount):
         msg = str(result.get('msg') or '')
         if 'callback_url' in msg and ('验证失败' in msg or '安全风险' in msg):
             try:
-                result = okpay_pay_link(bianhao, amount, 'USDT', include_callback=False)
+                result = okpay_pay_link(bianhao, amount, 'USDT', include_callback=False, bot=context.bot)
             except Exception as exc:
                 context.bot.send_message(chat_id=user_id, text=f'创建OKPay充值订单失败：{exc}')
                 return
@@ -4891,6 +5013,24 @@ def textkeyboard(update: Update, context: CallbackContext):
                         img.save(f)
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                     context.bot.send_message(chat_id=user_id, text=f'当前充值地址为: {text}', parse_mode='HTML')
+                elif sign == 'setokpayid':
+                    set_text_config('OKPay商户ID', text.strip())
+                    if refresh_okpay_entry_status():
+                        start_okpay_callback_server(SyncTelegramProxy(context.bot, lambda: APP_EVENT_LOOP))
+                    user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                    context.bot.send_message(chat_id=user_id, text=f'OKPay 商户ID 已保存\n\n{build_okpay_config_text()}', parse_mode='HTML', reply_markup=InlineKeyboardMarkup(build_okpay_config_keyboard(user_id)))
+                elif sign == 'setokpaytoken':
+                    set_text_config('OKPayToken', text.strip())
+                    if refresh_okpay_entry_status():
+                        start_okpay_callback_server(SyncTelegramProxy(context.bot, lambda: APP_EVENT_LOOP))
+                    user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                    context.bot.send_message(chat_id=user_id, text=f'OKPay Token 已保存\n\n{build_okpay_config_text()}', parse_mode='HTML', reply_markup=InlineKeyboardMarkup(build_okpay_config_keyboard(user_id)))
+                elif sign == 'setokpayname':
+                    set_text_config('OKPay名称', text.strip())
+                    if refresh_okpay_entry_status():
+                        start_okpay_callback_server(SyncTelegramProxy(context.bot, lambda: APP_EVENT_LOOP))
+                    user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                    context.bot.send_message(chat_id=user_id, text=f'OKPay 名称已保存\n\n{build_okpay_config_text()}', parse_mode='HTML', reply_markup=InlineKeyboardMarkup(build_okpay_config_keyboard(user_id)))
                 elif sign == 'clonebottoken':
                     if not can_use_clonebot(state):
                         user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
@@ -5922,7 +6062,7 @@ def main():
         application.add_handler(CommandHandler(command_name, sync_handler(callback)))
 
     callback_handlers = [
-        ('startupdate', startupdate), ('clonebot', clonebot), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
+        ('startupdate', startupdate), ('clonebot', clonebot), ('okpaycfg', okpaycfg), ('setokpayid', setokpayid), ('setokpaytoken', setokpaytoken), ('setokpayname', setokpayname), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
         ('backstart', backstart), ('paixurow', paixurow), ('addzdykey', addzdykey),
         ('qrscdelrow ', qrscdelrow), ('addhangkey ', addhangkey), ('delhangkey ', delhangkey),
         ('qrdelliekey ', qrdelliekey), ('keyxq ', keyxq), ('setkeyname ', setkeyname),
