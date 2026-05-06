@@ -4035,6 +4035,10 @@ def remove_clone_instance(bot_id, deleted_by=None, source_bot_id=None, source_db
                 service_path.unlink()
         except Exception:
             pass
+        try:
+            run_system_command(['systemctl', 'reset-failed', service_unit], timeout=15)
+        except Exception:
+            pass
 
     try:
         run_system_command(['systemctl', 'daemon-reload'], timeout=20)
@@ -4051,8 +4055,7 @@ def remove_clone_instance(bot_id, deleted_by=None, source_bot_id=None, source_db
         except Exception:
             pass
 
-    timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-    clone_instances.update_one({'_id': record['_id']}, {'$set': {'state': 'deleted', 'deleted_at': timer, 'deleted_by': deleted_by}})
+    clone_instances.delete_one({'_id': record['_id']})
     return record
 
 
