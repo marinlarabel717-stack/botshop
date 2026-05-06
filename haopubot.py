@@ -1575,6 +1575,31 @@ def ensure_user_exists(user_id, username, fullname, lastname):
     return user_list
 
 
+def sum_user_log_amount_by_day(day_text):
+    total = Decimal('0')
+    for row in user_log.find({'today_time': {'$regex': f'^{day_text}'}}):
+        try:
+            money = Decimal(str(row.get('today_money', 0) or 0))
+        except Exception:
+            continue
+        if money > 0:
+            total += money
+    return standard_num(total)
+
+
+def build_admin_dashboard_text(user_count, total_balance):
+    today_text = time.strftime('%Y-%m-%d', time.localtime())
+    yesterday_text = (datetime.datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+    today_income = sum_user_log_amount_by_day(today_text)
+    yesterday_income = sum_user_log_amount_by_day(yesterday_text)
+    return f'''
+[emoji:5287684458881756303:🤖] 机器人使用人数：{user_count}
+[emoji:4972482444025398275:👛] 机器人总余额：{standard_num(total_balance)} USDT
+[emoji:5220195537520711716:⚡️] 今日收入：{today_income} USDT
+[emoji:5222097061276566531:🍃] 昨日收入：{yesterday_income} USDT
+        '''
+
+
 def start(update: Update, context: CallbackContext):
     us = update.effective_user
     chat_id = update.effective_chat.id
@@ -1659,10 +1684,7 @@ def start(update: Update, context: CallbackContext):
 
             numu += USDT
 
-        fstext = f'''
-当前机器人已有 {jqrsyrs}人 使用
-总共余额：{standard_num(numu)} USDT
-        '''
+        fstext = build_admin_dashboard_text(jqrsyrs, numu)
         context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
         # message_id = context.bot.send_photo(chat_id=user_id,  photo=open('辛迪充值图片.png', 'rb'))
         # print(message_id)
@@ -1924,10 +1946,7 @@ def backstart(update: Update, context: CallbackContext):
 
         numu += USDT
 
-    fstext = f'''
-当前机器人已有 {jqrsyrs}人 使用
-总共余额：{standard_num(numu)} USDT
-    '''
+    fstext = build_admin_dashboard_text(jqrsyrs, numu)
     query.edit_message_text(text=fstext, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
