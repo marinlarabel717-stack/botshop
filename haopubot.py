@@ -115,6 +115,24 @@ KNOWN_DYNAMIC_EMOJI_IDS = OrderedDict([
 ])
 KNOWN_DYNAMIC_EMOJI_PATTERN = re.compile('|'.join(sorted((re.escape(k) for k in KNOWN_DYNAMIC_EMOJI_IDS.keys()), key=len, reverse=True)))
 PROTECTED_DYNAMIC_EMOJI_SEGMENT_RE = re.compile(r'(<tg-emoji\b[^>]*>.*?</tg-emoji>|\[(?:emoji|ce|custom_emoji):[0-9]+(?::[^:\]]+)?(?::(?:danger|success|primary))?\])', re.S)
+KNOWN_DYNAMIC_EMOJI_KEYS = sorted(KNOWN_DYNAMIC_EMOJI_IDS.keys(), key=len, reverse=True)
+
+
+def extract_known_button_icon(text):
+    if not isinstance(text, str):
+        return None, None, text
+    stripped = text.strip()
+    if not stripped:
+        return None, None, text
+
+    for emoji_text in KNOWN_DYNAMIC_EMOJI_KEYS:
+        if stripped.startswith(emoji_text):
+            clean_text = stripped[len(emoji_text):].strip()
+            return KNOWN_DYNAMIC_EMOJI_IDS[emoji_text], emoji_text, clean_text or stripped
+        if stripped.endswith(emoji_text):
+            clean_text = stripped[:-len(emoji_text)].strip()
+            return KNOWN_DYNAMIC_EMOJI_IDS[emoji_text], emoji_text, clean_text or stripped
+    return None, None, text
 
 
 def known_plain_emoji_to_dynamic_html(text):
@@ -355,6 +373,8 @@ def InlineKeyboardButton(text, *args, **kwargs):
     Usage: InlineKeyboardButton('[emoji:5368324170671202286:📱]商品列表', callback_data='...')
     """
     emoji_id, alt, style, clean_text = parse_dynamic_emoji_prefix(text)
+    if not emoji_id:
+        emoji_id, alt, clean_text = extract_known_button_icon(text)
     if emoji_id:
         try:
             api_kwargs = dict(kwargs.pop('api_kwargs', {}) or {})
@@ -370,6 +390,8 @@ def InlineKeyboardButton(text, *args, **kwargs):
 def KeyboardButton(text, *args, **kwargs):
     """Backward-compatible reply keyboard button with optional dynamic emoji icon."""
     emoji_id, alt, style, clean_text = parse_dynamic_emoji_prefix(text)
+    if not emoji_id:
+        emoji_id, alt, clean_text = extract_known_button_icon(text)
     if emoji_id:
         try:
             api_kwargs = dict(kwargs.pop('api_kwargs', {}) or {})
