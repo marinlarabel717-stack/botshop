@@ -153,6 +153,14 @@ def ensure_systemd_unit_active(service_unit, label='服务', wait_seconds=8):
     raise RuntimeError(f'{label} 启动失败：{service_unit}\n\n{detail}')
 
 
+def restart_systemd_unit(service_unit, label='服务', wait_seconds=45):
+    try:
+        run_system_command(['systemctl', 'restart', '--no-block', service_unit], timeout=15)
+    except subprocess.TimeoutExpired:
+        pass
+    ensure_systemd_unit_active(service_unit, label=label, wait_seconds=wait_seconds)
+
+
 def get_clone_repo_url():
     if BOT_CLONE_REPO_URL:
         return BOT_CLONE_REPO_URL
@@ -3321,11 +3329,9 @@ def finish_clone_restart_in_background(context, user_id, bot_id):
     try:
         if not service_name:
             raise RuntimeError('未找到 Bot 服务名')
-        run_system_command(['systemctl', 'restart', f'{service_name}.service'], timeout=30)
-        ensure_systemd_unit_active(f'{service_name}.service', label='克隆 Bot 服务', wait_seconds=10)
+        restart_systemd_unit(f'{service_name}.service', label='克隆 Bot 服务', wait_seconds=45)
         if listener_service_name:
-            run_system_command(['systemctl', 'restart', f'{listener_service_name}.service'], timeout=30)
-            ensure_systemd_unit_active(f'{listener_service_name}.service', label='监听服务', wait_seconds=10)
+            restart_systemd_unit(f'{listener_service_name}.service', label='监听服务', wait_seconds=45)
     except Exception as exc:
         try:
             context.bot.send_message(chat_id=user_id, text=f'重启克隆失败：{exc}')
