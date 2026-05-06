@@ -1560,7 +1560,7 @@ def start(update: Update, context: CallbackContext):
         keyboard[i["Row"] - 1].append(KeyboardButton(projectname))
     keyboard = [row for row in keyboard if row]
     if BOT_CLONE_ENABLED and ALLOW_PUBLIC_BOT_CLONE:
-        keyboard.append([KeyboardButton('🤖一键克隆Bot')])
+        keyboard.append([KeyboardButton('#g 🤖一键克隆同款')])
     entities = safe_pickle_loads(hyyys)
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False) if keyboard else None
     context.bot.send_message(chat_id=user_id, text=hyy, reply_markup=reply_markup,
@@ -1575,7 +1575,7 @@ def start(update: Update, context: CallbackContext):
             [InlineKeyboardButton('菜单按钮', callback_data='addzdykey')],
         ]
         if BOT_CLONE_ENABLED:
-            keyboard[-1].append(InlineKeyboardButton('一键克隆Bot', callback_data='clonebot'))
+            keyboard[-1].append(InlineKeyboardButton('#g 🤖一键克隆同款', callback_data='clonebot'))
         keyboard.append([InlineKeyboardButton('关闭', callback_data=f'close {user_id}')])
         jqrsyrs = len(list(user.find({})))
         numu = 0
@@ -1830,7 +1830,7 @@ def backstart(update: Update, context: CallbackContext):
         [InlineKeyboardButton('菜单按钮', callback_data='addzdykey')],
     ]
     if BOT_CLONE_ENABLED:
-        keyboard[-1].append(InlineKeyboardButton('一键克隆Bot', callback_data='clonebot'))
+        keyboard[-1].append(InlineKeyboardButton('#g 🤖一键克隆同款', callback_data='clonebot'))
     keyboard.append([InlineKeyboardButton('关闭', callback_data=f'close {user_id}')])
     jqrsyrs = len(list(user.find({})))
 
@@ -5589,7 +5589,7 @@ Bot服务：<code>{result['service_name']}.service</code>
                 key_list = get_key.find_one({"projectname": text})
             if key_list is None and normalized_text:
                 key_list = normalized_key_map.get(normalized_text)
-            if normalized_text == normalize_menu_text('🤖一键克隆Bot'):
+            if normalized_text in (normalize_menu_text('🤖一键克隆同款'), normalize_menu_text('🤖一键克隆Bot')):
                 del_message(update.message)
                 send_clonebot_prompt(context, user_id)
             elif normalized_text == normalize_menu_text('👤个人中心'):
