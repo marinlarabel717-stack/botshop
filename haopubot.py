@@ -1736,6 +1736,11 @@ def start(update: Update, context: CallbackContext):
     args = update.message.text.split(maxsplit=2)
     content = args[2] if len(args) == 3 else ""
     if len(args) == 2:
+        start_arg = str(args[1] or '').strip()
+        if start_arg.startswith('buy_'):
+            nowuid = start_arg.replace('buy_', '', 1).strip()
+            send_product_purchase_page(context, user_id, user_id, nowuid)
+            return
         if username is None:
             username = fullname
         else:
@@ -3651,6 +3656,64 @@ def catejflsp(update: Update, context: CallbackContext):
     query.edit_message_text(fstext, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
+def get_product_purchase_payload(nowuid):
+    nowuid = str(nowuid)
+    ejfl_list = ejfl.find_one({'nowuid': nowuid}) or {}
+    if not ejfl_list:
+        return None
+    uid = ejfl_list.get('uid')
+    projectname = str(ejfl_list.get('projectname') or '商品')
+    money = ejfl_list.get('money', 0)
+    stock_count = get_stock_count(nowuid)
+    category_name = ''
+    if uid:
+        fl_list = fenlei.find_one({'uid': uid}) or {}
+        category_name = str(fl_list.get('projectname') or '')
+    return {
+        'nowuid': nowuid,
+        'uid': uid,
+        'projectname': projectname,
+        'money': money,
+        'stock_count': stock_count,
+        'category_name': category_name,
+    }
+
+
+def build_product_purchase_text(projectname, money, stock_count):
+    return f'''
+<b>✅您正在购买:  {projectname}
+
+💰 价格： {money} USDT
+
+📊 库存： {stock_count}
+
+❗️ 未使用过的本店商品的，请先少量购买测试，以免造成不必要的争执！谢谢合作！</b>
+    '''
+
+
+def send_product_purchase_page(context, chat_id, user_id, nowuid):
+    payload = get_product_purchase_payload(nowuid)
+    if not payload:
+        context.bot.send_message(chat_id=chat_id, text='未找到这个商品')
+        return None
+    keyboard = build_product_purchase_keyboard(payload['nowuid'], payload['uid'], user_id, payload['stock_count'])
+    return context.bot.send_message(
+        chat_id=chat_id,
+        text=build_product_purchase_text(payload['projectname'], payload['money'], payload['stock_count']),
+        parse_mode='HTML',
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+def build_product_purchase_deep_link(bot_username, nowuid):
+    bot_username = str(bot_username or '').strip().lstrip('@')
+    nowuid = str(nowuid or '').strip()
+    if not bot_username or not nowuid:
+        return ''
+    start_param = urllib.parse.quote(f'buy_{nowuid}')
+    return f'https://t.me/{bot_username}?start={start_param}'
+
+
 def gmsp(update: Update, context: CallbackContext):
     query = update.callback_query
 
@@ -3661,11 +3724,14 @@ def gmsp(update: Update, context: CallbackContext):
     bot_id = context.bot.id
     user_id = query.from_user.id
 
-    hsl = len(list(hb.find({'nowuid': nowuid, 'state': 0})))
-    ejfl_list = ejfl.find_one({'nowuid': nowuid})
-    projectname = ejfl_list['projectname']
-    money = ejfl_list['money']
-    uid = ejfl_list['uid']
+    payload = get_product_purchase_payload(nowuid)
+    if not payload:
+        query.answer('未找到这个商品', show_alert=bool("true"))
+        return
+    hsl = payload['stock_count']
+    projectname = payload['projectname']
+    money = payload['money']
+    uid = payload['uid']
     #     if hsl == 0:
     #         fstext =f'''
     # 🚫暂无商品，联系客服上架
@@ -3675,15 +3741,7 @@ def gmsp(update: Update, context: CallbackContext):
     #         return
     # else:
     query.answer()
-    fstext = f'''
-<b>✅您正在购买:  {projectname}
-
-💰 价格： {money} USDT
-
-📊 库存： {hsl}
-
-❗️ 未使用过的本店商品的，请先少量购买测试，以免造成不必要的争执！谢谢合作！</b>
-    '''
+    fstext = build_product_purchase_text(projectname, money, hsl)
 
     keyboard = build_product_purchase_keyboard(nowuid, uid, user_id, hsl)
     query.edit_message_text(fstext, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
@@ -4141,13 +4199,16 @@ def build_restock_push_config_keyboard(user_id):
     ]
 
 
-def build_restock_push_broadcast_text(projectname, money, added_count, stock_count):
+def build_restock_push_broadcast_text(category_name, projectname, money, added_count, stock_count):
+    category_name = str(category_name or '未分类')
     return (
-        f'🟢🟢🟢 [emoji:5312028599803460968:🆗]库存更新 🟢🟢🟢\n\n'
-        f'🌍 {projectname}\n\n'
-        f'📦 添加库存 {added_count} 个\n\n'
+        f'{ADMIN_EMOJI_NOTICE}补货通知\n'
+        f'{MOOD_EMOJI_STAR} {MOOD_EMOJI_FAST}OK 库存更新 {MOOD_EMOJI_FAST} {MOOD_EMOJI_STAR}\n\n'
+        f'{ADMIN_EMOJI_GOODS} 商品分类：{category_name}\n\n'
+        f'[emoji:5287684458881756303:🤖] 商品名字：{projectname}\n\n'
+        f'{MOOD_EMOJI_SPARKLE} 添加库存 {added_count} 个\n\n'
         f'[emoji:4965219701572503640:💰] 单价 {money} U\n\n'
-        f'🔴 剩余库存：{stock_count} 个'
+        f'[emoji:5028746137645876535:📈] 剩余库存：{stock_count} 个'
     )
 
 
@@ -4157,19 +4218,21 @@ def notify_restock_broadcast(context, nowuid, added_count=0):
     target = get_restock_push_target()
     if not target:
         return
-    ejfl_list = ejfl.find_one({'nowuid': str(nowuid)}) or {}
-    if not ejfl_list:
+    payload = get_product_purchase_payload(nowuid)
+    if not payload:
         return
-    projectname = str(ejfl_list.get('projectname') or '商品')
-    money = ejfl_list.get('money', 0)
-    stock_count = get_stock_count(nowuid)
-    text = build_restock_push_broadcast_text(projectname, money, added_count, stock_count)
+    projectname = payload['projectname']
+    category_name = payload['category_name']
+    money = payload['money']
+    stock_count = payload['stock_count']
+    text = build_restock_push_broadcast_text(category_name, projectname, money, added_count, stock_count)
     keyboard = None
     bot_username = str(getattr(context.bot, 'username', '') or '').strip()
-    if bot_username:
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton('购买商品（Buy Goods）', url=f'https://t.me/{bot_username}')]])
+    buy_url = build_product_purchase_deep_link(bot_username, nowuid)
+    if buy_url:
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton('[emoji:5451937962629544243:🛍]购买商品（Buy Goods）', url=buy_url)]])
     try:
-        context.bot.send_message(chat_id=target, text=text, reply_markup=keyboard)
+        context.bot.send_message(chat_id=target, text=text, reply_markup=keyboard, parse_mode='HTML')
     except Exception as exc:
         logging.warning('restock broadcast failed for %s: %s', target, exc)
 
