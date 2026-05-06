@@ -1606,15 +1606,15 @@ def start(update: Update, context: CallbackContext):
         else:
             username = f'<a href="https://t.me/{username}">{username}</a>'
         fstext = f'''
-<b>您的ID:</b>  <code>{user_id}</code>
-<b>您的用户名:</b>  {username} 
-<b>注册日期:</b>  {creation_time}
+<b>[emoji:6321041414067068140:👤] 您的ID:</b>  <code>{user_id}</code>
+<b>[emoji:5287684458881756303:🤖] 您的用户名:</b>  {username} 
+<b>[emoji:5217818964612108191:✨] 注册日期:</b>  {creation_time}
 
-<b>总购数量:</b>  {zgsl}
+<b>[emoji:5220064167356025824:⭐️] 总购数量:</b>  {zgsl}
 
-<b>总购金额:</b>  {standard_num(zgje)} USDT
+<b>[emoji:5028746137645876535:📈] 总购金额:</b>  {standard_num(zgje)} USDT
 
-<b>您的余额:</b>  {USDT} USDT
+<b>[emoji:4972482444025398275:👛] 您的余额:</b>  {USDT} USDT
         '''
 
         keyboard = [[InlineKeyboardButton('🛒购买记录', callback_data=f'gmaijilu {user_id}')],
@@ -5954,15 +5954,15 @@ def textkeyboard(update: Update, context: CallbackContext):
                 else:
                     username = f'<a href="https://t.me/{username}">{username}</a>'
                 fstext = f'''
-<b>您的ID:</b>  <code>{user_id}</code>
-<b>您的用户名:</b>  {username} 
-<b>注册日期:</b>  {creation_time}
+<b>[emoji:6321041414067068140:👤] 您的ID:</b>  <code>{user_id}</code>
+<b>[emoji:5287684458881756303:🤖] 您的用户名:</b>  {username} 
+<b>[emoji:5217818964612108191:✨] 注册日期:</b>  {creation_time}
 
-<b>总购数量:</b>  {zgsl}
+<b>[emoji:5220064167356025824:⭐️] 总购数量:</b>  {zgsl}
 
-<b>总购金额:</b>  {standard_num(zgje)} USDT
+<b>[emoji:5028746137645876535:📈] 总购金额:</b>  {standard_num(zgje)} USDT
 
-<b>您的余额:</b>  {USDT} USDT
+<b>[emoji:4972482444025398275:👛] 您的余额:</b>  {USDT} USDT
                 '''
 
                 keyboard = [[InlineKeyboardButton('🛒购买记录', callback_data=f'gmaijilu {user_id}')],
@@ -6340,15 +6340,15 @@ def cha(update: Update, context: CallbackContext):
                 zgje = df_list['zgje']
                 USDT = df_list['USDT']
                 fstext = f'''
-<b>用户ID:</b>  <code>{df_id}</code>
-<b>用户名:</b>  {df_username} 
-<b>注册日期:</b>  {creation_time}
+<b>[emoji:6321041414067068140:👤] 用户ID:</b>  <code>{df_id}</code>
+<b>[emoji:5287684458881756303:🤖] 用户名:</b>  {df_username} 
+<b>[emoji:5217818964612108191:✨] 注册日期:</b>  {creation_time}
 
-<b>总购数量:</b>  {zgsl}
+<b>[emoji:5220064167356025824:⭐️] 总购数量:</b>  {zgsl}
 
-<b>总购金额:</b>  {standard_num(zgje)} USDT
+<b>[emoji:5028746137645876535:📈] 总购金额:</b>  {standard_num(zgje)} USDT
 
-<b>您的余额:</b>  {USDT} USDT
+<b>[emoji:4972482444025398275:👛] 您的余额:</b>  {USDT} USDT
                 '''
                 keyboard = [[InlineKeyboardButton('🛒购买记录', callback_data=f'gmaijilu {df_id}')],
                             [InlineKeyboardButton('关闭', callback_data=f'close {df_id}')]]
