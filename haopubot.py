@@ -52,6 +52,17 @@ def parse_admin_user_ids(value):
 ADMIN_USER_IDS = parse_admin_user_ids(os.getenv('ADMIN_USER_IDS', ''))
 
 
+def parse_env_bool(value, default=True):
+    if value is None:
+        return default
+    value = str(value).strip().lower()
+    if value in ('1', 'true', 'yes', 'y', 'on'):
+        return True
+    if value in ('0', 'false', 'no', 'n', 'off'):
+        return False
+    return default
+
+
 def normalize_menu_text(text):
     if not isinstance(text, str):
         return ''
@@ -70,6 +81,8 @@ OKPAY_BOT_USERNAME = os.getenv('OKPAY_BOT_USERNAME', '')
 OKPAY_CALLBACK_URL = os.getenv('OKPAY_CALLBACK_URL', '')
 OKPAY_CALLBACK_HOST = os.getenv('OKPAY_CALLBACK_HOST', '0.0.0.0')
 OKPAY_CALLBACK_PORT = int(os.getenv('OKPAY_CALLBACK_PORT', '8088'))
+SHOW_TRC20_RECHARGE_ENTRY = parse_env_bool(os.getenv('SHOW_TRC20_RECHARGE_ENTRY', 'true'))
+SHOW_OKPAY_RECHARGE_ENTRY = parse_env_bool(os.getenv('SHOW_OKPAY_RECHARGE_ENTRY', 'true'))
 TRC20_USDT_CONTRACT = os.getenv('TRC20_USDT_CONTRACT', 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t').strip()
 OKPAY_BOT = None
 OKPAY_HTTPD = None
@@ -2682,17 +2695,30 @@ def startupdate(update: Update, context: CallbackContext):
     context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
+def build_recharge_method_keyboard(user_id):
+    keyboard = []
+    if SHOW_TRC20_RECHARGE_ENTRY:
+        keyboard.append([InlineKeyboardButton('[emoji:5080312910866024090:😀] USDT 直充 | 链上到账', callback_data='recharge_trc20')])
+    if SHOW_OKPAY_RECHARGE_ENTRY:
+        keyboard.append([InlineKeyboardButton('[emoji:6321339712430676611:😄] OKPay支付 | 秒速到账', callback_data='recharge_okpay')])
+    keyboard.append([InlineKeyboardButton('取消充值', callback_data=f'close {user_id}')])
+    return keyboard
+
+
+def send_recharge_method_menu(context, user_id):
+    if not SHOW_TRC20_RECHARGE_ENTRY and not SHOW_OKPAY_RECHARGE_ENTRY:
+        context.bot.send_message(chat_id=user_id, text='当前未开启任何充值方式，请联系管理员')
+        return
+    fstext = '请选择支付方式'
+    keyboard = build_recharge_method_keyboard(user_id)
+    context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
 def recharge_menu(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
     query.answer()
-    fstext = '请选择支付方式'
-    keyboard = [
-        [InlineKeyboardButton('[emoji:5080312910866024090:😀] USDT 直充 | 链上到账', callback_data='recharge_trc20')],
-        [InlineKeyboardButton('[emoji:6321339712430676611:😄] OKPay支付 | 秒速到账', callback_data='recharge_okpay')],
-        [InlineKeyboardButton('取消充值', callback_data=f'close {user_id}')]
-    ]
-    context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
+    send_recharge_method_menu(context, user_id)
 
 
 def zdycz(update: Update, context: CallbackContext):
@@ -5077,14 +5103,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                                          reply_markup=InlineKeyboardMarkup(keyboard), disable_web_page_preview=True)
             elif normalized_text == normalize_menu_text('💸我要充值'):
                 del_message(update.message)
-                fstext = '请选择支付方式'
-                keyboard = [
-                    [InlineKeyboardButton('[emoji:5080312910866024090:😀] USDT 直充 | 链上到账', callback_data='recharge_trc20')],
-                    [InlineKeyboardButton('[emoji:6321339712430676611:😄] OKPay支付 | 秒速到账', callback_data='recharge_okpay')],
-                    [InlineKeyboardButton('取消充值', callback_data=f'close {user_id}')]
-                ]
-                context.bot.send_message(chat_id=user_id, text=fstext,
-                                         reply_markup=InlineKeyboardMarkup(keyboard))
+                send_recharge_method_menu(context, user_id)
 
             elif '红包' in text:
                 del_message(update.message)
