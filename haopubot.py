@@ -2688,7 +2688,7 @@ def recharge_menu(update: Update, context: CallbackContext):
     fstext = '请选择支付方式'
     keyboard = [
         [InlineKeyboardButton('😀 USDT 直充 | 链上到账', callback_data='recharge_trc20')],
-        [InlineKeyboardButton('[emoji:6321111297479941978:😄] OKPay支付 | 秒速到账', callback_data='recharge_okpay')],
+        [InlineKeyboardButton('[emoji:6321339712430676611:😄] OKPay支付 | 秒速到账', callback_data='recharge_okpay')],
         [InlineKeyboardButton('取消充值', callback_data=f'close {user_id}')]
     ]
     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
@@ -5079,7 +5079,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                 fstext = '请选择支付方式'
                 keyboard = [
                     [InlineKeyboardButton('😀 USDT 直充 | 链上到账', callback_data='recharge_trc20')],
-                    [InlineKeyboardButton('[emoji:6321111297479941978:😄] OKPay支付 | 秒速到账', callback_data='recharge_okpay')],
+                    [InlineKeyboardButton('[emoji:6321339712430676611:😄] OKPay支付 | 秒速到账', callback_data='recharge_okpay')],
                     [InlineKeyboardButton('取消充值', callback_data=f'close {user_id}')]
                 ]
                 context.bot.send_message(chat_id=user_id, text=fstext,
