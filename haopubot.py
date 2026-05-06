@@ -1476,16 +1476,10 @@ def addhb(update: Update, context: CallbackContext):
                              parse_mode='HTML')
 
 
-def start(update: Update, context: CallbackContext):
-    us = update.effective_user
-    chat_id = update.effective_chat.id
-    user_id = us.id
-    username = us.username
-    fullname = us.full_name.replace('<', '').replace('>', '')
-    lastname = us.last_name
-    botusername = context.bot.username
+def ensure_user_exists(user_id, username, fullname, lastname):
     timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-    if user.find_one({'user_id': user_id}) is None:
+    user_list = user.find_one({'user_id': user_id})
+    if user_list is None:
         try:
             key_id = user.find_one({}, sort=[('count_id', -1)])['count_id']
         except:
@@ -1503,14 +1497,34 @@ def start(update: Update, context: CallbackContext):
                     break
                 except:
                     continue
-    elif user.find_one({'user_id': user_id})['username'] != username:
-        user.update_one({'user_id': user_id}, {'$set': {'username': username}})
-
-    elif user.find_one({'user_id': user_id})['fullname'] != fullname:
-        user.update_one({'user_id': user_id}, {'$set': {'fullname': fullname}})
+        user_list = user.find_one({'user_id': user_id})
+    else:
+        updates = {'last_contact_time': timer}
+        if user_list.get('username') != username:
+            updates['username'] = username
+        if user_list.get('fullname') != fullname:
+            updates['fullname'] = fullname
+        if user_list.get('lastname') != lastname:
+            updates['lastname'] = lastname
+        if updates:
+            user.update_one({'user_id': user_id}, {'$set': updates})
+            user_list = user.find_one({'user_id': user_id})
     if user_id in ADMIN_USER_IDS:
         user.update_one({'user_id': user_id}, {'$set': {'state': '4'}})
-    user_list = user.find_one({"user_id": user_id})
+        user_list = user.find_one({'user_id': user_id})
+    return user_list
+
+
+def start(update: Update, context: CallbackContext):
+    us = update.effective_user
+    chat_id = update.effective_chat.id
+    user_id = us.id
+    username = us.username
+    fullname = us.full_name.replace('<', '').replace('>', '')
+    lastname = us.last_name
+    botusername = context.bot.username
+    timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+    user_list = ensure_user_exists(user_id, username, fullname, lastname)
     state = user_list['state']
     sign = user_list['sign']
     USDT = user_list['USDT']
@@ -4712,7 +4726,7 @@ def textkeyboard(update: Update, context: CallbackContext):
         fullname = chat.full_name.replace('<', '').replace('>', '')
         reply_to_message_id = update.effective_message.message_id
         timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-        user_list = user.find_one({"user_id": user_id})
+        user_list = ensure_user_exists(user_id, username, fullname, lastname)
         creation_time = user_list['creation_time']
         state = user_list['state']
         sign = user_list['sign']
