@@ -840,24 +840,41 @@ class SyncTelegramProxy:
         if callable(attr):
             def wrapped(*args, **kwargs):
                 args, kwargs = self._prepare_dynamic_emoji_args(target_name, args, kwargs)
-                try:
-                    result = attr(*args, **kwargs)
-                    if inspect.isawaitable(result):
-                        result = asyncio.run_coroutine_threadsafe(result, self._get_loop()).result()
-                    return wrap_sync_telegram_value(result, self._loop_ref)
-                except BadRequest as exc:
-                    exc_text = str(exc)
-                    if target_name in ('answer', 'answer_callback_query') and (
-                        'Query is too old' in exc_text or 'query id is invalid' in exc_text
-                    ):
+                transient_methods = {
+                    'send_message', 'send_photo', 'send_document', 'send_animation', 'send_media_group',
+                    'edit_message_text', 'edit_message_caption', 'edit_message_reply_markup',
+                    'answer', 'answer_callback_query', 'delete_message'
+                }
+                last_exc = None
+                max_attempts = 2 if target_name in transient_methods else 1
+                for attempt in range(max_attempts):
+                    try:
+                        result = attr(*args, **kwargs)
+                        if inspect.isawaitable(result):
+                            result = asyncio.run_coroutine_threadsafe(result, self._get_loop()).result()
+                        return wrap_sync_telegram_value(result, self._loop_ref)
+                    except BadRequest as exc:
+                        exc_text = str(exc)
+                        if target_name in ('answer', 'answer_callback_query') and (
+                            'Query is too old' in exc_text or 'query id is invalid' in exc_text
+                        ):
+                            return None
+                        if 'Message is not modified' in exc_text:
+                            return None
+                        raise
+                    except Forbidden as exc:
+                        if 'bot was blocked by the user' in str(exc):
+                            return None
+                        raise
+                    except (TimedOut, NetworkError) as exc:
+                        last_exc = exc
+                        if attempt + 1 < max_attempts:
+                            time.sleep(1)
+                            continue
+                        logging.warning('Telegram transient error on %s: %s', target_name, exc)
                         return None
-                    if 'Message is not modified' in exc_text:
-                        return None
-                    raise
-                except Forbidden as exc:
-                    if 'bot was blocked by the user' in str(exc):
-                        return None
-                    raise
+                if last_exc is not None:
+                    raise last_exc
 
             return wrapped
 
