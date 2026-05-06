@@ -3123,7 +3123,7 @@ def is_valid_trc20_address(address):
     return re.fullmatch(r'T[1-9A-HJ-NP-Za-km-z]{33}', address.strip()) is not None
 
 
-def format_usdt_amount(value, places='0.001'):
+def format_usdt_amount(value, places='0.0001'):
     amount = Decimal(str(value)).quantize(Decimal(places))
     text = format(amount, 'f')
     if '.' in text:
@@ -3132,17 +3132,17 @@ def format_usdt_amount(value, places='0.001'):
 
 
 def allocate_trc20_pay_amount(base_amount, user_id):
-    base = Decimal(str(base_amount)).quantize(Decimal('0.001'))
+    base = Decimal(str(base_amount)).quantize(Decimal('0.0001'))
     pending_amounts = set()
     for row in topup.find({'type': 'trc20', 'state': {'$ne': 1}}, {'pay_amount_text': 1}):
         pay_amount_text = row.get('pay_amount_text')
         if pay_amount_text:
             pending_amounts.add(str(pay_amount_text))
 
-    start = (int(user_id) % 900) + 1
-    for offset in range(900):
-        suffix = ((start + offset - 1) % 900) + 1
-        pay_amount = (base + (Decimal(suffix) / Decimal('1000'))).quantize(Decimal('0.001'))
+    start = (int(user_id) % 9000) + 1
+    for offset in range(9000):
+        suffix = ((start + offset - 1) % 9000) + 1
+        pay_amount = (base + (Decimal(suffix) / Decimal('10000'))).quantize(Decimal('0.0001'))
         pay_amount_text = format_usdt_amount(pay_amount)
         if pay_amount_text not in pending_amounts:
             return pay_amount, pay_amount_text
@@ -3359,7 +3359,7 @@ def create_trc20_deposit_order(context, user_id, amount):
         context.bot.send_message(chat_id=user_id, text='TRC20充值地址未正确配置，请先联系管理员设置有效地址')
         return
 
-    amount = Decimal(str(amount)).quantize(Decimal('0.001'))
+    amount = Decimal(str(amount)).quantize(Decimal('0.0001'))
     if amount <= 0:
         context.bot.send_message(chat_id=user_id, text='充值金额必须大于0')
         return
@@ -3370,22 +3370,25 @@ def create_trc20_deposit_order(context, user_id, amount):
         context.bot.send_message(chat_id=user_id, text=f'创建TRC20充值订单失败：{exc}')
         return
 
-    request_amount_text = format_usdt_amount(amount)
-    timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+    created_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+    deadline_time = (datetime.datetime.strptime(created_time, '%Y-%m-%d %H:%M:%S') + timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M:%S')
     bianhao = 'TRC20' + time.strftime('%Y%m%d%H%M%S', time.localtime()) + str(user_id)
     topup.delete_many({'user_id': user_id, 'state': {'$ne': 1}})
 
     caption = f'''
-<b>TRC20充值订单已创建</b>
+<b>😃 充值详情</b>
 
-订单号：<code>{bianhao}</code>
-收款地址：<code>{trc20}</code>
-充值基准金额：<code>{request_amount_text} USDT</code>
-本单应付金额：<code>{pay_amount_text} USDT</code>
+✅ 唯一收款地址：<code>{trc20}</code>
+（推荐使用扫码转账更加安全 点击上方地址即可快速复制粘贴）
 
-请使用 <b>TRC20-USDT</b> 向上方地址转账，并严格按订单金额精确支付到小数点后三位。
-扫码默认识别收款地址，金额请按上面的订单金额手动填写。
-系统检测到账后会自动加余额，本订单 10 分钟内有效。
+💰 实际支付金额：<code>{pay_amount_text} USDT</code>
+（➡️ 点击上方金额可快速复制粘贴）
+
+🔋充值订单创建时间：{created_time}
+🪫转账最后截止时间：{deadline_time}
+
+❗️请一定按照金额后面小数点转账，否则无法自动到账
+❗️付款前请再次核对地址与金额，避免转错
     '''
     keyboard = [
         [InlineKeyboardButton('❌取消订单', callback_data=f'qxdingdan {user_id}')]
@@ -3411,7 +3414,7 @@ def create_trc20_deposit_order(context, user_id, amount):
         'requested_amount': float(amount),
         'pay_amount': float(pay_amount),
         'pay_amount_text': pay_amount_text,
-        'timer': timer,
+        'timer': created_time,
         'message_id': message_id.message_id,
         'message_kind': 'photo',
         'type': 'trc20',
@@ -5045,7 +5048,7 @@ def jiexi(context: CallbackContext):
         quant = i['quant']
         from_address = i['from_address']
         quant123 = Decimal(str(quant)) / Decimal('1000000')
-        today_money = abs(quant123.quantize(Decimal('0.001')))
+        today_money = abs(quant123.quantize(Decimal('0.0001')))
         pay_amount_text = format_usdt_amount(today_money)
         dj_list = topup.find_one(
             {'type': 'trc20', 'state': {'$ne': 1}, 'to_address': trc20, 'pay_amount_text': pay_amount_text},
