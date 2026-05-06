@@ -173,21 +173,7 @@ def user_data(key_id, user_id, username, fullname, lastname, state, creation_tim
 
 
 if shangtext.find_one({}) == None:
-    fstext = f'''
-欢迎使用机器人
-
-请先由管理员在后台完成以下配置：
-
-1. 欢迎语 / 联系方式
-2. 菜单按钮
-3. 商品分类与商品内容
-4. TRC20 充值地址
-5. 其他支付配置
-
-当前是全新空白数据，不继承原机器人的数据库和联系方式。
-
-⚙️ /start  ⬅️ 点击命令打开菜单
-    '''
+    fstext = ''
     shang_text('欢迎语',fstext)
     shang_text('欢迎语样式',b'\x80\x03]q\x00.')
     shang_text('充值地址','')
