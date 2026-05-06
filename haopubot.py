@@ -5450,9 +5450,9 @@ def textkeyboard(update: Update, context: CallbackContext):
                     clone_text = f'''
 ✅ 一键克隆成功
 
-机器人ID：<code>{result['bot_id']}</code>
-管理员：<code>{user_id}</code>
-新 Bot 已自动启动。
+机器人：@{result['bot_username']}
+Bot ID：{result['bot_id']}
+管理员：{user_id}
                     '''
                     context.bot.send_message(chat_id=user_id, text=clone_text, parse_mode='HTML')
                     send_clone_success_notice(context, user_id, result, fee_paid=(float(fee) if fee > 0 and not fee_exempt else 0))
