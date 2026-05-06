@@ -3184,7 +3184,6 @@ def cloneinfo(update: Update, context: CallbackContext):
 <b>[emoji:5287684458881756303:🤖] 克隆详情</b>
 
 机器人：@{row.get('bot_username')}
-机器人ID：<code>{row.get('bot_id')}</code>
 管理员：<code>{requester_user_id}</code>
 用户：{requester_name} @{requester_username}
 支付金额：<code>{format_clone_price(row.get('fee_paid', 0))} USDT</code>
@@ -3220,7 +3219,9 @@ def clonedelete(update: Update, context: CallbackContext):
         context.bot.send_message(chat_id=user_id, text='只有源机器人管理员可以删除克隆实例')
         return
     bot_id = str(query.data.replace('clonedelete ', '', 1)).strip()
-    waiting_text = f'[emoji:5220195537520711716:⚡️] 正在删除克隆实例，请稍候…\n\n机器人ID：<code>{bot_id}</code>'
+    preview_record = clone_instances.find_one({'bot_id': bot_id, 'state': {'$ne': 'deleted'}}) or {}
+    bot_username = str(preview_record.get('bot_username') or '').strip()
+    waiting_text = f'[emoji:5220195537520711716:⚡️] 正在删除克隆实例，请稍候…\n\n[emoji:5287684458881756303:🤖] 机器人：@{bot_username}' if bot_username else f'[emoji:5220195537520711716:⚡️] 正在删除克隆实例，请稍候…\n\n[emoji:5287684458881756303:🤖] 机器人：<code>{bot_id}</code>'
     try:
         query.edit_message_text(text=waiting_text, parse_mode='HTML')
     except Exception:
@@ -3235,7 +3236,9 @@ def clonedelete(update: Update, context: CallbackContext):
         return
 
     requester_user_id = record.get('requester_user_id')
-    text = f'[emoji:5312028599803460968:🆗] 已删除克隆实例\n\n机器人ID：{record.get("bot_id")}\n管理员：{requester_user_id}'
+    bot_username = str(record.get('bot_username') or bot_username or '').strip()
+    display_bot = f'@{bot_username}' if bot_username else str(record.get("bot_id"))
+    text = f'[emoji:5312028599803460968:🆗] 已删除克隆实例\n\n[emoji:5287684458881756303:🤖] 机器人：{display_bot}\n[emoji:6321041414067068140:👤] 管理员：{requester_user_id}'
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}返回克隆列表', callback_data='clonelist 0')]])
     try:
         query.edit_message_text(text=text, reply_markup=keyboard)
@@ -3247,7 +3250,7 @@ def clonedelete(update: Update, context: CallbackContext):
 
     notify_source_admins(
         context,
-        f'<b>{ADMIN_EMOJI_CLOSE}克隆实例已删除</b>\n\n[emoji:5287684458881756303:🤖] 机器人ID：<code>{record.get("bot_id")}</code>\n[emoji:6321041414067068140:👤] 管理员：<code>{requester_user_id}</code>\n[emoji:6321041414067068140:👤] 删除人：<code>{user_id}</code>'
+        f'<b>{ADMIN_EMOJI_CLOSE}克隆实例已删除</b>\n\n[emoji:5287684458881756303:🤖] 机器人：{display_bot}\n[emoji:6321041414067068140:👤] 管理员：<code>{requester_user_id}</code>\n[emoji:6321041414067068140:👤] 删除人：<code>{user_id}</code>'
     )
 
 
@@ -3921,7 +3924,7 @@ def build_clone_list_keyboard(user_id, page=0, page_size=8):
         bot_id = row.get('bot_id')
         bot_username = str(row.get('bot_username') or f'bot{bot_id}')
         requester_user_id = row.get('requester_user_id')
-        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}@{bot_username} | {bot_id}', callback_data=f'cloneinfo {bot_id}')])
+        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}@{bot_username}', callback_data=f'cloneinfo {bot_id}')])
         if requester_user_id:
             keyboard[-1].append(InlineKeyboardButton(f'{ADMIN_EMOJI_USERLIST}{requester_user_id}', callback_data=f'cloneinfo {bot_id}'))
 
@@ -3949,7 +3952,6 @@ def send_clone_success_notice(context, requester_user_id, result, fee_paid='0'):
 
 克隆用户：<a href="tg://user?id={requester_user_id}">{requester_name}</a> @{requester_username}
 机器人：@{result['bot_username']}
-机器人ID：<code>{result['bot_id']}</code>
 管理员：<code>{requester_user_id}</code>
 支付金额：<code>{fee_text} USDT</code>
 
@@ -5495,7 +5497,6 @@ def textkeyboard(update: Update, context: CallbackContext):
 [emoji:5312028599803460968:🆗] 一键克隆成功
 
 [emoji:5287684458881756303:🤖] 机器人：@{result['bot_username']}
-[emoji:5220064167356025824:⭐️] Bot ID：{result['bot_id']}
 [emoji:6321041414067068140:👤] 管理员：{user_id}
                     '''
                     context.bot.send_message(chat_id=user_id, text=clone_text, parse_mode='HTML')
