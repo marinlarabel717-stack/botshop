@@ -3123,7 +3123,7 @@ def clonelist(update: Update, context: CallbackContext):
     keyboard, total = build_clone_list_keyboard(user_id, page)
     price_text = format_clone_price()
     text = f'''
-<b>🤖 克隆列表</b>
+<b>[emoji:5287684458881756303:🤖] 克隆列表</b>
 
 当前付费价格：<code>{price_text} USDT</code>
 活跃克隆数：<code>{total}</code>
@@ -3156,7 +3156,7 @@ def cloneinfo(update: Update, context: CallbackContext):
     requester_name = str(row.get('requester_name') or requester_user_id or '')
     requester_username = str(row.get('requester_username') or '').strip()
     text = f'''
-<b>🤖 克隆详情</b>
+<b>[emoji:5287684458881756303:🤖] 克隆详情</b>
 
 机器人：@{row.get('bot_username')}
 机器人ID：<code>{row.get('bot_id')}</code>
@@ -5402,7 +5402,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                     set_text_config('一键克隆价格', format(price, 'f'))
                     user.update_one({'user_id': user_id}, {'$set': {'sign': 0}})
                     keyboard, total = build_clone_list_keyboard(user_id, 0)
-                    text = f'<b>🤖 克隆列表</b>\n\n当前付费价格：<code>{format_clone_price(price)} USDT</code>\n活跃克隆数：<code>{total}</code>'
+                    text = f'<b>[emoji:5287684458881756303:🤖] 克隆列表</b>\n\n当前付费价格：<code>{format_clone_price(price)} USDT</code>\n活跃克隆数：<code>{total}</code>'
                     context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
                 elif sign == 'clonebottoken':
                     if not can_use_clonebot(state):
