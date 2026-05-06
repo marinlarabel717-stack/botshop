@@ -4799,6 +4799,7 @@ def start_okpay_callback_server(bot):
 async def on_post_init(application):
     global APP_EVENT_LOOP
     APP_EVENT_LOOP = asyncio.get_running_loop()
+    patch_bot_dynamic_emoji(application.bot)
     start_okpay_callback_server(SyncTelegramProxy(application.bot, lambda: APP_EVENT_LOOP))
 
 
