@@ -3266,38 +3266,30 @@ def clonedelete(update: Update, context: CallbackContext):
         return
     bot_id = str(query.data.replace('clonedelete ', '', 1)).strip()
     preview_record = clone_instances.find_one({'bot_id': bot_id, 'state': {'$ne': 'deleted'}}) or {}
+    if not preview_record:
+        context.bot.send_message(chat_id=user_id, text='未找到这个克隆实例，可能已经删除了')
+        return
+    if str(preview_record.get('state') or '') == 'deleting':
+        context.bot.send_message(chat_id=user_id, text='这个克隆实例正在删除中，请稍候查看结果')
+        return
     bot_username = str(preview_record.get('bot_username') or '').strip()
+    claimed = clone_instances.update_one(
+        {'_id': preview_record['_id'], 'state': {'$nin': ['deleted', 'deleting']}},
+        {'$set': {'state': 'deleting', 'deleting_at': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}}
+    )
+    if claimed.modified_count == 0:
+        context.bot.send_message(chat_id=user_id, text='这个克隆实例正在删除中，请稍候查看结果')
+        return
     waiting_text = f'[emoji:5220195537520711716:⚡️] 正在删除克隆实例，请稍候…\n\n[emoji:5287684458881756303:🤖] 机器人：@{bot_username}' if bot_username else f'[emoji:5220195537520711716:⚡️] 正在删除克隆实例，请稍候…\n\n[emoji:5287684458881756303:🤖] 机器人：<code>{bot_id}</code>'
     try:
         query.edit_message_text(text=waiting_text, parse_mode='HTML')
     except Exception:
         pass
-    try:
-        record = remove_clone_instance(bot_id, deleted_by=user_id, source_bot_id=context.bot.id, source_db_name=MONGO_DB_NAME)
-    except Exception as exc:
-        try:
-            context.bot.send_message(chat_id=user_id, text=f'删除克隆失败：{exc}')
-        except Exception:
-            pass
-        return
-
-    requester_user_id = record.get('requester_user_id')
-    bot_username = str(record.get('bot_username') or bot_username or '').strip()
-    display_bot = f'@{bot_username}' if bot_username else str(record.get("bot_id"))
-    text = f'[emoji:5312028599803460968:🆗] 已删除克隆实例\n\n[emoji:5287684458881756303:🤖] 机器人：{display_bot}\n[emoji:6321041414067068140:👤] 管理员：{requester_user_id}'
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}返回克隆列表', callback_data='clonelist 0')]])
-    try:
-        query.edit_message_text(text=text, reply_markup=keyboard)
-    except Exception:
-        try:
-            context.bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
-        except Exception:
-            pass
-
-    notify_source_admins(
-        context,
-        f'<b>{ADMIN_EMOJI_CLOSE}克隆实例已删除</b>\n\n[emoji:5287684458881756303:🤖] 机器人：{display_bot}\n[emoji:6321041414067068140:👤] 管理员：<code>{requester_user_id}</code>\n[emoji:6321041414067068140:👤] 删除人：<code>{user_id}</code>'
-    )
+    threading.Thread(
+        target=finish_clone_delete_in_background,
+        args=(context, user_id, bot_id, context.bot.id, MONGO_DB_NAME),
+        daemon=True
+    ).start()
 
 
 def setcloneprice(update: Update, context: CallbackContext):
@@ -4058,6 +4050,36 @@ def remove_clone_instance(bot_id, deleted_by=None, source_bot_id=None, source_db
     timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
     clone_instances.update_one({'_id': record['_id']}, {'$set': {'state': 'deleted', 'deleted_at': timer, 'deleted_by': deleted_by}})
     return record
+
+
+def finish_clone_delete_in_background(context, user_id, bot_id, source_bot_id=None, source_db_name=None):
+    try:
+        record = remove_clone_instance(bot_id, deleted_by=user_id, source_bot_id=source_bot_id, source_db_name=source_db_name)
+    except Exception as exc:
+        clone_instances.update_one(
+            {'bot_id': str(bot_id), 'state': 'deleting'},
+            {'$set': {'state': 'active'}, '$unset': {'deleting_at': ''}}
+        )
+        try:
+            context.bot.send_message(chat_id=user_id, text=f'删除克隆失败：{exc}')
+        except Exception:
+            pass
+        return
+
+    requester_user_id = record.get('requester_user_id')
+    bot_username = str(record.get('bot_username') or '').strip()
+    display_bot = f'@{bot_username}' if bot_username else str(record.get("bot_id"))
+    text = f'[emoji:5312028599803460968:🆗] 已删除克隆实例\n\n[emoji:5287684458881756303:🤖] 机器人：{display_bot}\n[emoji:6321041414067068140:👤] 管理员：{requester_user_id}'
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}返回克隆列表', callback_data='clonelist 0')]])
+    try:
+        context.bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
+    except Exception:
+        pass
+
+    notify_source_admins(
+        context,
+        f'<b>{ADMIN_EMOJI_CLOSE}克隆实例已删除</b>\n\n[emoji:5287684458881756303:🤖] 机器人：{display_bot}\n[emoji:6321041414067068140:👤] 管理员：<code>{requester_user_id}</code>\n[emoji:6321041414067068140:👤] 删除人：<code>{user_id}</code>'
+    )
 
 
 def get_okpay_shop_id():
