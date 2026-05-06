@@ -47,6 +47,7 @@ ADMIN_EMOJI_OKPAY = '[emoji:5445353829304387411:💳]'
 ADMIN_EMOJI_GOODS = '[emoji:5312361253610475399:🛒]'
 ADMIN_EMOJI_WELCOME = '[emoji:5458382591121964689:✍️]'
 ADMIN_EMOJI_MENU = '[emoji:5341715473882955310:⚙️]'
+ADMIN_EMOJI_NOTICE = '[emoji:5301246586918024418:⚠️]'
 ADMIN_EMOJI_CLONE = '#g [emoji:5287684458881756303:🤖]'
 ADMIN_EMOJI_CLOSE = '[emoji:5210952531676504517:❌]'
 
@@ -398,6 +399,10 @@ def ensure_clone_indexes():
         clone_instances.create_index([('bot_id', 1)], name='uniq_clone_bot_id', unique=True)
     except Exception:
         pass
+    try:
+        clone_instances.create_index([('requester_user_id', 1), ('created_at', -1)], name='clone_requester_created')
+    except Exception:
+        pass
 
 
 def ensure_restock_notice_indexes():
@@ -407,10 +412,6 @@ def ensure_restock_notice_indexes():
         pass
     try:
         restock_notices.create_index([('nowuid', 1), ('created_at', -1)], name='restock_notice_nowuid_created')
-    except Exception:
-        pass
-    try:
-        clone_instances.create_index([('requester_user_id', 1), ('created_at', -1)], name='clone_requester_created')
     except Exception:
         pass
 
@@ -747,6 +748,7 @@ def should_preserve_sign_on_menu_match(sign):
         'setkeyname ',
         'settuwenset ',
         'setkeyboard ',
+        'setrestocktarget',
         'update_sysm ',
         'update_wbts ',
         'settrc20',
@@ -1784,7 +1786,8 @@ def start(update: Update, context: CallbackContext):
              InlineKeyboardButton(f'{ADMIN_EMOJI_OKPAY}OKPay配置', callback_data='okpaycfg')],
             [InlineKeyboardButton(f'{ADMIN_EMOJI_GOODS}商品管理', callback_data='spgli'),
              InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}欢迎语修改', callback_data='startupdate')],
-            [InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}菜单按钮', callback_data='addzdykey')],
+            [InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}菜单按钮', callback_data='addzdykey'),
+             InlineKeyboardButton(f'{ADMIN_EMOJI_NOTICE}补货通知', callback_data='restockpushcfg')],
         ]
         if BOT_CLONE_ENABLED:
             keyboard[-1].append(InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}一键克隆同款', callback_data='clonebot'))
@@ -2045,7 +2048,8 @@ def backstart(update: Update, context: CallbackContext):
          InlineKeyboardButton(f'{ADMIN_EMOJI_OKPAY}OKPay配置', callback_data='okpaycfg')],
         [InlineKeyboardButton(f'{ADMIN_EMOJI_GOODS}商品管理', callback_data='spgli'),
          InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}欢迎语修改', callback_data='startupdate')],
-        [InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}菜单按钮', callback_data='addzdykey')],
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}菜单按钮', callback_data='addzdykey'),
+         InlineKeyboardButton(f'{ADMIN_EMOJI_NOTICE}补货通知', callback_data='restockpushcfg')],
     ]
     if BOT_CLONE_ENABLED:
         keyboard[-1].append(InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}一键克隆同款', callback_data='clonebot'))
@@ -3088,6 +3092,31 @@ def settrc20(update: Update, context: CallbackContext):
     context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
+def restockpushcfg(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
+    context.bot.send_message(
+        chat_id=user_id,
+        text=build_restock_push_config_text(),
+        parse_mode='HTML',
+        reply_markup=InlineKeyboardMarkup(build_restock_push_config_keyboard(user_id))
+    )
+
+
+def setrestocktarget(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
+    user.update_one({'user_id': user_id}, {'$set': {'sign': 'setrestocktarget'}})
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
+    context.bot.send_message(
+        chat_id=user_id,
+        text='请发送补货通知要推送到的群组/频道\n\n例如：@yourchannel 或 -1001234567890',
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
 def build_okpay_config_text():
     shop_id = get_okpay_shop_id()
     token = get_okpay_shop_token()
@@ -4092,6 +4121,62 @@ def set_text_config(projectname, value):
     shangtext.update_one({'projectname': projectname}, {'$set': {'text': value}}, upsert=True)
 
 
+def get_restock_push_target():
+    return str(get_text_config('补货通知群组', '') or '').strip()
+
+
+def build_restock_push_config_text():
+    target = get_restock_push_target()
+    target_text = target or '未配置'
+    return (
+        f'{ADMIN_EMOJI_NOTICE}补货通知推送\n\n'
+        f'{ADMIN_EMOJI_GOODS} 当前目标：<code>{target_text}</code>\n\n'
+        '支持填写群组/频道 @username 或 chat_id\n'
+        '例如：<code>@yourchannel</code> 或 <code>-1001234567890</code>'
+    )
+
+
+def build_restock_push_config_keyboard(user_id):
+    return [
+        [InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}设置群组/频道', callback_data='setrestocktarget')],
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}'),
+         InlineKeyboardButton('⬅️返回主界面', callback_data='backstart')]
+    ]
+
+
+def build_restock_push_broadcast_text(projectname, money, added_count, stock_count):
+    return (
+        f'🟢🟢🟢 [emoji:5312028599803460968:🆗]库存更新 🟢🟢🟢\n\n'
+        f'🌍 {projectname}\n\n'
+        f'📦 添加库存 {added_count} 个\n\n'
+        f'[emoji:4965219701572503640:💰] 单价 {money} U\n\n'
+        f'🔴 剩余库存：{stock_count} 个'
+    )
+
+
+def notify_restock_broadcast(context, nowuid, added_count=0):
+    if int(added_count or 0) <= 0:
+        return
+    target = get_restock_push_target()
+    if not target:
+        return
+    ejfl_list = ejfl.find_one({'nowuid': str(nowuid)}) or {}
+    if not ejfl_list:
+        return
+    projectname = str(ejfl_list.get('projectname') or '商品')
+    money = ejfl_list.get('money', 0)
+    stock_count = get_stock_count(nowuid)
+    text = build_restock_push_broadcast_text(projectname, money, added_count, stock_count)
+    keyboard = None
+    bot_username = str(getattr(context.bot, 'username', '') or '').strip()
+    if bot_username:
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton('购买商品（Buy Goods）', url=f'https://t.me/{bot_username}')]])
+    try:
+        context.bot.send_message(chat_id=target, text=text, reply_markup=keyboard)
+    except Exception as exc:
+        logging.warning('restock broadcast failed for %s: %s', target, exc)
+
+
 def get_welcome_content(default_text='欢迎使用机器人'):
     text = str(get_text_config('欢迎语', default_text) or '').strip()
     if not text:
@@ -4178,6 +4263,7 @@ def notify_restock_subscribers(context, nowuid):
 
 
 def notify_restock_if_needed(context, nowuid, previous_stock, added_count=0):
+    notify_restock_broadcast(context, nowuid, added_count)
     if added_count <= 0:
         return
     if int(previous_stock or 0) > 0:
@@ -5762,6 +5848,17 @@ def textkeyboard(update: Update, context: CallbackContext):
                         img.save(f)
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                     context.bot.send_message(chat_id=user_id, text=f'当前充值地址为: {text}', parse_mode='HTML')
+                elif sign == 'setrestocktarget':
+                    target = text.strip()
+                    if not target:
+                        keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
+                        context.bot.send_message(chat_id=user_id, text='请输入群组/频道 @username 或 chat_id',
+                                                 reply_markup=InlineKeyboardMarkup(keyboard))
+                        return
+                    set_text_config('补货通知群组', target)
+                    user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                    context.bot.send_message(chat_id=user_id, text=build_restock_push_config_text(), parse_mode='HTML',
+                                             reply_markup=InlineKeyboardMarkup(build_restock_push_config_keyboard(user_id)))
                 elif sign == 'setokpayid':
                     set_text_config('OKPay商户ID', text.strip())
                     if refresh_okpay_entry_status():
@@ -6767,7 +6864,7 @@ def main():
         application.add_handler(CommandHandler(command_name, sync_handler(callback)))
 
     callback_handlers = [
-        ('startupdate', startupdate), ('clonebot', clonebot), ('clonepay', clonepay), ('clonelist', clonelist), ('cloneinfo ', cloneinfo), ('clonerestart ', clonerestart), ('clonedelete ', clonedelete), ('setcloneprice', setcloneprice), ('restocknotice ', restocknotice), ('okpaycfg', okpaycfg), ('setokpayid', setokpayid), ('setokpaytoken', setokpaytoken), ('setokpayname', setokpayname), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
+        ('startupdate', startupdate), ('clonebot', clonebot), ('clonepay', clonepay), ('clonelist', clonelist), ('cloneinfo ', cloneinfo), ('clonerestart ', clonerestart), ('clonedelete ', clonedelete), ('setcloneprice', setcloneprice), ('restocknotice ', restocknotice), ('restockpushcfg', restockpushcfg), ('setrestocktarget', setrestocktarget), ('okpaycfg', okpaycfg), ('setokpayid', setokpayid), ('setokpaytoken', setokpaytoken), ('setokpayname', setokpayname), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
         ('backstart', backstart), ('paixurow', paixurow), ('addzdykey', addzdykey),
         ('qrscdelrow ', qrscdelrow), ('addhangkey ', addhangkey), ('delhangkey ', delhangkey),
         ('qrdelliekey ', qrdelliekey), ('keyxq ', keyxq), ('setkeyname ', setkeyname),
