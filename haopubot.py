@@ -4514,13 +4514,13 @@ def textkeyboard(update: Update, context: CallbackContext):
                             return
 
                         fstext = f'''
-<b>🛍️ 您正在购买：{projectname}
+<b>🛍您正在购买：{projectname}
 
 📈 数量：{gmsl}
 
-💰 价格：{zxymoney}
+💰价格：{zxymoney}
 
-👛 您的余额：{USDT}</b>
+👛您的余额：{USDT}</b>
                         '''
                         keyboard = [
                             [InlineKeyboardButton('❌取消交易', callback_data=f'close {user_id}'),
