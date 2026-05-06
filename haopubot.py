@@ -259,6 +259,7 @@ OKPAY_CALLBACK_HOST = os.getenv('OKPAY_CALLBACK_HOST', '0.0.0.0')
 OKPAY_CALLBACK_PORT = int(os.getenv('OKPAY_CALLBACK_PORT', '8088'))
 SHOW_TRC20_RECHARGE_ENTRY = parse_env_bool(os.getenv('SHOW_TRC20_RECHARGE_ENTRY', 'true'))
 SHOW_OKPAY_RECHARGE_ENTRY = parse_env_bool(os.getenv('SHOW_OKPAY_RECHARGE_ENTRY', 'true'))
+BOT_CLONE_ENABLED = parse_env_bool(os.getenv('BOT_CLONE_ENABLED', 'true'))
 ALLOW_PUBLIC_BOT_CLONE = parse_env_bool(os.getenv('ALLOW_PUBLIC_BOT_CLONE', 'true'))
 BOT_CLONE_ROOT = os.getenv('BOT_CLONE_ROOT', '/www/wwwroot/botshop-clones').strip() or '/www/wwwroot/botshop-clones'
 BOT_CLONE_REPO_URL = os.getenv('BOT_CLONE_REPO_URL', '').strip()
@@ -1557,7 +1558,7 @@ def start(update: Update, context: CallbackContext):
         first = i['first']
         keyboard[i["Row"] - 1].append(KeyboardButton(projectname))
     keyboard = [row for row in keyboard if row]
-    if ALLOW_PUBLIC_BOT_CLONE:
+    if BOT_CLONE_ENABLED and ALLOW_PUBLIC_BOT_CLONE:
         keyboard.append([KeyboardButton('🤖一键克隆Bot')])
     entities = safe_pickle_loads(hyyys)
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False) if keyboard else None
@@ -1570,10 +1571,11 @@ def start(update: Update, context: CallbackContext):
              InlineKeyboardButton('OKPay配置', callback_data='okpaycfg')],
             [InlineKeyboardButton('商品管理', callback_data='spgli'),
              InlineKeyboardButton('欢迎语修改', callback_data='startupdate')],
-            [InlineKeyboardButton('菜单按钮', callback_data='addzdykey'),
-             InlineKeyboardButton('一键克隆Bot', callback_data='clonebot')],
-            [InlineKeyboardButton('关闭', callback_data=f'close {user_id}')]
+            [InlineKeyboardButton('菜单按钮', callback_data='addzdykey')],
         ]
+        if BOT_CLONE_ENABLED:
+            keyboard[-1].append(InlineKeyboardButton('一键克隆Bot', callback_data='clonebot'))
+        keyboard.append([InlineKeyboardButton('关闭', callback_data=f'close {user_id}')])
         jqrsyrs = len(list(user.find({})))
         numu = 0
         for i in list(user.find({"USDT": {"$gt": 0}})):
@@ -1824,10 +1826,11 @@ def backstart(update: Update, context: CallbackContext):
          InlineKeyboardButton('OKPay配置', callback_data='okpaycfg')],
         [InlineKeyboardButton('商品管理', callback_data='spgli'),
          InlineKeyboardButton('欢迎语修改', callback_data='startupdate')],
-        [InlineKeyboardButton('菜单按钮', callback_data='addzdykey'),
-         InlineKeyboardButton('一键克隆Bot', callback_data='clonebot')],
-        [InlineKeyboardButton('关闭', callback_data=f'close {user_id}')]
+        [InlineKeyboardButton('菜单按钮', callback_data='addzdykey')],
     ]
+    if BOT_CLONE_ENABLED:
+        keyboard[-1].append(InlineKeyboardButton('一键克隆Bot', callback_data='clonebot'))
+    keyboard.append([InlineKeyboardButton('关闭', callback_data=f'close {user_id}')])
     jqrsyrs = len(list(user.find({})))
 
     numu = 0
@@ -2946,6 +2949,8 @@ def setokpayname(update: Update, context: CallbackContext):
 
 
 def can_use_clonebot(state):
+    if not BOT_CLONE_ENABLED:
+        return False
     return ALLOW_PUBLIC_BOT_CLONE or str(state) == '4'
 
 
