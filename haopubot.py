@@ -2687,7 +2687,7 @@ def recharge_menu(update: Update, context: CallbackContext):
     query.answer()
     fstext = '请选择支付方式'
     keyboard = [
-        [InlineKeyboardButton('[emoji:6321339712430676611:😄] USDT 直充 | 链上到账', callback_data='recharge_trc20')],
+        [InlineKeyboardButton('[emoji:5080312910866024090:😀] USDT 直充 | 链上到账', callback_data='recharge_trc20')],
         [InlineKeyboardButton('[emoji:6321111297479941978:😄] OKPay支付 | 秒速到账', callback_data='recharge_okpay')],
         [InlineKeyboardButton('取消充值', callback_data=f'close {user_id}')]
     ]
