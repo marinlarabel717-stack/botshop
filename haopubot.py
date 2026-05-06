@@ -251,6 +251,7 @@ OKPAY_CALLBACK_HOST = os.getenv('OKPAY_CALLBACK_HOST', '0.0.0.0')
 OKPAY_CALLBACK_PORT = int(os.getenv('OKPAY_CALLBACK_PORT', '8088'))
 SHOW_TRC20_RECHARGE_ENTRY = parse_env_bool(os.getenv('SHOW_TRC20_RECHARGE_ENTRY', 'true'))
 SHOW_OKPAY_RECHARGE_ENTRY = parse_env_bool(os.getenv('SHOW_OKPAY_RECHARGE_ENTRY', 'true'))
+ALLOW_PUBLIC_BOT_CLONE = parse_env_bool(os.getenv('ALLOW_PUBLIC_BOT_CLONE', 'true'))
 BOT_CLONE_ROOT = os.getenv('BOT_CLONE_ROOT', '/www/wwwroot/botshop-clones').strip() or '/www/wwwroot/botshop-clones'
 BOT_CLONE_REPO_URL = os.getenv('BOT_CLONE_REPO_URL', '').strip()
 TRC20_USDT_CONTRACT = os.getenv('TRC20_USDT_CONTRACT', 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t').strip()
@@ -1547,6 +1548,8 @@ def start(update: Update, context: CallbackContext):
         row = i['Row']
         first = i['first']
         keyboard[i["Row"] - 1].append(KeyboardButton(projectname))
+    if ALLOW_PUBLIC_BOT_CLONE:
+        keyboard.append([KeyboardButton('🤖一键克隆Bot')])
     entities = safe_pickle_loads(hyyys)
     context.bot.send_message(chat_id=user_id, text=hyy, reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True,
                                                                                          one_time_keyboard=False),
@@ -2869,13 +2872,14 @@ def settrc20(update: Update, context: CallbackContext):
     context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
-def clonebot(update: Update, context: CallbackContext):
-    query = update.callback_query
-    user_id = query.from_user.id
-    query.answer()
+def can_use_clonebot(state):
+    return ALLOW_PUBLIC_BOT_CLONE or str(state) == '4'
+
+
+def send_clonebot_prompt(context, user_id):
     user_list = user.find_one({'user_id': user_id}) or {}
-    if str(user_list.get('state')) != '4':
-        context.bot.send_message(chat_id=user_id, text='只有当前 Bot 管理员才能使用一键克隆功能')
+    if not can_use_clonebot(user_list.get('state')):
+        context.bot.send_message(chat_id=user_id, text='当前未开放一键克隆功能')
         return
     text = '''
 请发送你要克隆的新 Bot Token
@@ -2888,6 +2892,13 @@ def clonebot(update: Update, context: CallbackContext):
     keyboard = [[InlineKeyboardButton('取消', callback_data=f'close {user_id}')]]
     user.update_one({'user_id': user_id}, {"$set": {"sign": 'clonebottoken'}})
     context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+def clonebot(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
+    send_clonebot_prompt(context, user_id)
 
 
 def startupdate(update: Update, context: CallbackContext):
@@ -4872,9 +4883,9 @@ def textkeyboard(update: Update, context: CallbackContext):
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                     context.bot.send_message(chat_id=user_id, text=f'当前充值地址为: {text}', parse_mode='HTML')
                 elif sign == 'clonebottoken':
-                    if state != '4':
+                    if not can_use_clonebot(state):
                         user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
-                        context.bot.send_message(chat_id=user_id, text='只有当前 Bot 管理员才能使用一键克隆功能')
+                        context.bot.send_message(chat_id=user_id, text='当前未开放一键克隆功能')
                         return
                     try:
                         result = clone_bot_instance(text.strip(), user_id)
@@ -5424,7 +5435,10 @@ Bot服务：<code>{result['service_name']}.service</code>
                 key_list = get_key.find_one({"projectname": text})
             if key_list is None and normalized_text:
                 key_list = normalized_key_map.get(normalized_text)
-            if normalized_text == normalize_menu_text('👤个人中心'):
+            if normalized_text == normalize_menu_text('🤖一键克隆Bot'):
+                del_message(update.message)
+                send_clonebot_prompt(context, user_id)
+            elif normalized_text == normalize_menu_text('👤个人中心'):
                 del_message(update.message)
                 if username is None:
                     username = fullname
