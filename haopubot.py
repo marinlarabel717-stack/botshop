@@ -4,8 +4,10 @@ import datetime, qrcode, socket, struct, threading, hashlib, uuid
 import inspect
 import telegram
 import os
+import sys
+import subprocess
 import logging, os, shutil
-from dotenv import load_dotenv
+from dotenv import load_dotenv, dotenv_values
 import requests
 import urllib.parse
 from collections import OrderedDict
@@ -74,6 +76,171 @@ def normalize_menu_text(text):
     return text
 
 
+def sanitize_service_name(value):
+    value = re.sub(r'[^a-zA-Z0-9_.-]+', '-', str(value or '').strip()).strip('-').lower()
+    return value or 'bot'
+
+
+def run_system_command(args, cwd=None):
+    result = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or '命令执行失败')
+    return result.stdout.strip()
+
+
+def get_clone_repo_url():
+    if BOT_CLONE_REPO_URL:
+        return BOT_CLONE_REPO_URL
+    try:
+        repo_url = run_system_command(['git', 'config', '--get', 'remote.origin.url'], cwd=str(BASE_DIR))
+        if repo_url:
+            return repo_url
+    except Exception:
+        pass
+    return 'https://github.com/marinlarabel717-stack/botshop.git'
+
+
+def get_python_exec_path():
+    return os.path.realpath(sys.executable or shutil.which('python3.10') or shutil.which('python3') or 'python3')
+
+
+def get_bot_profile(bot_token):
+    token = str(bot_token or '').strip()
+    if not re.fullmatch(r'\d+:[A-Za-z0-9_-]{20,}', token):
+        raise RuntimeError('Bot Token 格式不正确')
+    response = requests.get(f'https://api.telegram.org/bot{token}/getMe', timeout=20)
+    response.raise_for_status()
+    payload = response.json()
+    if not payload.get('ok'):
+        raise RuntimeError(payload.get('description') or 'Bot Token 无效')
+    result = payload.get('result') or {}
+    if not result.get('is_bot'):
+        raise RuntimeError('提供的 Token 不是机器人 Token')
+    return result
+
+
+def render_env_lines(env_map):
+    preferred_keys = [
+        'BOT_TOKEN', 'ADMIN_USER_IDS',
+        'MONGO_URI', 'MONGO_USER', 'MONGO_PASSWORD', 'MONGO_AUTH_DB', 'MONGO_DB_NAME', 'MONGO_CHAIN_DB_NAME',
+        'OKPAY_API_URL', 'OKPAY_SHOP_ID', 'OKPAY_SHOP_TOKEN', 'OKPAY_NAME', 'OKPAY_BOT_USERNAME', 'OKPAY_CALLBACK_URL',
+        'OKPAY_CALLBACK_HOST', 'OKPAY_CALLBACK_PORT',
+        'SHOW_TRC20_RECHARGE_ENTRY', 'SHOW_OKPAY_RECHARGE_ENTRY',
+        'TRONGRID_API_BASE', 'TRONGRID_API_KEY', 'TRC20_USDT_CONTRACT', 'TRONGRID_POLL_SECONDS',
+        'TRONGRID_LOOKBACK_MINUTES', 'TRONGRID_MONITOR_ADDRESSES',
+        'BOT_CLONE_ROOT', 'BOT_CLONE_REPO_URL'
+    ]
+    lines = []
+    used = set()
+    for key in preferred_keys:
+        if key in env_map:
+            used.add(key)
+            lines.append(f'{key}={env_map.get(key, "") or ""}')
+    for key in sorted(env_map.keys()):
+        if key in used:
+            continue
+        lines.append(f'{key}={env_map.get(key, "") or ""}')
+    return '\n'.join(lines) + '\n'
+
+
+def write_clone_env(clone_dir, bot_token, admin_user_id, bot_info):
+    source_env_path = BASE_DIR / '.env'
+    env_map = {}
+    if source_env_path.exists():
+        env_map.update({k: v for k, v in (dotenv_values(source_env_path) or {}).items() if k})
+
+    bot_id = str(bot_info.get('id'))
+    bot_username = str(bot_info.get('username') or f'bot{bot_id}').strip()
+    db_name = f'botshop_{bot_id}'
+
+    env_map['BOT_TOKEN'] = bot_token
+    env_map['ADMIN_USER_IDS'] = str(admin_user_id)
+    env_map['MONGO_DB_NAME'] = db_name
+    env_map['MONGO_CHAIN_DB_NAME'] = db_name
+    env_map['OKPAY_BOT_USERNAME'] = bot_username
+    env_map['OKPAY_SHOP_ID'] = ''
+    env_map['OKPAY_SHOP_TOKEN'] = ''
+    env_map['OKPAY_CALLBACK_URL'] = ''
+    env_map['BOT_CLONE_ROOT'] = BOT_CLONE_ROOT
+    env_map['BOT_CLONE_REPO_URL'] = get_clone_repo_url()
+
+    (clone_dir / '.env').write_text(render_env_lines(env_map), encoding='utf-8')
+    return db_name
+
+
+def build_clone_service_content(description, working_directory, exec_start):
+    return f'''[Unit]
+Description={description}
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory={working_directory}
+ExecStart={exec_start}
+Restart=always
+RestartSec=3
+User=root
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+'''
+
+
+def clone_bot_instance(bot_token, admin_user_id):
+    if hasattr(os, 'geteuid') and os.geteuid() != 0:
+        raise RuntimeError('当前进程不是 root，无法自动安装 systemd 服务')
+
+    bot_info = get_bot_profile(bot_token)
+    bot_id = str(bot_info.get('id'))
+    bot_username = str(bot_info.get('username') or f'bot{bot_id}')
+    slug = sanitize_service_name(f'{bot_username}-{bot_id}')
+    clone_root = Path(BOT_CLONE_ROOT)
+    clone_root.mkdir(parents=True, exist_ok=True)
+    clone_dir = clone_root / slug
+    repo_url = get_clone_repo_url()
+
+    if not clone_dir.exists():
+        run_system_command(['git', 'clone', '--depth', '1', repo_url, str(clone_dir)])
+
+    db_name = write_clone_env(clone_dir, bot_token.strip(), admin_user_id, bot_info)
+    python_exec = get_python_exec_path()
+    service_name = f'botshop-clone-{bot_id}'
+    listener_service_name = f'botshop-clone-{bot_id}-trc20'
+    service_path = Path('/etc/systemd/system') / f'{service_name}.service'
+    listener_service_path = Path('/etc/systemd/system') / f'{listener_service_name}.service'
+
+    service_path.write_text(
+        build_clone_service_content(
+            f'botshop cloned telegram bot {bot_username}',
+            str(clone_dir),
+            f'{python_exec} {clone_dir / "haopubot.py"}'
+        ),
+        encoding='utf-8'
+    )
+    listener_service_path.write_text(
+        build_clone_service_content(
+            f'botshop cloned TRC20 listener {bot_username}',
+            str(clone_dir),
+            f'{python_exec} {clone_dir / "trc20_listener.py"}'
+        ),
+        encoding='utf-8'
+    )
+
+    run_system_command(['systemctl', 'daemon-reload'])
+    run_system_command(['systemctl', 'enable', '--now', f'{service_name}.service'])
+    run_system_command(['systemctl', 'enable', '--now', f'{listener_service_name}.service'])
+
+    return {
+        'bot_id': bot_id,
+        'bot_username': bot_username,
+        'clone_dir': str(clone_dir),
+        'db_name': db_name,
+        'service_name': service_name,
+        'listener_service_name': listener_service_name,
+    }
+
+
 OKPAY_API_URL = os.getenv('OKPAY_API_URL', 'https://api.okaypay.me/shop/')
 OKPAY_SHOP_ID = os.getenv('OKPAY_SHOP_ID', '')
 OKPAY_SHOP_TOKEN = os.getenv('OKPAY_SHOP_TOKEN', '')
@@ -84,6 +251,8 @@ OKPAY_CALLBACK_HOST = os.getenv('OKPAY_CALLBACK_HOST', '0.0.0.0')
 OKPAY_CALLBACK_PORT = int(os.getenv('OKPAY_CALLBACK_PORT', '8088'))
 SHOW_TRC20_RECHARGE_ENTRY = parse_env_bool(os.getenv('SHOW_TRC20_RECHARGE_ENTRY', 'true'))
 SHOW_OKPAY_RECHARGE_ENTRY = parse_env_bool(os.getenv('SHOW_OKPAY_RECHARGE_ENTRY', 'true'))
+BOT_CLONE_ROOT = os.getenv('BOT_CLONE_ROOT', '/www/wwwroot/botshop-clones').strip() or '/www/wwwroot/botshop-clones'
+BOT_CLONE_REPO_URL = os.getenv('BOT_CLONE_REPO_URL', '').strip()
 TRC20_USDT_CONTRACT = os.getenv('TRC20_USDT_CONTRACT', 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t').strip()
 OKPAY_BOT = None
 OKPAY_HTTPD = None
@@ -1389,7 +1558,8 @@ def start(update: Update, context: CallbackContext):
              InlineKeyboardButton('商品管理', callback_data='spgli')],
             [InlineKeyboardButton('欢迎语修改', callback_data='startupdate'), 
              InlineKeyboardButton('菜单按钮', callback_data='addzdykey')],
-            [InlineKeyboardButton('关闭', callback_data=f'close {user_id}')]
+            [InlineKeyboardButton('一键克隆Bot', callback_data='clonebot'),
+             InlineKeyboardButton('关闭', callback_data=f'close {user_id}')]
         ]
         jqrsyrs = len(list(user.find({})))
         numu = 0
@@ -1641,7 +1811,8 @@ def backstart(update: Update, context: CallbackContext):
          InlineKeyboardButton('商品管理', callback_data='spgli')],
         [InlineKeyboardButton('欢迎语修改', callback_data='startupdate'), 
          InlineKeyboardButton('菜单按钮', callback_data='addzdykey')],
-        [InlineKeyboardButton('关闭', callback_data=f'close {user_id}')]
+        [InlineKeyboardButton('一键克隆Bot', callback_data='clonebot'),
+         InlineKeyboardButton('关闭', callback_data=f'close {user_id}')]
     ]
     jqrsyrs = len(list(user.find({})))
 
@@ -2695,6 +2866,27 @@ def settrc20(update: Update, context: CallbackContext):
 '''
     keyboard = [[InlineKeyboardButton('取消', callback_data=f'close {user_id}')]]
     user.update_one({'user_id': user_id}, {"$set": {"sign": 'settrc20'}})
+    context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+def clonebot(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
+    user_list = user.find_one({'user_id': user_id}) or {}
+    if str(user_list.get('state')) != '4':
+        context.bot.send_message(chat_id=user_id, text='只有当前 Bot 管理员才能使用一键克隆功能')
+        return
+    text = '''
+请发送你要克隆的新 Bot Token
+
+例如：
+123456789:ABCdefGhIJKlmNoPQRsTUVwxyz123456789
+
+默认会把当前操作用户设为新 Bot 管理员，并自动创建 systemd 自启动服务。
+'''
+    keyboard = [[InlineKeyboardButton('取消', callback_data=f'close {user_id}')]]
+    user.update_one({'user_id': user_id}, {"$set": {"sign": 'clonebottoken'}})
     context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -4679,6 +4871,33 @@ def textkeyboard(update: Update, context: CallbackContext):
                         img.save(f)
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                     context.bot.send_message(chat_id=user_id, text=f'当前充值地址为: {text}', parse_mode='HTML')
+                elif sign == 'clonebottoken':
+                    if state != '4':
+                        user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                        context.bot.send_message(chat_id=user_id, text='只有当前 Bot 管理员才能使用一键克隆功能')
+                        return
+                    try:
+                        result = clone_bot_instance(text.strip(), user_id)
+                    except Exception as exc:
+                        keyboard = [[InlineKeyboardButton('❌取消输入', callback_data=f'close {user_id}')]]
+                        context.bot.send_message(chat_id=user_id, text=f'一键克隆失败：{exc}',
+                                                 reply_markup=InlineKeyboardMarkup(keyboard))
+                        return
+                    user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                    clone_text = f'''
+✅ 一键克隆成功
+
+机器人：@{result['bot_username']}
+Bot ID：<code>{result['bot_id']}</code>
+管理员：<code>{user_id}</code>
+目录：<code>{result['clone_dir']}</code>
+数据库：<code>{result['db_name']}</code>
+Bot服务：<code>{result['service_name']}.service</code>
+监听服务：<code>{result['listener_service_name']}.service</code>
+
+新 Bot 已自动启动，无需再去宝塔手动配置运行。
+                    '''
+                    context.bot.send_message(chat_id=user_id, text=clone_text, parse_mode='HTML')
                 elif 'setkeyname' in sign:
                     qudata = sign.replace('setkeyname ', '')
                     qudataall = qudata.split(':')
@@ -5680,7 +5899,7 @@ def main():
         application.add_handler(CommandHandler(command_name, sync_handler(callback)))
 
     callback_handlers = [
-        ('startupdate', startupdate), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
+        ('startupdate', startupdate), ('clonebot', clonebot), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
         ('backstart', backstart), ('paixurow', paixurow), ('addzdykey', addzdykey),
         ('qrscdelrow ', qrscdelrow), ('addhangkey ', addhangkey), ('delhangkey ', delhangkey),
         ('qrdelliekey ', qrdelliekey), ('keyxq ', keyxq), ('setkeyname ', setkeyname),
