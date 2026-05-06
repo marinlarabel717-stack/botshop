@@ -1414,7 +1414,7 @@ def tuwen(update: Update, context: CallbackContext):
     user_id = query.from_user.id
     context.user_data[f'key{user_id}'] = query.message
     message_id = context.bot.send_message(chat_id=user_id, text=f'回复图文或图片视频文字',
-                                          reply_markup=ForceReply(force_reply=True))
+                                          reply_markup=ForceReply())
     context.user_data[f'wanfapeizhi{user_id}'] = message_id
 
 def cattu(update: Update, context: CallbackContext):
@@ -1465,7 +1465,7 @@ def anniu(update: Update, context: CallbackContext):
     query.answer()
     user_id = query.from_user.id
     context.user_data[f'key{user_id}'] = query.message
-    message_id = context.bot.send_message(chat_id=user_id, text=f'回复按钮设置', reply_markup=ForceReply(force_reply=True))
+    message_id = context.bot.send_message(chat_id=user_id, text=f'回复按钮设置', reply_markup=ForceReply())
     context.user_data[f'wanfapeizhi{user_id}'] = message_id
 
 def kaiqisifa(update: Update, context: CallbackContext):
