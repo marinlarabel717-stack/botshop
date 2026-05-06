@@ -1339,8 +1339,9 @@ def huifu(update: Update, context: CallbackContext):
         state = user_list['state']
         if state == '4' or state == '3':
             if '回复图文或图片视频文字' == text:
-                if update.message.photo == [] and update.message.animation == None:
-                    r_text = messagetext
+                stored_message_text = get_message_storage_text(update.message)
+                if not update.message.photo and update.message.animation is None:
+                    r_text = stored_message_text or messagetext or ''
                     sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {'text': r_text}})
                     sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {'file_id': ''}})
                     sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {'send_type': 'text'}})
@@ -1353,8 +1354,8 @@ def huifu(update: Update, context: CallbackContext):
                     del_message(message_id)
 
                 else:
-                    r_text = update.message.caption
-                    try:
+                    r_text = stored_message_text or update.message.caption or ''
+                    if update.message.photo:
                         file = update.message.photo[-1].file_id
                         sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {'text': r_text}})
                         sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {'file_id': file}})
@@ -1363,7 +1364,7 @@ def huifu(update: Update, context: CallbackContext):
                         message_id = context.bot.send_photo(chat_id=user_id, caption=r_text, photo=file)
                         time.sleep(3)
                         del_message(message_id)
-                    except:
+                    elif update.message.animation is not None:
                         file = update.message.animation.file_id
                         sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {'text': r_text}})
                         sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {'file_id': file}})
@@ -1372,6 +1373,8 @@ def huifu(update: Update, context: CallbackContext):
                         message_id = context.bot.sendAnimation(chat_id=user_id, caption=r_text, animation=file)
                         time.sleep(3)
                         del_message(message_id)
+                    else:
+                        context.bot.send_message(chat_id=user_id, text='⚠️ 当前只支持文字、图片或动画')
             elif '回复按钮设置' == text:
                 text = messagetext
                 message_id = context.user_data[f'wanfapeizhi{user_id}']
