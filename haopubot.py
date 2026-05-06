@@ -489,6 +489,8 @@ class SyncTelegramProxy:
         'sendPhoto': 'send_photo',
         'editMessageText': 'edit_message_text',
         'editMessageCaption': 'edit_message_caption',
+        'deleteMessage': 'delete_message',
+        'download': 'download_to_drive',
     }
     TEXT_METHOD_KEYS = {
         'send_message': 'text',
@@ -1482,7 +1484,7 @@ def kaiqisifa(update: Update, context: CallbackContext):
              InlineKeyboardButton('开启私发', callback_data='kaiqisifa')],
             [InlineKeyboardButton('关闭❌', callback_data=f'close {user_id}')]]
         query.edit_message_text(text='私发状态:已开启🟢', reply_markup=InlineKeyboardMarkup(keyboard))
-        context.job_queue.run_once(usersifa, 1, context={"user_id": user_id}, name=f'sifa')
+        context.job_queue.run_once(usersifa, 1, data={"user_id": user_id}, name=f'sifa')
         message_id = context.bot.send_message(chat_id=user_id, text='开启私发')
         context.user_data['sifa'] = message_id
     else:
@@ -1493,7 +1495,7 @@ def kaiqisifa(update: Update, context: CallbackContext):
 def usersifa(context: CallbackContext):
     job = context.job
     bot_id = context.bot.id
-    guanli_id = job.context['user_id']
+    guanli_id = job.data['user_id']
     count = 0
     shibai = 0
     fqdtw_list = sftw.find_one({'bot_id': bot_id,'projectname': f'图文1🔽'})
@@ -1738,7 +1740,7 @@ def yhnext(update: Update, context: CallbackContext):
 
     text_list = '\n'.join(text_list)
     keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
-    query.bot.edit_message_text(text=text_list, chat_id=query.message.chat_id,
+    query.bot.edit_message_text(text=text_list, chat_id=query.message.chat.id,
                                 message_id=query.message.message_id, reply_markup=InlineKeyboardMarkup(keyboard),
                                 parse_mode='HTML')
 
