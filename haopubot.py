@@ -4514,9 +4514,9 @@ def textkeyboard(update: Update, context: CallbackContext):
                             return
 
                         fstext = f'''
-<b>🛍您正在购买：{projectname}
+<b>[emoji:5451937962629544243:🛍]您正在购买：{projectname}
 
-📈 数量：{gmsl}
+[emoji:5028746137645876535:📈] 数量：{gmsl}
 
 💰价格：{zxymoney}
 
