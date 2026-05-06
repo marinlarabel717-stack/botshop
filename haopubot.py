@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import io
 import datetime, qrcode, socket, struct, threading, hashlib, uuid
 import inspect
@@ -40,21 +40,21 @@ except Exception:
     APP_VERSION = '0.1.0'
 
 
-ADMIN_EMOJI_USERLIST = '[emoji:6321041414067068140:ðŸ‘¤]'
-ADMIN_EMOJI_DM = '[emoji:5456535802429330837:ðŸ’¬]'
-ADMIN_EMOJI_TRC20 = '[emoji:5443127283898405358:ðŸ“¥]'
-ADMIN_EMOJI_OKPAY = '[emoji:5445353829304387411:ðŸ’³]'
-ADMIN_EMOJI_GOODS = '[emoji:5312361253610475399:ðŸ›’]'
-ADMIN_EMOJI_WELCOME = '[emoji:5458382591121964689:âœï¸]'
-ADMIN_EMOJI_MENU = '[emoji:5341715473882955310:âš™ï¸]'
-ADMIN_EMOJI_CLONE = '#g [emoji:5287684458881756303:ðŸ¤–]'
-ADMIN_EMOJI_CLOSE = '[emoji:5210952531676504517:âŒ]'
+ADMIN_EMOJI_USERLIST = '[emoji:6321041414067068140:👤]'
+ADMIN_EMOJI_DM = '[emoji:5456535802429330837:💬]'
+ADMIN_EMOJI_TRC20 = '[emoji:5443127283898405358:📥]'
+ADMIN_EMOJI_OKPAY = '[emoji:5445353829304387411:💳]'
+ADMIN_EMOJI_GOODS = '[emoji:5312361253610475399:🛒]'
+ADMIN_EMOJI_WELCOME = '[emoji:5458382591121964689:✍️]'
+ADMIN_EMOJI_MENU = '[emoji:5341715473882955310:⚙️]'
+ADMIN_EMOJI_CLONE = '#g [emoji:5287684458881756303:🤖]'
+ADMIN_EMOJI_CLOSE = '[emoji:5210952531676504517:❌]'
 
-MOOD_EMOJI_SOFT = '[emoji:5222044641200720562:ðŸŒ¸]'
-MOOD_EMOJI_SPARKLE = '[emoji:5217818964612108191:âœ¨]'
-MOOD_EMOJI_STAR = '[emoji:5220064167356025824:â­ï¸]'
-MOOD_EMOJI_FAST = '[emoji:5220195537520711716:âš¡ï¸]'
-MOOD_EMOJI_FIRE = '[emoji:5220166546491459639:ðŸ”¥]'
+MOOD_EMOJI_SOFT = '[emoji:5222044641200720562:🌸]'
+MOOD_EMOJI_SPARKLE = '[emoji:5217818964612108191:✨]'
+MOOD_EMOJI_STAR = '[emoji:5220064167356025824:⭐️]'
+MOOD_EMOJI_FAST = '[emoji:5220195537520711716:⚡️]'
+MOOD_EMOJI_FIRE = '[emoji:5220166546491459639:🔥]'
 
 
 def parse_admin_user_ids(value):
@@ -107,7 +107,7 @@ def sanitize_db_name(value):
 def run_system_command(args, cwd=None, timeout=None):
     result = subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=timeout)
     if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or 'å‘½ä»¤æ‰§è¡Œå¤±è´¥')
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or '命令执行失败')
     return result.stdout.strip()
 
 
@@ -130,15 +130,15 @@ def get_python_exec_path():
 def get_bot_profile(bot_token):
     token = str(bot_token or '').strip()
     if not re.fullmatch(r'\d+:[A-Za-z0-9_-]{20,}', token):
-        raise RuntimeError('Bot Token æ ¼å¼ä¸æ­£ç¡®')
+        raise RuntimeError('Bot Token 格式不正确')
     response = requests.get(f'https://api.telegram.org/bot{token}/getMe', timeout=20)
     response.raise_for_status()
     payload = response.json()
     if not payload.get('ok'):
-        raise RuntimeError(payload.get('description') or 'Bot Token æ— æ•ˆ')
+        raise RuntimeError(payload.get('description') or 'Bot Token 无效')
     result = payload.get('result') or {}
     if not result.get('is_bot'):
-        raise RuntimeError('æä¾›çš„ Token ä¸æ˜¯æœºå™¨äºº Token')
+        raise RuntimeError('提供的 Token 不是机器人 Token')
     return result
 
 
@@ -217,7 +217,7 @@ WantedBy=multi-user.target
 
 def clone_bot_instance(bot_token, admin_user_id):
     if hasattr(os, 'geteuid') and os.geteuid() != 0:
-        raise RuntimeError('å½“å‰è¿›ç¨‹ä¸æ˜¯ rootï¼Œæ— æ³•è‡ªåŠ¨å®‰è£… systemd æœåŠ¡')
+        raise RuntimeError('当前进程不是 root，无法自动安装 systemd 服务')
 
     bot_info = get_bot_profile(bot_token)
     bot_id = str(bot_info.get('id'))
@@ -272,7 +272,7 @@ def clone_bot_instance(bot_token, admin_user_id):
 OKPAY_API_URL = os.getenv('OKPAY_API_URL', 'https://api.okaypay.me/shop/')
 OKPAY_SHOP_ID = os.getenv('OKPAY_SHOP_ID', '')
 OKPAY_SHOP_TOKEN = os.getenv('OKPAY_SHOP_TOKEN', '')
-OKPAY_NAME = os.getenv('OKPAY_NAME', 'å·é“º')
+OKPAY_NAME = os.getenv('OKPAY_NAME', '号铺')
 OKPAY_BOT_USERNAME = os.getenv('OKPAY_BOT_USERNAME', '')
 OKPAY_CALLBACK_URL = os.getenv('OKPAY_CALLBACK_URL', '')
 OKPAY_CALLBACK_HOST = os.getenv('OKPAY_CALLBACK_HOST', '0.0.0.0')
@@ -323,62 +323,62 @@ ensure_clone_indexes()
 DYNAMIC_EMOJI_RE = re.compile(r'\[(?:emoji|ce|custom_emoji):([0-9]+)(?::([^:\]]+))?(?::(danger|success|primary))?\]')
 DYNAMIC_EMOJI_PREFIX_RE = re.compile(r'^\s*\[(?:emoji|ce|custom_emoji):([0-9]+)(?::([^:\]]+))?(?::(danger|success|primary))?\]\s*(.*)$', re.S)
 KNOWN_DYNAMIC_EMOJI_IDS = OrderedDict([
-    ('ðŸ””', '5458603043203327669'),
-    ('ðŸ“±', '5330237710655306682'),
-    ('ðŸ‘‘', '5217822164362739968'),
-    ('ðŸ“Š', '5231200819986047254'),
-    ('ðŸ‘›', '4972482444025398275'),
-    ('âŒ', '5210952531676504517'),
-    ('ðŸ˜ƒ', '6323075330189826977'),
-    ('ðŸ˜€', '5080312910866024090'),
-    ('ðŸ˜„', '6321339712430676611'),
-    ('ðŸ’°', '4965219701572503640'),
-    ('âœ…', '5350486389806868244'),
-    ('ðŸ›’', '5312361253610475399'),
-    ('âš ï¸', '5447644880824181073'),
-    ('âš ', '5447644880824181073'),
-    ('â—ï¸', '5274099962655816924'),
-    ('â—', '5274099962655816924'),
-    ('â‰ï¸', '5219866512961062330'),
-    ('â‰', '5219866512961062330'),
-    ('âž•', '6320823470246600333'),
-    ('ðŸ’¸', '5424925715009118244'),
-    ('ðŸ’³', '5445353829304387411'),
-    ('ðŸ”‹', '5370715226209525171'),
-    ('ðŸª«', '5370688996844249600'),
-    ('ðŸš«', '5240241223632954241'),
-    ('ðŸ ', '5416041192905265756'),
-    ('ðŸ’¡', '5190691070702279446'),
-    ('ðŸ“¥', '5443127283898405358'),
-    ('ðŸ”´', '5411225014148014586'),
-    ('ðŸŸ¢', '5416081784641168838'),
-    ('ðŸ‘¤', '6321041414067068140'),
-    ('ðŸ’¬', '5456535802429330837'),
-    ('â™¥ï¸', '6273982526851652490'),
-    ('â™¥', '6273982526851652490'),
-    ('ðŸ›«', '5201691993775818138'),
-    ('ðŸŽ‰', '5193209274452425995'),
-    ('ðŸ¥³', '5458824569026532353'),
-    ('ðŸ’«', '5469744063815102906'),
-    ('âœˆï¸', '5300866598276450274'),
-    ('âœˆ', '5300866598276450274'),
-    ('âž¡ï¸', '5416117059207572332'),
-    ('âž¡', '5416117059207572332'),
-    ('âœï¸', '5458382591121964689'),
-    ('âœ', '5458382591121964689'),
-    ('ðŸŒŽ', '5224450179368767019'),
-    ('ðŸ¥‡', '5440539497383087970'),
-    ('ðŸ¥ˆ', '5447203607294265305'),
-    ('ðŸ¥‰', '5453902265922376865'),
-    ('ðŸ‡¨ðŸ‡³', '5224435456220868088'),
-    ('ðŸŒ¹', '5363938656874673963'),
-    ('ðŸ’Ž', '5427168083074628963'),
-    ('ðŸ¦', '5332455502917949981'),
-    ('âš™ï¸', '5341715473882955310'),
-    ('âš™', '5341715473882955310'),
-    ('â¬…ï¸', '5253955286137338977'),
-    ('â¬…', '5253955286137338977'),
-    ('ðŸ“', '6321175945327680619'),
+    ('🔔', '5458603043203327669'),
+    ('📱', '5330237710655306682'),
+    ('👑', '5217822164362739968'),
+    ('📊', '5231200819986047254'),
+    ('👛', '4972482444025398275'),
+    ('❌', '5210952531676504517'),
+    ('😃', '6323075330189826977'),
+    ('😀', '5080312910866024090'),
+    ('😄', '6321339712430676611'),
+    ('💰', '4965219701572503640'),
+    ('✅', '5350486389806868244'),
+    ('🛒', '5312361253610475399'),
+    ('⚠️', '5447644880824181073'),
+    ('⚠', '5447644880824181073'),
+    ('❗️', '5274099962655816924'),
+    ('❗', '5274099962655816924'),
+    ('⁉️', '5219866512961062330'),
+    ('⁉', '5219866512961062330'),
+    ('➕', '6320823470246600333'),
+    ('💸', '5424925715009118244'),
+    ('💳', '5445353829304387411'),
+    ('🔋', '5370715226209525171'),
+    ('🪫', '5370688996844249600'),
+    ('🚫', '5240241223632954241'),
+    ('🏠', '5416041192905265756'),
+    ('💡', '5190691070702279446'),
+    ('📥', '5443127283898405358'),
+    ('🔴', '5411225014148014586'),
+    ('🟢', '5416081784641168838'),
+    ('👤', '6321041414067068140'),
+    ('💬', '5456535802429330837'),
+    ('♥️', '6273982526851652490'),
+    ('♥', '6273982526851652490'),
+    ('🛫', '5201691993775818138'),
+    ('🎉', '5193209274452425995'),
+    ('🥳', '5458824569026532353'),
+    ('💫', '5469744063815102906'),
+    ('✈️', '5300866598276450274'),
+    ('✈', '5300866598276450274'),
+    ('➡️', '5416117059207572332'),
+    ('➡', '5416117059207572332'),
+    ('✍️', '5458382591121964689'),
+    ('✍', '5458382591121964689'),
+    ('🌎', '5224450179368767019'),
+    ('🥇', '5440539497383087970'),
+    ('🥈', '5447203607294265305'),
+    ('🥉', '5453902265922376865'),
+    ('🇨🇳', '5224435456220868088'),
+    ('🌹', '5363938656874673963'),
+    ('💎', '5427168083074628963'),
+    ('🏦', '5332455502917949981'),
+    ('⚙️', '5341715473882955310'),
+    ('⚙', '5341715473882955310'),
+    ('⬅️', '5253955286137338977'),
+    ('⬅', '5253955286137338977'),
+    ('📝', '6321175945327680619'),
 ])
 KNOWN_DYNAMIC_EMOJI_PATTERN = re.compile('|'.join(sorted((re.escape(k) for k in KNOWN_DYNAMIC_EMOJI_IDS.keys()), key=len, reverse=True)))
 PROTECTED_DYNAMIC_EMOJI_SEGMENT_RE = re.compile(r'(<tg-emoji\b[^>]*>.*?</tg-emoji>|\[(?:emoji|ce|custom_emoji):[0-9]+(?::[^:\]]+)?(?::(?:danger|success|primary))?\])', re.S)
@@ -442,14 +442,14 @@ def known_plain_emoji_to_dynamic_html(text):
 
 
 def parse_dynamic_emoji_prefix(text):
-    """Parse button prefix: [emoji:custom_emoji_id:ðŸ“±]æŒ‰é’®æ–‡å­— or [emoji:id:ðŸ“±:primary]æŒ‰é’®æ–‡å­—"""
+    """Parse button prefix: [emoji:custom_emoji_id:📱]按钮文字 or [emoji:id:📱:primary]按钮文字"""
     if not isinstance(text, str):
         return None, None, None, text
     m = DYNAMIC_EMOJI_PREFIX_RE.match(text)
     if not m:
         return None, None, None, text
     emoji_id = m.group(1)
-    alt = m.group(2) or 'âœ¨'
+    alt = m.group(2) or '✨'
     style = m.group(3)
     rest = m.group(4) or ''
     return emoji_id, alt, style, rest
@@ -463,7 +463,7 @@ def dynamic_emoji_to_html(text):
     if '[emoji:' in text or '[ce:' in text or '[custom_emoji:' in text:
         def repl(m):
             emoji_id = m.group(1)
-            alt = m.group(2) or 'âœ¨'
+            alt = m.group(2) or '✨'
             return f'<tg-emoji emoji-id="{emoji_id}">{alt}</tg-emoji>'
 
         text = DYNAMIC_EMOJI_RE.sub(repl, text)
@@ -504,7 +504,7 @@ def extract_custom_emoji_from_message(message):
                     alt = source_text[entity.offset:entity.offset + entity.length]
                 except Exception:
                     alt = ''
-                return custom_emoji_id, (alt or 'âœ¨')
+                return custom_emoji_id, (alt or '✨')
     return None, None
 
 
@@ -584,7 +584,7 @@ def get_message_storage_text(message):
             if isinstance(start, int) and isinstance(length, int) and custom_emoji_id:
                 py_start = utf16_index_to_py_index(source_text, start)
                 py_end = utf16_index_to_py_index(source_text, start + length)
-                alt = source_text[py_start:py_end] or 'âœ¨'
+                alt = source_text[py_start:py_end] or '✨'
                 custom_entities.append((py_start, py_end, custom_emoji_id, alt))
 
     if not custom_entities:
@@ -628,18 +628,18 @@ def emojiid(update: Update, context: CallbackContext):
     custom_emoji_id = reply_custom_id or own_custom_id
 
     if reply_custom_id:
-        alt = args[0] if args else (reply_alt or 'âœ¨')
+        alt = args[0] if args else (reply_alt or '✨')
         label = ' '.join(args[1:]).strip() if len(args) > 1 else ''
     else:
-        alt = args[0] if args else (own_alt or 'âœ¨')
+        alt = args[0] if args else (own_alt or '✨')
         label = ' '.join(args[1:]).strip() if len(args) > 1 else ''
 
     if not custom_emoji_id:
         fstext = (
-            'ç”¨æ³•ï¼š\n'
-            '1. ç›´æŽ¥å‘é€ï¼š/emojiid è‡ªå®šä¹‰emoji å•†å“åˆ—è¡¨\n'
-            '2. æˆ–å…ˆå‘ä¸€ä¸ªè‡ªå®šä¹‰ emojiï¼Œå†å›žå¤é‚£æ¡æ¶ˆæ¯å‘é€ï¼š/emojiid ðŸ’¬ å•†å“åˆ—è¡¨\n'
-            'æ³¨æ„ï¼šè¿™é‡Œå¿…é¡»æ˜¯ Telegram è‡ªå®šä¹‰ emojiï¼Œä¸æ˜¯æ™®é€šç³»ç»Ÿ emojiã€‚'
+            '用法：\n'
+            '1. 直接发送：/emojiid 自定义emoji 商品列表\n'
+            '2. 或先发一个自定义 emoji，再回复那条消息发送：/emojiid 💬 商品列表\n'
+            '注意：这里必须是 Telegram 自定义 emoji，不是普通系统 emoji。'
         )
         context.bot.send_message(chat_id=chat.id, text=fstext)
         return
@@ -653,7 +653,7 @@ def emojiid(update: Update, context: CallbackContext):
 def InlineKeyboardButton(text, *args, **kwargs):
     """Backward-compatible inline button with optional dynamic emoji icon.
 
-    Usage: InlineKeyboardButton('[emoji:5368324170671202286:ðŸ“±]å•†å“åˆ—è¡¨', callback_data='...')
+    Usage: InlineKeyboardButton('[emoji:5368324170671202286:📱]商品列表', callback_data='...')
     """
     _, styled_text = parse_button_style_prefix(text)
     emoji_id, alt, style, clean_text = parse_dynamic_emoji_prefix(styled_text)
@@ -785,7 +785,7 @@ class SyncTelegramProxy:
     def _get_loop(self):
         loop = self._loop_ref() if callable(self._loop_ref) else self._loop_ref
         if loop is None:
-            raise RuntimeError('Telegram event loop å°šæœªåˆå§‹åŒ–')
+            raise RuntimeError('Telegram event loop 尚未初始化')
         return loop
 
     def _prepare_dynamic_emoji_args(self, method_name, args, kwargs):
@@ -991,11 +991,11 @@ def inline_query(update: Update, context: CallbackContext):
                     [InlineKeyboardButton(context.bot.first_name, url=url)]
                 ]
                 fstext = f'''
-âš ï¸æ“ä½œå¤±è´¥ï¼Œè½¬è´¦é‡‘é¢å¿…é¡»å¤§äºŽ0
+⚠️操作失败，转账金额必须大于0
                 '''
 
-                hyy = shangtext.find_one({'projectname': 'æ¬¢è¿Žè¯­'})['text']
-                hyyys = shangtext.find_one({'projectname': 'æ¬¢è¿Žè¯­æ ·å¼'})['text']
+                hyy = shangtext.find_one({'projectname': '欢迎语'})['text']
+                hyyys = shangtext.find_one({'projectname': '欢迎语样式'})['text']
             
                 entities = safe_pickle_loads(hyyys)
 
@@ -1022,23 +1022,23 @@ def inline_query(update: Update, context: CallbackContext):
                 'timer': timer,
                 'state': 0
             })
-            # keyboard = [[InlineKeyboardButton("ðŸ“¥æ”¶æ¬¾", callback_data=f'shokuan {user_id}:{money}')]]
-            keyboard = [[InlineKeyboardButton("ðŸ“¥æ”¶æ¬¾", callback_data=f'shokuan {uid}')]]
+            # keyboard = [[InlineKeyboardButton("📥收款", callback_data=f'shokuan {user_id}:{money}')]]
+            keyboard = [[InlineKeyboardButton("📥收款", callback_data=f'shokuan {uid}')]]
             fstext = f'''
-è½¬è´¦ {query} U
+转账 {query} U
             '''
 
             zztext = f'''
-<b>è½¬è´¦ç»™ä½  {query} U</b>
+<b>转账给你 {query} U</b>
 
-è¯·åœ¨24å°æ—¶å†…é¢†å–
+请在24小时内领取
             '''
             results = [
                 InlineQueryResultArticle(
                     id=str(uuid.uuid4()),
                     reply_markup=InlineKeyboardMarkup(keyboard),
                     title=fstext,
-                    description='âš ï¸æ‚¨æ­£åœ¨å‘å¯¹æ–¹è½¬è´¦Uå¹¶ç«‹å³ç”Ÿæ•ˆ',
+                    description='⚠️您正在向对方转账U并立即生效',
                     input_message_content=InputTextMessageContent(
                         zztext, parse_mode='HTML'
                     )
@@ -1053,11 +1053,11 @@ def inline_query(update: Update, context: CallbackContext):
                 [InlineKeyboardButton(context.bot.first_name, url=url)]
             ]
             fstext = f'''
-âš ï¸æ“ä½œå¤±è´¥ï¼Œä½™é¢ä¸è¶³ï¼ŒðŸ’°å½“å‰ä½™é¢ï¼š{USDT}U
+⚠️操作失败，余额不足，💰当前余额：{USDT}U
             '''
 
-            hyy = shangtext.find_one({'projectname': 'æ¬¢è¿Žè¯­'})['text']
-            hyyys = shangtext.find_one({'projectname': 'æ¬¢è¿Žè¯­æ ·å¼'})['text']
+            hyy = shangtext.find_one({'projectname': '欢迎语'})['text']
+            hyyys = shangtext.find_one({'projectname': '欢迎语样式'})['text']
         
             entities = safe_pickle_loads(hyyys)
 
@@ -1080,9 +1080,9 @@ def inline_query(update: Update, context: CallbackContext):
         results = [
             InlineQueryResultArticle(
                 id=str(uuid.uuid4()),
-                title="å‚æ•°é”™è¯¯",
+                title="参数错误",
                 input_message_content=InputTextMessageContent(
-                    f"<b>é”™è¯¯</b>", parse_mode='HTML'
+                    f"<b>错误</b>", parse_mode='HTML'
                 )),
         ]
 
@@ -1094,9 +1094,9 @@ def inline_query(update: Update, context: CallbackContext):
         results = [
             InlineQueryResultArticle(
                 id=str(uuid.uuid4()),
-                title="ðŸ§§è¿™ä¸æ˜¯ä½ çš„çº¢åŒ…",
+                title="🧧这不是你的红包",
                 input_message_content=InputTextMessageContent(
-                    f"<b>ðŸ§§è¿™ä¸æ˜¯ä½ çš„çº¢åŒ…</b>", parse_mode='HTML'
+                    f"<b>🧧这不是你的红包</b>", parse_mode='HTML'
                 )),
         ]
 
@@ -1109,16 +1109,16 @@ def inline_query(update: Update, context: CallbackContext):
             results = [
                 InlineQueryResultArticle(
                     id=str(uuid.uuid4()),
-                    title="ðŸ§§çº¢åŒ…å·²é¢†å–å®Œ",
+                    title="🧧红包已领取完",
                     input_message_content=InputTextMessageContent(
-                        f"<b>ðŸ§§çº¢åŒ…å·²é¢†å–å®Œ</b>", parse_mode='HTML'
+                        f"<b>🧧红包已领取完</b>", parse_mode='HTML'
                     )),
             ]
 
             update.inline_query.answer(results=results, cache_time=0)
         else:
             qbrtext = []
-            jiangpai = {'0': 'ðŸ¥‡', '1': 'ðŸ¥ˆ', '2': 'ðŸ¥‰'}
+            jiangpai = {'0': '🥇', '1': '🥈', '2': '🥉'}
             count = 0
             qb_list = list(qb.find({'uid': uid}, sort=[('money', -1)]))
             for i in qb_list:
@@ -1129,25 +1129,25 @@ def inline_query(update: Update, context: CallbackContext):
                 if str(count) in jiangpai.keys():
 
                     qbrtext.append(
-                        f'{jiangpai[str(count)]} <code>{qbmoney}</code>({qbtimer}) USDTðŸ’° - <a href="tg://user?id={qbid}">{qbname}</a>')
+                        f'{jiangpai[str(count)]} <code>{qbmoney}</code>({qbtimer}) USDT💰 - <a href="tg://user?id={qbid}">{qbname}</a>')
                 else:
                     qbrtext.append(
-                        f'<code>{qbmoney}</code>({qbtimer}) USDTðŸ’° - <a href="tg://user?id={qbid}">{qbname}</a>')
+                        f'<code>{qbmoney}</code>({qbtimer}) USDT💰 - <a href="tg://user?id={qbid}">{qbname}</a>')
                 count += 1
             qbrtext = '\n'.join(qbrtext)
 
             syhb = hbsl - len(qb_list)
 
             fstext = f'''
-ðŸ§§ <a href="tg://user?id={user_id}">{fullname}</a> å‘é€äº†ä¸€ä¸ªçº¢åŒ…
-ðŸ’µæ€»é‡‘é¢:{hbmoney} USDTðŸ’° å‰©ä½™:{syhb}/{hbsl}
+🧧 <a href="tg://user?id={user_id}">{fullname}</a> 发送了一个红包
+💵总金额:{hbmoney} USDT💰 剩余:{syhb}/{hbsl}
 
 {qbrtext}
             '''
 
             url = helpers.create_deep_linked_url(context.bot.username, str(user_id))
             keyboard = [
-                [InlineKeyboardButton('é¢†å–çº¢åŒ…', callback_data=f'lqhb {uid}')],
+                [InlineKeyboardButton('领取红包', callback_data=f'lqhb {uid}')],
                 [InlineKeyboardButton(context.bot.first_name, url=url)]
             ]
 
@@ -1155,7 +1155,7 @@ def inline_query(update: Update, context: CallbackContext):
                 InlineQueryResultArticle(
                     id=str(uuid.uuid4()),
                     reply_markup=InlineKeyboardMarkup(keyboard),
-                    title=f"ðŸ’µæ€»é‡‘é¢:{hbmoney} USDTðŸ’° å‰©ä½™:{syhb}/{hbsl}",
+                    title=f"💵总金额:{hbmoney} USDT💰 剩余:{syhb}/{hbsl}",
                     input_message_content=InputTextMessageContent(
                         fstext, parse_mode='HTML'
                     )
@@ -1177,7 +1177,7 @@ def shokuan(update: Update, context: CallbackContext):
     fb_state = fb_list['state']
     if fb_state == 1:
         fstext = f'''
-âŒ é¢†å–å¤±è´¥
+❌ 领取失败
         '''
         query.answer(fstext, show_alert=bool("true"))
         return
@@ -1187,7 +1187,7 @@ def shokuan(update: Update, context: CallbackContext):
     yh_usdt = yh_list['USDT']
     if yh_usdt < fb_money:
         fstext = f'''
-âŒ é¢†å–å¤±è´¥.USDT æ“ä½œå¤±è´¥ï¼Œä½™é¢ä¸è¶³
+❌ 领取失败.USDT 操作失败，余额不足
         '''
         zhuanz.update_one({'uid': uid}, {"$set": {"state": 1}})
         query.answer(fstext, show_alert=bool("true"))
@@ -1235,7 +1235,7 @@ def shokuan(update: Update, context: CallbackContext):
     now_money = float(now_money) if str((now_money)).count('.') > 0 else int(standard_num(now_money))
     user.update_one({'user_id': user_id}, {"$set": {'USDT': now_money}})
     fstext = f'''
-<a href="tg://user?id={user_id}">{fullname}</a> å·²é¢†å– <b>{fb_money}</b> USDT
+<a href="tg://user?id={user_id}">{fullname}</a> 已领取 <b>{fb_money}</b> USDT
     '''
     url = helpers.create_deep_linked_url(context.bot.username, str(user_id))
     keyboard = [[InlineKeyboardButton(f"{context.bot.first_name}", url=url)]]
@@ -1288,30 +1288,30 @@ def lqhb(update: Update, context: CallbackContext):
     hbsl = hongbao_list['hbsl']
     state = hongbao_list['state']
     if state == 1:
-        query.answer('çº¢åŒ…å·²æŠ¢å®Œ', show_alert=bool("true"))
+        query.answer('红包已抢完', show_alert=bool("true"))
         return
 
     qhb_list = qb.find_one({"uid": uid, 'user_id': user_id})
     if qhb_list is not None:
-        query.answer('ä½ å·²é¢†å–è¯¥çº¢åŒ…', show_alert=bool("true"))
+        query.answer('你已领取该红包', show_alert=bool("true"))
         return
     qb_list = list(qb.find({'uid': uid}, sort=[('money', -1)]))
 
     syhb = hbsl - len(qb_list)
-    # ä»¥ä¸‹æ˜¯éšæœºåˆ†é…é‡‘é¢çš„ä»£ç 
-    remaining_money = hbmoney - sum(q['money'] for q in qb_list)  # è®¡ç®—å‰©ä½™çº¢åŒ…æ€»é¢
+    # 以下是随机分配金额的代码
+    remaining_money = hbmoney - sum(q['money'] for q in qb_list)  # 计算剩余红包总额
     if syhb > 1:
-        # å¤šäºŽä¸€ä¸ªçº¢åŒ…å‰©ä½™æ—¶ï¼Œä½¿ç”¨æ­£æ€åˆ†å¸ƒéšæœºç”Ÿæˆé‡‘é¢
-        mean_money = remaining_money / syhb  # è®¡ç®—æ¯ä¸ªçº¢åŒ…çš„å¹³å‡é‡‘é¢
-        std_dev = mean_money / 3  # æ ‡å‡†å·®è®¾å®šä¸ºå¹³å‡é‡‘é¢çš„1/3
-        money = standard_num(max(0.01, round(random.normalvariate(mean_money, std_dev), 2)))  # ä½¿ç”¨æ­£æ€åˆ†å¸ƒç”Ÿæˆé‡‘é¢ï¼Œå¹¶ä¿ç•™ä¸¤ä½å°æ•°
+        # 多于一个红包剩余时，使用正态分布随机生成金额
+        mean_money = remaining_money / syhb  # 计算每个红包的平均金额
+        std_dev = mean_money / 3  # 标准差设定为平均金额的1/3
+        money = standard_num(max(0.01, round(random.normalvariate(mean_money, std_dev), 2)))  # 使用正态分布生成金额，并保留两位小数
         money = float(money) if str(money).count('.') > 0 else int(money)
     else:
-        # å¦‚æžœåªæœ‰ä¸€ä¸ªçº¢åŒ…å‰©ä½™ï¼Œç›´æŽ¥å°†å‰©ä½™é‡‘é¢åˆ†é…ç»™è¯¥çº¢åŒ…
-        money = round(remaining_money, 2)  # å°†å‰©ä½™é‡‘é¢ä¿ç•™ä¸¤ä½å°æ•°
+        # 如果只有一个红包剩余，直接将剩余金额分配给该红包
+        money = round(remaining_money, 2)  # 将剩余金额保留两位小数
         money = float(money) if str(money).count('.') > 0 else int(money)
 
-    # å°†é‡‘é¢ä¿å­˜åˆ°æ•°æ®åº“
+    # 将金额保存到数据库
     qb.insert_one({
         'uid': uid,
         'user_id': user_id,
@@ -1324,9 +1324,9 @@ def lqhb(update: Update, context: CallbackContext):
     user_money = float(user_money) if str(user_money).count('.') > 0 else int(user_money)
     user.update_one({'user_id': user_id}, {"$set": {'USDT': user_money}})
 
-    query.answer(f'é¢†å–çº¢åŒ…æˆåŠŸï¼Œé‡‘é¢:{money}', show_alert=bool("true"))
+    query.answer(f'领取红包成功，金额:{money}', show_alert=bool("true"))
 
-    jiangpai = {'0': 'ðŸ¥‡', '1': 'ðŸ¥ˆ', '2': 'ðŸ¥‰'}
+    jiangpai = {'0': '🥇', '1': '🥈', '2': '🥉'}
 
     qb_list = list(qb.find({'uid': uid}, sort=[('money', -1)]))
 
@@ -1341,15 +1341,15 @@ def lqhb(update: Update, context: CallbackContext):
         if str(count) in jiangpai.keys():
 
             qbrtext.append(
-                f'{jiangpai[str(count)]} <code>{qbmoney}</code>({qbtimer}) USDTðŸ’° - <a href="tg://user?id={qbid}">{qbname}</a>')
+                f'{jiangpai[str(count)]} <code>{qbmoney}</code>({qbtimer}) USDT💰 - <a href="tg://user?id={qbid}">{qbname}</a>')
         else:
-            qbrtext.append(f'<code>{qbmoney}</code>({qbtimer}) USDTðŸ’° - <a href="tg://user?id={qbid}">{qbname}</a>')
+            qbrtext.append(f'<code>{qbmoney}</code>({qbtimer}) USDT💰 - <a href="tg://user?id={qbid}">{qbname}</a>')
         count += 1
     qbrtext = '\n'.join(qbrtext)
 
     fstext = f'''
-ðŸ§§ <a href="tg://user?id={fb_id}">{fb_fullname}</a> å‘é€äº†ä¸€ä¸ªçº¢åŒ…
-ðŸ’µæ€»é‡‘é¢:{hbmoney} USDTðŸ’° å‰©ä½™:{syhb}/{hbsl}
+🧧 <a href="tg://user?id={fb_id}">{fb_fullname}</a> 发送了一个红包
+💵总金额:{hbmoney} USDT💰 剩余:{syhb}/{hbsl}
 
 {qbrtext}
     '''
@@ -1362,7 +1362,7 @@ def lqhb(update: Update, context: CallbackContext):
     else:
         url = helpers.create_deep_linked_url(context.bot.username, str(user_id))
         keyboard = [
-            [InlineKeyboardButton('é¢†å–çº¢åŒ…', callback_data=f'lqhb {uid}')],
+            [InlineKeyboardButton('领取红包', callback_data=f'lqhb {uid}')],
             [InlineKeyboardButton(context.bot.first_name, url=url)]
         ]
     try:
@@ -1382,7 +1382,7 @@ def xzhb(update: Update, context: CallbackContext):
     hbmoney = hongbao_list['hbmoney']
     hbsl = hongbao_list['hbsl']
     timer = hongbao_list['timer']
-    jiangpai = {'0': 'ðŸ¥‡', '1': 'ðŸ¥ˆ', '2': 'ðŸ¥‰'}
+    jiangpai = {'0': '🥇', '1': '🥈', '2': '🥉'}
     if state == 0:
 
         qb_list = list(qb.find({'uid': uid}, sort=[('money', -1)]))
@@ -1399,23 +1399,23 @@ def xzhb(update: Update, context: CallbackContext):
             if str(count) in jiangpai.keys():
 
                 qbrtext.append(
-                    f'{jiangpai[str(count)]} <code>{qbmoney}</code>({qbtimer}) USDTðŸ’° - <a href="tg://user?id={qbid}">{qbname}</a>')
+                    f'{jiangpai[str(count)]} <code>{qbmoney}</code>({qbtimer}) USDT💰 - <a href="tg://user?id={qbid}">{qbname}</a>')
             else:
-                qbrtext.append(f'<code>{qbmoney}</code>({qbtimer}) USDTðŸ’° - <a href="tg://user?id={qbid}">{qbname}</a>')
+                qbrtext.append(f'<code>{qbmoney}</code>({qbtimer}) USDT💰 - <a href="tg://user?id={qbid}">{qbname}</a>')
             count += 1
         qbrtext = '\n'.join(qbrtext)
 
         fstext = f'''
-ðŸ§§ <a href="tg://user?id={fb_id}">{fb_fullname}</a> å‘é€äº†ä¸€ä¸ªçº¢åŒ…
-ðŸ•¦ æ—¶é—´:{timer}
-ðŸ’µ æ€»é‡‘é¢:{hbmoney} USDT
-çŠ¶æ€:è¿›è¡Œä¸­
-å‰©ä½™:{syhb}/{hbsl}
+🧧 <a href="tg://user?id={fb_id}">{fb_fullname}</a> 发送了一个红包
+🕦 时间:{timer}
+💵 总金额:{hbmoney} USDT
+状态:进行中
+剩余:{syhb}/{hbsl}
 
 {qbrtext}
         '''
-        keyboard = [[InlineKeyboardButton('å‘é€çº¢åŒ…', switch_inline_query=f'redpacket {uid}')],
-                    [InlineKeyboardButton('â­•ï¸å…³é—­', callback_data=f'close {user_id}')]]
+        keyboard = [[InlineKeyboardButton('发送红包', switch_inline_query=f'redpacket {uid}')],
+                    [InlineKeyboardButton('⭕️关闭', callback_data=f'close {user_id}')]]
         context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
                                  reply_markup=InlineKeyboardMarkup(keyboard))
     else:
@@ -1432,23 +1432,23 @@ def xzhb(update: Update, context: CallbackContext):
             if str(count) in jiangpai.keys():
 
                 qbrtext.append(
-                    f'{jiangpai[str(count)]} <code>{qbmoney}</code>({qbtimer}) USDTðŸ’° - <a href="tg://user?id={qbid}">{qbname}</a>')
+                    f'{jiangpai[str(count)]} <code>{qbmoney}</code>({qbtimer}) USDT💰 - <a href="tg://user?id={qbid}">{qbname}</a>')
             else:
-                qbrtext.append(f'<code>{qbmoney}</code>({qbtimer}) USDTðŸ’° - <a href="tg://user?id={qbid}">{qbname}</a>')
+                qbrtext.append(f'<code>{qbmoney}</code>({qbtimer}) USDT💰 - <a href="tg://user?id={qbid}">{qbname}</a>')
             count += 1
         qbrtext = '\n'.join(qbrtext)
 
         fstext = f'''
-ðŸ§§ <a href="tg://user?id={fb_id}">{fb_fullname}</a> å‘é€äº†ä¸€ä¸ªçº¢åŒ…
-ðŸ•¦ æ—¶é—´:{timer}
-ðŸ’µ æ€»é‡‘é¢:{hbmoney} USDT
-çŠ¶æ€:å·²ç»“æŸ
-å‰©ä½™:0/{hbsl}
+🧧 <a href="tg://user?id={fb_id}">{fb_fullname}</a> 发送了一个红包
+🕦 时间:{timer}
+💵 总金额:{hbmoney} USDT
+状态:已结束
+剩余:0/{hbsl}
 
 {qbrtext}
         '''
 
-        keyboard = [[InlineKeyboardButton('â­•ï¸å…³é—­', callback_data=f'close {user_id}')]]
+        keyboard = [[InlineKeyboardButton('⭕️关闭', callback_data=f'close {user_id}')]]
         context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
                                  reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -1459,8 +1459,8 @@ def jxzhb(update: Update, context: CallbackContext):
     user_id = query.from_user.id
 
     keyboard = [
-        [InlineKeyboardButton('â—¾ï¸è¿›è¡Œä¸­', callback_data='jxzhb'),
-         InlineKeyboardButton('å·²ç»“æŸ', callback_data='yjshb')],
+        [InlineKeyboardButton('◾️进行中', callback_data='jxzhb'),
+         InlineKeyboardButton('已结束', callback_data='yjshb')],
 
     ]
 
@@ -1472,10 +1472,10 @@ def jxzhb(update: Update, context: CallbackContext):
         syhb = hbsl - len(qb_list)
         hbmoney = i['hbmoney']
         keyboard.append(
-            [InlineKeyboardButton(f'ðŸ§§[{timer}] {syhb}/{hbsl} - {hbmoney} USDT', callback_data=f'xzhb {uid}')])
+            [InlineKeyboardButton(f'🧧[{timer}] {syhb}/{hbsl} - {hbmoney} USDT', callback_data=f'xzhb {uid}')])
 
-    keyboard.append([InlineKeyboardButton('âž•æ·»åŠ ', callback_data='addhb')])
-    keyboard.append([InlineKeyboardButton('å…³é—­', callback_data=f'close {user_id}')])
+    keyboard.append([InlineKeyboardButton('➕添加', callback_data='addhb')])
+    keyboard.append([InlineKeyboardButton('关闭', callback_data=f'close {user_id}')])
 
     query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -1486,8 +1486,8 @@ def yjshb(update: Update, context: CallbackContext):
     user_id = query.from_user.id
 
     keyboard = [
-        [InlineKeyboardButton('ï¸è¿›è¡Œä¸­', callback_data='jxzhb'),
-         InlineKeyboardButton('â—¾å·²ç»“æŸ', callback_data='yjshb')],
+        [InlineKeyboardButton('️进行中', callback_data='jxzhb'),
+         InlineKeyboardButton('◾已结束', callback_data='yjshb')],
 
     ]
 
@@ -1497,10 +1497,10 @@ def yjshb(update: Update, context: CallbackContext):
         uid = i['uid']
         hbmoney = i['hbmoney']
         keyboard.append(
-            [InlineKeyboardButton(f'ðŸ§§[{timer}] 0/{hbsl} - {hbmoney} USDT (over)', callback_data=f'xzhb {uid}')])
+            [InlineKeyboardButton(f'🧧[{timer}] 0/{hbsl} - {hbmoney} USDT (over)', callback_data=f'xzhb {uid}')])
 
-    keyboard.append([InlineKeyboardButton('âž•æ·»åŠ ', callback_data='addhb')])
-    keyboard.append([InlineKeyboardButton('å…³é—­', callback_data=f'close {user_id}')])
+    keyboard.append([InlineKeyboardButton('➕添加', callback_data='addhb')])
+    keyboard.append([InlineKeyboardButton('关闭', callback_data=f'close {user_id}')])
 
     query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -1510,9 +1510,9 @@ def addhb(update: Update, context: CallbackContext):
     query.answer()
     user_id = query.from_user.id
     fstext = f'''
-ðŸ’¡ è¯·å›žå¤ä½ è¦å‘é€çš„æ€»é‡‘é¢()? ä¾‹å¦‚: <code>8.88</code>
+💡 请回复你要发送的总金额()? 例如: <code>8.88</code>
     '''
-    keyboard = [[InlineKeyboardButton('ðŸš«å–æ¶ˆ', callback_data=f'close {user_id}')]]
+    keyboard = [[InlineKeyboardButton('🚫取消', callback_data=f'close {user_id}')]]
     user.update_one({'user_id': user_id}, {"$set": {'sign': 'addhb'}})
     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard),
                              parse_mode='HTML')
@@ -1575,10 +1575,10 @@ def build_admin_dashboard_text(user_count, total_balance):
     today_income = sum_user_log_amount_by_day(today_text)
     yesterday_income = sum_user_log_amount_by_day(yesterday_text)
     return f'''
-[emoji:5287684458881756303:ðŸ¤–] æœºå™¨äººä½¿ç”¨äººæ•°ï¼š{user_count}
-[emoji:4972482444025398275:ðŸ‘›] æœºå™¨äººæ€»ä½™é¢ï¼š{standard_num(total_balance)} USDT
-[emoji:5220195537520711716:âš¡ï¸] ä»Šæ—¥æ”¶å…¥ï¼š{today_income} USDT
-[emoji:5222097061276566531:ðŸƒ] æ˜¨æ—¥æ”¶å…¥ï¼š{yesterday_income} USDT
+[emoji:5287684458881756303:🤖] 机器人使用人数：{user_count}
+[emoji:4972482444025398275:👛] 机器人总余额：{standard_num(total_balance)} USDT
+[emoji:5220195537520711716:⚡️] 今日收入：{today_income} USDT
+[emoji:5222097061276566531:🍃] 昨日收入：{yesterday_income} USDT
         '''
 
 
@@ -1606,27 +1606,27 @@ def start(update: Update, context: CallbackContext):
         else:
             username = f'<a href="https://t.me/{username}">{username}</a>'
         fstext = f'''
-<b>[emoji:6321041414067068140:ðŸ‘¤] æ‚¨çš„ID:</b>  <code>{user_id}</code>
-<b>[emoji:5287684458881756303:ðŸ¤–] æ‚¨çš„ç”¨æˆ·å:</b>  {username}
-<b>[emoji:5217818964612108191:âœ¨] æ³¨å†Œæ—¥æœŸ:</b>  {creation_time}
+<b>[emoji:6321041414067068140:👤] 您的ID:</b>  <code>{user_id}</code>
+<b>[emoji:6323075330189826977:😃] 您的用户名:</b>  {username}
+<b>[emoji:5217818964612108191:✨] 注册日期:</b>  {creation_time}
 
-<b>[emoji:5220064167356025824:â­ï¸] æ€»è´­æ•°é‡:</b>  {zgsl}
+<b>[emoji:5220064167356025824:⭐️] 总购数量:</b>  {zgsl}
 
-<b>[emoji:5028746137645876535:ðŸ“ˆ] æ€»è´­é‡‘é¢:</b>  {standard_num(zgje)} USDT
+<b>[emoji:5028746137645876535:📈] 总购金额:</b>  {standard_num(zgje)} USDT
 
-<b>[emoji:4972482444025398275:ðŸ‘›] æ‚¨çš„ä½™é¢:</b>  {USDT} USDT
+<b>[emoji:4972482444025398275:👛] 您的余额:</b>  {USDT} USDT
         '''
 
-        keyboard = [[InlineKeyboardButton('ðŸ›’è´­ä¹°è®°å½•', callback_data=f'gmaijilu {user_id}')],
-                    [InlineKeyboardButton('å…³é—­', callback_data=f'close {user_id}')]]
+        keyboard = [[InlineKeyboardButton('🛒购买记录', callback_data=f'gmaijilu {user_id}')],
+                    [InlineKeyboardButton('关闭', callback_data=f'close {user_id}')]]
         context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
                                  reply_markup=InlineKeyboardMarkup(keyboard), disable_web_page_preview=True)
         return
 
-    hyy = shangtext.find_one({'projectname': 'æ¬¢è¿Žè¯­'})['text']
-    hyyys = shangtext.find_one({'projectname': 'æ¬¢è¿Žè¯­æ ·å¼'})['text']
+    hyy = shangtext.find_one({'projectname': '欢迎语'})['text']
+    hyyys = shangtext.find_one({'projectname': '欢迎语样式'})['text']
     keylist = get_key.find({}, sort=[('Row', 1), ('first', 1)])
-    yyzt = shangtext.find_one({'projectname': 'è¥ä¸šçŠ¶æ€'})['text']
+    yyzt = shangtext.find_one({'projectname': '营业状态'})['text']
     if yyzt == 0:
         if state != '4':
             return
@@ -1641,24 +1641,24 @@ def start(update: Update, context: CallbackContext):
         keyboard[i["Row"] - 1].append(KeyboardButton(projectname))
     keyboard = [row for row in keyboard if row]
     if BOT_CLONE_ENABLED and ALLOW_PUBLIC_BOT_CLONE:
-        keyboard.append([KeyboardButton('#g [emoji:5287684458881756303:ðŸ¤–]ä¸€é”®å…‹éš†åŒæ¬¾')])
+        keyboard.append([KeyboardButton('#g [emoji:5287684458881756303:🤖]一键克隆同款')])
     entities = safe_pickle_loads(hyyys)
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False) if keyboard else None
     context.bot.send_message(chat_id=user_id, text=hyy, reply_markup=reply_markup,
                              entities=entities)
     if state == '4':
         keyboard = [
-            [InlineKeyboardButton(f'{ADMIN_EMOJI_USERLIST}ç”¨æˆ·åˆ—è¡¨', callback_data='yhlist'), InlineKeyboardButton(f'{ADMIN_EMOJI_DM}å¯¹è¯ç”¨æˆ·ç§å‘', callback_data='sifa')],
-            [InlineKeyboardButton(f'{ADMIN_EMOJI_TRC20}å……å€¼åœ°å€è®¾ç½®', callback_data='settrc20'),
-             InlineKeyboardButton(f'{ADMIN_EMOJI_OKPAY}OKPayé…ç½®', callback_data='okpaycfg')],
-            [InlineKeyboardButton(f'{ADMIN_EMOJI_GOODS}å•†å“ç®¡ç†', callback_data='spgli'),
-             InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}æ¬¢è¿Žè¯­ä¿®æ”¹', callback_data='startupdate')],
-            [InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}èœå•æŒ‰é’®', callback_data='addzdykey')],
+            [InlineKeyboardButton(f'{ADMIN_EMOJI_USERLIST}用户列表', callback_data='yhlist'), InlineKeyboardButton(f'{ADMIN_EMOJI_DM}对话用户私发', callback_data='sifa')],
+            [InlineKeyboardButton(f'{ADMIN_EMOJI_TRC20}充值地址设置', callback_data='settrc20'),
+             InlineKeyboardButton(f'{ADMIN_EMOJI_OKPAY}OKPay配置', callback_data='okpaycfg')],
+            [InlineKeyboardButton(f'{ADMIN_EMOJI_GOODS}商品管理', callback_data='spgli'),
+             InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}欢迎语修改', callback_data='startupdate')],
+            [InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}菜单按钮', callback_data='addzdykey')],
         ]
         if BOT_CLONE_ENABLED:
-            keyboard[-1].append(InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}ä¸€é”®å…‹éš†åŒæ¬¾', callback_data='clonebot'))
-            keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}å…‹éš†åˆ—è¡¨', callback_data='clonelist 0')])
-        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')])
+            keyboard[-1].append(InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}一键克隆同款', callback_data='clonebot'))
+            keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}克隆列表', callback_data='clonelist 0')])
+        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
         jqrsyrs = len(list(user.find({})))
         numu = 0
         for i in list(user.find({"USDT": {"$gt": 0}})):
@@ -1668,7 +1668,7 @@ def start(update: Update, context: CallbackContext):
 
         fstext = build_admin_dashboard_text(jqrsyrs, numu)
         context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
-        # message_id = context.bot.send_photo(chat_id=user_id,  photo=open('è¾›è¿ªå……å€¼å›¾ç‰‡.png', 'rb'))
+        # message_id = context.bot.send_photo(chat_id=user_id,  photo=open('辛迪充值图片.png', 'rb'))
         # print(message_id)
 
 
@@ -1685,14 +1685,14 @@ def huifu(update: Update, context: CallbackContext):
         messagetext = update.effective_message.text
         state = user_list['state']
         if state == '4' or state == '3':
-            if 'å›žå¤å›¾æ–‡æˆ–å›¾ç‰‡è§†é¢‘æ–‡å­—' == text:
+            if '回复图文或图片视频文字' == text:
                 stored_message_text = get_message_storage_text(update.message)
                 if not update.message.photo and update.message.animation is None:
                     r_text = stored_message_text or messagetext or ''
-                    sftw.update_one({'bot_id': bot_id,'projectname': f'å›¾æ–‡1ðŸ”½'}, {'$set': {'text': r_text}})
-                    sftw.update_one({'bot_id': bot_id,'projectname': f'å›¾æ–‡1ðŸ”½'}, {'$set': {'file_id': ''}})
-                    sftw.update_one({'bot_id': bot_id,'projectname': f'å›¾æ–‡1ðŸ”½'}, {'$set': {'send_type': 'text'}})
-                    sftw.update_one({'bot_id': bot_id,'projectname': f'å›¾æ–‡1ðŸ”½'}, {'$set': {'state': 1}})
+                    sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {'text': r_text}})
+                    sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {'file_id': ''}})
+                    sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {'send_type': 'text'}})
+                    sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {'state': 1}})
                     message_id = context.bot.send_message(chat_id=user_id, text=r_text)
                     time.sleep(3)
                     del_message(message_id)
@@ -1704,41 +1704,41 @@ def huifu(update: Update, context: CallbackContext):
                     r_text = stored_message_text or update.message.caption or ''
                     if update.message.photo:
                         file = update.message.photo[-1].file_id
-                        sftw.update_one({'bot_id': bot_id,'projectname': f'å›¾æ–‡1ðŸ”½'}, {'$set': {'text': r_text}})
-                        sftw.update_one({'bot_id': bot_id,'projectname': f'å›¾æ–‡1ðŸ”½'}, {'$set': {'file_id': file}})
-                        sftw.update_one({'bot_id': bot_id,'projectname': f'å›¾æ–‡1ðŸ”½'}, {'$set': {'send_type': 'photo'}})
-                        sftw.update_one({'bot_id': bot_id,'projectname': f'å›¾æ–‡1ðŸ”½'}, {'$set': {'state': 1}})
+                        sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {'text': r_text}})
+                        sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {'file_id': file}})
+                        sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {'send_type': 'photo'}})
+                        sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {'state': 1}})
                         message_id = context.bot.send_photo(chat_id=user_id, caption=r_text, photo=file)
                         time.sleep(3)
                         del_message(message_id)
                     elif update.message.animation is not None:
                         file = update.message.animation.file_id
-                        sftw.update_one({'bot_id': bot_id,'projectname': f'å›¾æ–‡1ðŸ”½'}, {'$set': {'text': r_text}})
-                        sftw.update_one({'bot_id': bot_id,'projectname': f'å›¾æ–‡1ðŸ”½'}, {'$set': {'file_id': file}})
-                        sftw.update_one({'bot_id': bot_id,'projectname': f'å›¾æ–‡1ðŸ”½'}, {'$set': {'send_type': 'animation'}})
-                        sftw.update_one({'bot_id': bot_id,'projectname': f'å›¾æ–‡1ðŸ”½'}, {'$set': {'state': 1}})
+                        sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {'text': r_text}})
+                        sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {'file_id': file}})
+                        sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {'send_type': 'animation'}})
+                        sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {'state': 1}})
                         message_id = context.bot.sendAnimation(chat_id=user_id, caption=r_text, animation=file)
                         time.sleep(3)
                         del_message(message_id)
                     else:
-                        context.bot.send_message(chat_id=user_id, text='âš ï¸ å½“å‰åªæ”¯æŒæ–‡å­—ã€å›¾ç‰‡æˆ–åŠ¨ç”»')
-            elif 'å›žå¤æŒ‰é’®è®¾ç½®' == text:
+                        context.bot.send_message(chat_id=user_id, text='⚠️ 当前只支持文字、图片或动画')
+            elif '回复按钮设置' == text:
                 text = messagetext
                 message_id = context.user_data[f'wanfapeizhi{user_id}']
                 del_message(message_id)
                 keyboard = parse_urls(text)
                 dumped = pickle.dumps(keyboard)
-                sftw.update_one({'bot_id': bot_id,'projectname': f'å›¾æ–‡1ðŸ”½'}, {'$set': {'keyboard': dumped}})
-                sftw.update_one({'bot_id': bot_id,'projectname': f'å›¾æ–‡1ðŸ”½'}, {'$set': {'key_text': text}})
+                sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {'keyboard': dumped}})
+                sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {'key_text': text}})
                 try:
-                    message_id = context.bot.send_message(chat_id=user_id, text='æŒ‰é’®è®¾ç½®æˆåŠŸ',
+                    message_id = context.bot.send_message(chat_id=user_id, text='按钮设置成功',
                                                           reply_markup=InlineKeyboardMarkup(keyboard))
                     time.sleep(10)
                     del_message(message_id)
 
                 except:
                     context.bot.send_message(chat_id=user_id, text=text)
-                    message_id = context.bot.send_message(chat_id=user_id, text='æŒ‰é’®è®¾ç½®å¤±è´¥,è¯·é‡æ–°è¾“å…¥')
+                    message_id = context.bot.send_message(chat_id=user_id, text='按钮设置失败,请重新输入')
                     asyncio.sleep(10)
                     del_message(message_id)
 
@@ -1747,22 +1747,22 @@ def sifa(update: Update, context: CallbackContext):
     query.answer()
     user_id = query.from_user.id
     bot_id = context.bot.id
-    fqdtw_list = sftw.find_one({'bot_id': bot_id,'projectname': f'å›¾æ–‡1ðŸ”½'})
+    fqdtw_list = sftw.find_one({'bot_id': bot_id,'projectname': f'图文1🔽'})
     if fqdtw_list is None:
-        sifatuwen(bot_id, 'å›¾æ–‡1ðŸ”½','','','',b'\x80\x03]q\x00]q\x01a.','')
-        fqdtw_list = sftw.find_one({'bot_id': bot_id,'projectname': f'å›¾æ–‡1ðŸ”½'})
+        sifatuwen(bot_id, '图文1🔽','','','',b'\x80\x03]q\x00]q\x01a.','')
+        fqdtw_list = sftw.find_one({'bot_id': bot_id,'projectname': f'图文1🔽'})
     state = fqdtw_list['state']
     keyboard = [
-        [InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}å›¾æ–‡è®¾ç½®', callback_data='tuwen'),
-         InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}æŒ‰é’®è®¾ç½®', callback_data='anniu')],
-        [InlineKeyboardButton(f'{MOOD_EMOJI_STAR}æŸ¥çœ‹å›¾æ–‡', callback_data='cattu'),
-         InlineKeyboardButton(f'{MOOD_EMOJI_FAST}å¼€å¯ç§å‘', callback_data='kaiqisifa')],
-        [InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')]
+        [InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}图文设置', callback_data='tuwen'),
+         InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}按钮设置', callback_data='anniu')],
+        [InlineKeyboardButton(f'{MOOD_EMOJI_STAR}查看图文', callback_data='cattu'),
+         InlineKeyboardButton(f'{MOOD_EMOJI_FAST}开启私发', callback_data='kaiqisifa')],
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')]
     ]
     if state == 1:
-        context.bot.send_message(chat_id=user_id, text='ç§å‘çŠ¶æ€:å·²å…³é—­ðŸ”´', reply_markup=InlineKeyboardMarkup(keyboard))
+        context.bot.send_message(chat_id=user_id, text='私发状态:已关闭🔴', reply_markup=InlineKeyboardMarkup(keyboard))
     else:
-        context.bot.send_message(chat_id=user_id, text='ç§å‘çŠ¶æ€:å·²å¼€å¯ðŸŸ¢', reply_markup=InlineKeyboardMarkup(keyboard))
+        context.bot.send_message(chat_id=user_id, text='私发状态:已开启🟢', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def tuwen(update: Update, context: CallbackContext):
@@ -1770,7 +1770,7 @@ def tuwen(update: Update, context: CallbackContext):
     query.answer()
     user_id = query.from_user.id
     context.user_data[f'key{user_id}'] = query.message
-    message_id = context.bot.send_message(chat_id=user_id, text=f'å›žå¤å›¾æ–‡æˆ–å›¾ç‰‡è§†é¢‘æ–‡å­—',
+    message_id = context.bot.send_message(chat_id=user_id, text=f'回复图文或图片视频文字',
                                           reply_markup=ForceReply())
     context.user_data[f'wanfapeizhi{user_id}'] = message_id
 
@@ -1779,15 +1779,15 @@ def cattu(update: Update, context: CallbackContext):
     query.answer()
     user_id = query.from_user.id
     bot_id = context.bot.id
-    fqdtw_list = sftw.find_one({'bot_id': bot_id,'projectname': f'å›¾æ–‡1ðŸ”½'})
+    fqdtw_list = sftw.find_one({'bot_id': bot_id,'projectname': f'图文1🔽'})
     file_id = fqdtw_list['file_id']
     file_text = fqdtw_list['text']
     file_type = fqdtw_list['send_type']
     key_text = fqdtw_list['key_text']
     keyboard = safe_pickle_loads(fqdtw_list['keyboard'])
-    keyboard.append([InlineKeyboardButton('âœ…å·²è¯»ï¼ˆç‚¹å‡»é”€æ¯æ­¤æ¶ˆæ¯ï¼‰', callback_data=f'close {user_id}')])
+    keyboard.append([InlineKeyboardButton('✅已读（点击销毁此消息）', callback_data=f'close {user_id}')])
     if fqdtw_list['text'] == '' and fqdtw_list['file_id'] == '':
-        message_id = context.bot.send_message(chat_id=user_id, text='è¯·è®¾ç½®å›¾æ–‡åŽç‚¹å‡»')
+        message_id = context.bot.send_message(chat_id=user_id, text='请设置图文后点击')
         time.sleep(3)
         del_message(message_id)
     else:
@@ -1822,7 +1822,7 @@ def anniu(update: Update, context: CallbackContext):
     query.answer()
     user_id = query.from_user.id
     context.user_data[f'key{user_id}'] = query.message
-    message_id = context.bot.send_message(chat_id=user_id, text=f'å›žå¤æŒ‰é’®è®¾ç½®', reply_markup=ForceReply())
+    message_id = context.bot.send_message(chat_id=user_id, text=f'回复按钮设置', reply_markup=ForceReply())
     context.user_data[f'wanfapeizhi{user_id}'] = message_id
 
 def kaiqisifa(update: Update, context: CallbackContext):
@@ -1832,23 +1832,23 @@ def kaiqisifa(update: Update, context: CallbackContext):
     bot_id = context.bot.id
     job = context.job_queue.get_jobs_by_name(f'sifa')
     if job == ():
-        sftw.update_one({'bot_id': bot_id,'projectname': f'å›¾æ–‡1ðŸ”½'}, {'$set': {"state": 2}})
+        sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {"state": 2}})
         keyboard = [
-            [InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}å›¾æ–‡è®¾ç½®', callback_data='tuwen'),
-             InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}æŒ‰é’®è®¾ç½®', callback_data='anniu')],
-            [InlineKeyboardButton(f'{MOOD_EMOJI_STAR}æŸ¥çœ‹å›¾æ–‡', callback_data='cattu'),
-             InlineKeyboardButton(f'{MOOD_EMOJI_FAST}å¼€å¯ç§å‘', callback_data='kaiqisifa')],
-            [InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')]]
+            [InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}图文设置', callback_data='tuwen'),
+             InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}按钮设置', callback_data='anniu')],
+            [InlineKeyboardButton(f'{MOOD_EMOJI_STAR}查看图文', callback_data='cattu'),
+             InlineKeyboardButton(f'{MOOD_EMOJI_FAST}开启私发', callback_data='kaiqisifa')],
+            [InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')]]
         try:
-            query.edit_message_text(text='ç§å‘çŠ¶æ€:å·²å¼€å¯ðŸŸ¢', reply_markup=InlineKeyboardMarkup(keyboard))
+            query.edit_message_text(text='私发状态:已开启🟢', reply_markup=InlineKeyboardMarkup(keyboard))
         except BadRequest as exc:
             if 'Message is not modified' not in str(exc):
                 raise
         context.job_queue.run_once(sync_job(usersifa), 1, data={"user_id": user_id}, name=f'sifa')
-        message_id = context.bot.send_message(chat_id=user_id, text='å¼€å¯ç§å‘')
+        message_id = context.bot.send_message(chat_id=user_id, text='开启私发')
         context.user_data['sifa'] = message_id
     else:
-        message_id = context.bot.send_message(chat_id=user_id, text='ç§å‘è¿›è¡Œä¸­')
+        message_id = context.bot.send_message(chat_id=user_id, text='私发进行中')
         time.sleep(3)
         del_message(message_id)
 
@@ -1858,7 +1858,7 @@ def usersifa(context: CallbackContext):
     guanli_id = job.data['user_id']
     count = 0
     shibai = 0
-    fqdtw_list = sftw.find_one({'bot_id': bot_id,'projectname': f'å›¾æ–‡1ðŸ”½'})
+    fqdtw_list = sftw.find_one({'bot_id': bot_id,'projectname': f'图文1🔽'})
     file_id = fqdtw_list['file_id']
     file_text = fqdtw_list['text']
     file_type = fqdtw_list['send_type']
@@ -1866,7 +1866,7 @@ def usersifa(context: CallbackContext):
     keyboard = safe_pickle_loads(fqdtw_list['keyboard'])
     
     
-    keyboard.append([InlineKeyboardButton('âœ…å·²è¯»ï¼ˆç‚¹å‡»é”€æ¯æ­¤æ¶ˆæ¯ï¼‰', callback_data=f'close 12321')])
+    keyboard.append([InlineKeyboardButton('✅已读（点击销毁此消息）', callback_data=f'close 12321')])
     for i in list(user.find({})):
         if file_type == 'text':
             try:
@@ -1894,32 +1894,32 @@ def usersifa(context: CallbackContext):
                 except:
                     shibai += 1
         time.sleep(3)
-    sftw.update_one({'bot_id': bot_id,'projectname': f'å›¾æ–‡1ðŸ”½'}, {'$set': {"state": 1}})
-    context.bot.send_message(chat_id=guanli_id, text=f'ç§å‘å®Œæ¯•\næˆåŠŸ:{count}\nå¤±è´¥:{shibai}')
+    sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {"state": 1}})
+    context.bot.send_message(chat_id=guanli_id, text=f'私发完毕\n成功:{count}\n失败:{shibai}')
     keyboard = [
-        [InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}å›¾æ–‡è®¾ç½®', callback_data='tuwen'),
-         InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}æŒ‰é’®è®¾ç½®', callback_data='anniu')],
-        [InlineKeyboardButton(f'{MOOD_EMOJI_STAR}æŸ¥çœ‹å›¾æ–‡', callback_data='cattu'),
-         InlineKeyboardButton(f'{MOOD_EMOJI_FAST}å¼€å¯ç§å‘', callback_data='kaiqisifa')],
-        [InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {guanli_id}')]]
-    context.bot.send_message(chat_id=guanli_id, text='ç§å‘çŠ¶æ€:å·²å…³é—­ðŸ”´', reply_markup=InlineKeyboardMarkup(keyboard))
+        [InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}图文设置', callback_data='tuwen'),
+         InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}按钮设置', callback_data='anniu')],
+        [InlineKeyboardButton(f'{MOOD_EMOJI_STAR}查看图文', callback_data='cattu'),
+         InlineKeyboardButton(f'{MOOD_EMOJI_FAST}开启私发', callback_data='kaiqisifa')],
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {guanli_id}')]]
+    context.bot.send_message(chat_id=guanli_id, text='私发状态:已关闭🔴', reply_markup=InlineKeyboardMarkup(keyboard))
 
 def backstart(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
     user_id = query.from_user.id
     keyboard = [
-        [InlineKeyboardButton(f'{ADMIN_EMOJI_USERLIST}ç”¨æˆ·åˆ—è¡¨', callback_data='yhlist'), InlineKeyboardButton(f'{ADMIN_EMOJI_DM}å¯¹è¯ç”¨æˆ·ç§å‘', callback_data='sifa')],
-        [InlineKeyboardButton(f'{ADMIN_EMOJI_TRC20}å……å€¼åœ°å€è®¾ç½®', callback_data='settrc20'),
-         InlineKeyboardButton(f'{ADMIN_EMOJI_OKPAY}OKPayé…ç½®', callback_data='okpaycfg')],
-        [InlineKeyboardButton(f'{ADMIN_EMOJI_GOODS}å•†å“ç®¡ç†', callback_data='spgli'),
-         InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}æ¬¢è¿Žè¯­ä¿®æ”¹', callback_data='startupdate')],
-        [InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}èœå•æŒ‰é’®', callback_data='addzdykey')],
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_USERLIST}用户列表', callback_data='yhlist'), InlineKeyboardButton(f'{ADMIN_EMOJI_DM}对话用户私发', callback_data='sifa')],
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_TRC20}充值地址设置', callback_data='settrc20'),
+         InlineKeyboardButton(f'{ADMIN_EMOJI_OKPAY}OKPay配置', callback_data='okpaycfg')],
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_GOODS}商品管理', callback_data='spgli'),
+         InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}欢迎语修改', callback_data='startupdate')],
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}菜单按钮', callback_data='addzdykey')],
     ]
     if BOT_CLONE_ENABLED:
-        keyboard[-1].append(InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}ä¸€é”®å…‹éš†åŒæ¬¾', callback_data='clonebot'))
-        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}å…‹éš†åˆ—è¡¨', callback_data='clonelist 0')])
-    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')])
+        keyboard[-1].append(InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}一键克隆同款', callback_data='clonebot'))
+        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}克隆列表', callback_data='clonelist 0')])
+    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
     jqrsyrs = len(list(user.find({})))
 
     numu = 0
@@ -1949,10 +1949,10 @@ def gmaijilu(update: Update, context: CallbackContext):
         keyboard.append([InlineKeyboardButton(f'{projectname}', callback_data=f'zcfshuo {bianhao}')])
         count += 1
     if len(list(gmjlu.find({'user_id': df_id}))) > 10:
-        keyboard.append([InlineKeyboardButton('ä¸‹ä¸€é¡µ', callback_data=f'gmainext {df_id}:10')])
-    keyboard.append([InlineKeyboardButton('â¬…ï¸è¿”å›ž', callback_data=f'backgmjl {df_id}')])
+        keyboard.append([InlineKeyboardButton('下一页', callback_data=f'gmainext {df_id}:10')])
+    keyboard.append([InlineKeyboardButton('⬅️返回', callback_data=f'backgmjl {df_id}')])
     try:
-        query.edit_message_text(text='ðŸ›’æ‚¨çš„è´­ç‰©è®°å½•', parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
+        query.edit_message_text(text='🛒您的购物记录', parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
     except:
         pass
 
@@ -1977,16 +1977,16 @@ def gmainext(update: Update, context: CallbackContext):
         count += 1
     if len(list(gmjlu.find({"user_id": df_id}, sort=[("timer", -1)], skip=int(page)))) > 10:
         if int(page) == 0:
-            keyboard.append([InlineKeyboardButton('ä¸‹ä¸€é¡µ', callback_data=f'gmainext {df_id}:{int(page) + 10}')])
+            keyboard.append([InlineKeyboardButton('下一页', callback_data=f'gmainext {df_id}:{int(page) + 10}')])
         else:
-            keyboard.append([InlineKeyboardButton('ä¸Šä¸€é¡µ', callback_data=f'gmainext {df_id}:{int(page) - 10}'),
-                             InlineKeyboardButton('ä¸‹ä¸€é¡µ', callback_data=f'gmainext {df_id}:{int(page) + 10}')])
+            keyboard.append([InlineKeyboardButton('上一页', callback_data=f'gmainext {df_id}:{int(page) - 10}'),
+                             InlineKeyboardButton('下一页', callback_data=f'gmainext {df_id}:{int(page) + 10}')])
     else:
-        keyboard.append([InlineKeyboardButton('ä¸Šä¸€é¡µ', callback_data=f'gmainext {df_id}:{int(page) - 10}')])
+        keyboard.append([InlineKeyboardButton('上一页', callback_data=f'gmainext {df_id}:{int(page) - 10}')])
 
-    keyboard.append([InlineKeyboardButton('â¬…ï¸è¿”å›ž', callback_data=f'backgmjl {df_id}')])
+    keyboard.append([InlineKeyboardButton('⬅️返回', callback_data=f'backgmjl {df_id}')])
     try:
-        query.edit_message_text(text='ðŸ›’æ‚¨çš„è´­ç‰©è®°å½•', parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
+        query.edit_message_text(text='🛒您的购物记录', parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
     except:
         pass
 
@@ -2008,19 +2008,19 @@ def backgmjl(update: Update, context: CallbackContext):
     zgje = df_list['zgje']
     USDT = df_list['USDT']
     fstext = f'''
-<b>ç”¨æˆ·ID:</b>  <code>{df_id}</code>
-<b>ç”¨æˆ·å:</b>  {df_username} 
-<b>æ³¨å†Œæ—¥æœŸ:</b>  {creation_time}
+<b>用户ID:</b>  <code>{df_id}</code>
+<b>用户名:</b>  {df_username}
+<b>注册日期:</b>  {creation_time}
 
-<b>æ€»è´­æ•°é‡:</b>  {zgsl}
+<b>总购数量:</b>  {zgsl}
 
-<b>æ€»è´­é‡‘é¢:</b>  {standard_num(zgje)} USDT
+<b>总购金额:</b>  {standard_num(zgje)} USDT
 
-<b>æ‚¨çš„ä½™é¢:</b>  {USDT} USDT
+<b>您的余额:</b>  {USDT} USDT
     '''
 
-    keyboard = [[InlineKeyboardButton('ðŸ›’è´­ä¹°è®°å½•', callback_data=f'gmaijilu {df_id}')],
-                [InlineKeyboardButton('å…³é—­', callback_data=f'close {df_id}')]]
+    keyboard = [[InlineKeyboardButton('🛒购买记录', callback_data=f'gmaijilu {df_id}')],
+                [InlineKeyboardButton('关闭', callback_data=f'close {df_id}')]]
     query.edit_message_text(text=fstext, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML',
                             disable_web_page_preview=True)
 
@@ -2032,7 +2032,7 @@ def zcfshuo(update: Update, context: CallbackContext):
     bianhao = query.data.replace('zcfshuo ', '')
     gmjlu_list = gmjlu.find_one({'bianhao': bianhao})
     leixing = gmjlu_list['leixing']
-    if leixing == 'ä¼šå‘˜é“¾æŽ¥':
+    if leixing == '会员链接':
         text = gmjlu_list['text']
 
         context.bot.send_message(chat_id=user_id, text=text, disable_web_page_preview=True)
@@ -2040,7 +2040,7 @@ def zcfshuo(update: Update, context: CallbackContext):
     else:
         zip_filename = gmjlu_list['text']
         fstext = gmjlu_list['ts']
-        keyboard = [[InlineKeyboardButton('âœ…å·²è¯»ï¼ˆç‚¹å‡»é”€æ¯æ­¤æ¶ˆæ¯ï¼‰', callback_data=f'close {user_id}')]]
+        keyboard = [[InlineKeyboardButton('✅已读（点击销毁此消息）', callback_data=f'close {user_id}')]]
         context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML', disable_web_page_preview=True,
                                  reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -2061,12 +2061,12 @@ def yhlist(update: Update, context: CallbackContext):
         df_fullname = i['fullname'].replace('<', '').replace('>', '')
         USDT = i['USDT']
         text_list.append(
-            f'{count}. <a href="tg://user?id={df_id}">{df_fullname}</a> ID:<code>{df_id}</code>-@{df_username}-ä½™é¢:{USDT}')
+            f'{count}. <a href="tg://user?id={df_id}">{df_fullname}</a> ID:<code>{df_id}</code>-@{df_username}-余额:{USDT}')
         count += 1
     if len(list(user.find({}))) > 10:
-        keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}ä¸‹ä¸€é¡µ', callback_data=f'yhnext 10:{count}')])
+        keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}下一页', callback_data=f'yhnext 10:{count}')])
 
-    keyboard.append([InlineKeyboardButton('â¬…ï¸è¿”å›žä¸»ç•Œé¢', callback_data='backstart')])
+    keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data='backstart')])
 
     text_list = '\n'.join(text_list)
     try:
@@ -2090,19 +2090,19 @@ def yhnext(update: Update, context: CallbackContext):
         df_fullname = i['fullname'].replace('<', '').replace('>', '')
         USDT = i['USDT']
         text_list.append(
-            f'{count}. <a href="tg://user?id={df_id}">{df_fullname}</a> ID:<code>{df_id}</code>-@{df_username}-ä½™é¢:{USDT}')
+            f'{count}. <a href="tg://user?id={df_id}">{df_fullname}</a> ID:<code>{df_id}</code>-@{df_username}-余额:{USDT}')
         count += 1
     if len(list(user.find({}, skip=int(page)))) > 10:
         if int(page) == 0:
-            keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}ä¸‹ä¸€é¡µ', callback_data=f'yhnext {int(page) + 10}:{count}')])
+            keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}下一页', callback_data=f'yhnext {int(page) + 10}:{count}')])
         else:
-            keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}ä¸Šä¸€é¡µ', callback_data=f'yhnext {int(page) - 10}:{count - 20}'),
-                             InlineKeyboardButton(f'{MOOD_EMOJI_FAST}ä¸‹ä¸€é¡µ', callback_data=f'yhnext {int(page) + 10}:{count}')])
+            keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}上一页', callback_data=f'yhnext {int(page) - 10}:{count - 20}'),
+                             InlineKeyboardButton(f'{MOOD_EMOJI_FAST}下一页', callback_data=f'yhnext {int(page) + 10}:{count}')])
     else:
-        keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}ä¸Šä¸€é¡µ', callback_data=f'yhnext {int(page) - 10}:{count - 20}')])
+        keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}上一页', callback_data=f'yhnext {int(page) - 10}:{count - 20}')])
 
     text_list = '\n'.join(text_list)
-    keyboard.append([InlineKeyboardButton('â¬…ï¸è¿”å›žä¸»ç•Œé¢', callback_data=f'backstart')])
+    keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
     query.bot.edit_message_text(text=text_list, chat_id=query.message.chat.id,
                                 message_id=query.message.message_id, reply_markup=InlineKeyboardMarkup(keyboard),
                                 parse_mode='HTML')
@@ -2132,47 +2132,47 @@ def spgli(update: Update, context: CallbackContext):
         row = i['row']
         keyboard[row - 1].append(InlineKeyboardButton(f'{projectname}', callback_data=f'flxxi {uid}'))
     if sp_list == []:
-        keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}æ–°å»ºä¸€è¡Œ', callback_data='newfl')])
+        keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}新建一行', callback_data='newfl')])
     else:
-        keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}æ–°å»ºä¸€è¡Œ', callback_data='newfl'),
-                         InlineKeyboardButton(f'{MOOD_EMOJI_FAST}è°ƒæ•´è¡ŒæŽ’åº', callback_data='paixufl'),
-                         InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}åˆ é™¤ä¸€è¡Œ', callback_data='delfl')])
-    keyboard.append([InlineKeyboardButton('â¬…ï¸è¿”å›žä¸»ç•Œé¢', callback_data='backstart'), InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')])
+        keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}新建一行', callback_data='newfl'),
+                         InlineKeyboardButton(f'{MOOD_EMOJI_FAST}调整行排序', callback_data='paixufl'),
+                         InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除一行', callback_data='delfl')])
+    keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data='backstart'), InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
     text = f'''
-å•†å“ç®¡ç†
+商品管理
     '''
     query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
 
 def generate_24bit_uid():
-    # ç”Ÿæˆä¸€ä¸ªUUID
+    # 生成一个UUID
     uid = uuid.uuid4()
 
-    # å°†UUIDè½¬æ¢ä¸ºå­—ç¬¦ä¸²
+    # 将UUID转换为字符串
     uid_str = str(uid)
 
-    # ä½¿ç”¨MD5å“ˆå¸Œç®—æ³•å°†å­—ç¬¦ä¸²å“ˆå¸Œä¸ºä¸€ä¸ª128ä½çš„å€¼
+    # 使用MD5哈希算法将字符串哈希为一个128位的值
     hashed_uid = hashlib.md5(uid_str.encode()).hexdigest()
 
-    # å–å“ˆå¸Œå€¼çš„å‰24ä½ä½œä¸ºæˆ‘ä»¬çš„24ä½UID
+    # 取哈希值的前24位作为我们的24位UID
     return hashed_uid[:24]
 
 
 def build_product_detail_keyboard(nowuid, uid, user_id):
     return [
-        [InlineKeyboardButton(f'{MOOD_EMOJI_FIRE}å–å‡ºæ‰€æœ‰åº“å­˜', callback_data=f'qchuall {nowuid}'),
-         InlineKeyboardButton(f'{MOOD_EMOJI_STAR}å•†å“ä½¿ç”¨è¯´æ˜Ž', callback_data=f'update_sysm {nowuid}')],
-        [InlineKeyboardButton('ðŸ“„ä¸Šä¼ è°·æ­Œè´¦æˆ·', callback_data=f'update_gg {nowuid}'),
-         InlineKeyboardButton('ðŸ’¡è´­ä¹°æç¤º', callback_data=f'update_wbts {nowuid}')],
-        [InlineKeyboardButton('ðŸ”—ä¸Šä¼ é“¾æŽ¥', callback_data=f'update_hy {nowuid}'),
-         InlineKeyboardButton('ðŸ“ä¸Šä¼ txtæ–‡ä»¶', callback_data=f'update_txt {nowuid}')],
-        [InlineKeyboardButton('ðŸ“¦ä¸Šä¼ å·åŒ…', callback_data=f'update_hb {nowuid}'),
-         InlineKeyboardButton('ðŸ§©ä¸Šä¼ åè®®å·', callback_data=f'update_xyh {nowuid}')],
-        [InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}ä¿®æ”¹äºŒçº§åˆ†ç±»å', callback_data=f'upejflname {nowuid}'),
-         InlineKeyboardButton('ðŸ’°ä¿®æ”¹ä»·æ ¼', callback_data=f'upmoney {nowuid}')],
-        [InlineKeyboardButton('â¬…ï¸è¿”å›žåˆ†ç±»è¯¦æƒ…', callback_data=f'flxxi {uid}'),
-         InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')]
+        [InlineKeyboardButton(f'{MOOD_EMOJI_FIRE}取出所有库存', callback_data=f'qchuall {nowuid}'),
+         InlineKeyboardButton(f'{MOOD_EMOJI_STAR}商品使用说明', callback_data=f'update_sysm {nowuid}')],
+        [InlineKeyboardButton('📄上传谷歌账户', callback_data=f'update_gg {nowuid}'),
+         InlineKeyboardButton('💡购买提示', callback_data=f'update_wbts {nowuid}')],
+        [InlineKeyboardButton('🔗上传链接', callback_data=f'update_hy {nowuid}'),
+         InlineKeyboardButton('📝上传txt文件', callback_data=f'update_txt {nowuid}')],
+        [InlineKeyboardButton('📦上传号包', callback_data=f'update_hb {nowuid}'),
+         InlineKeyboardButton('🧩上传协议号', callback_data=f'update_xyh {nowuid}')],
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}修改二级分类名', callback_data=f'upejflname {nowuid}'),
+         InlineKeyboardButton('💰修改价格', callback_data=f'upmoney {nowuid}')],
+        [InlineKeyboardButton('⬅️返回分类详情', callback_data=f'flxxi {uid}'),
+         InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')]
     ]
 
 
@@ -2188,7 +2188,7 @@ def newfl(update: Update, context: CallbackContext):
     else:
         maxrow = maxrow['row'] + 1
     uid = generate_24bit_uid()
-    fenleibiao(uid, 'ç‚¹å‡»æŒ‰é’®ä¿®æ”¹', maxrow)
+    fenleibiao(uid, '点击按钮修改', maxrow)
     keylist = list(fenlei.find({}, sort=[('row', 1)]))
     keyboard = [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
                 [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
@@ -2199,10 +2199,10 @@ def newfl(update: Update, context: CallbackContext):
         projectname = i['projectname']
         row = i['row']
         keyboard[row - 1].append(InlineKeyboardButton(f'{projectname}', callback_data=f'flxxi {uid}'))
-    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}æ–°å»ºä¸€è¡Œ', callback_data='newfl'),
-                     InlineKeyboardButton(f'{MOOD_EMOJI_FAST}è°ƒæ•´è¡ŒæŽ’åº', callback_data='paixufl'),
-                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}åˆ é™¤ä¸€è¡Œ', callback_data='delfl')])
-    context.bot.send_message(chat_id=user_id, text='å•†å“ç®¡ç†', reply_markup=InlineKeyboardMarkup(keyboard))
+    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}新建一行', callback_data='newfl'),
+                     InlineKeyboardButton(f'{MOOD_EMOJI_FAST}调整行排序', callback_data='paixufl'),
+                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除一行', callback_data='delfl')])
+    context.bot.send_message(chat_id=user_id, text='商品管理', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def flxxi(update: Update, context: CallbackContext):
@@ -2223,13 +2223,13 @@ def flxxi(update: Update, context: CallbackContext):
         row = i['row']
         keyboard[row - 1].append(InlineKeyboardButton(f'{projectname}', callback_data=f'fejxxi {nowuid}'))
 
-    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}ä¿®æ”¹åˆ†ç±»å', callback_data=f'upspname {uid}'),
-                     InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}æ–°å¢žäºŒçº§åˆ†ç±»', callback_data=f'newejfl {uid}')])
-    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}è°ƒæ•´äºŒçº§åˆ†ç±»æŽ’åº', callback_data=f'paixuejfl {uid}'),
-                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}åˆ é™¤äºŒçº§åˆ†ç±»', callback_data=f'delejfl {uid}')])
-    keyboard.append([InlineKeyboardButton('â¬…ï¸è¿”å›žå•†å“ç®¡ç†', callback_data='spgli')])
+    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}修改分类名', callback_data=f'upspname {uid}'),
+                     InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}新增二级分类', callback_data=f'newejfl {uid}')])
+    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}调整二级分类排序', callback_data=f'paixuejfl {uid}'),
+                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除二级分类', callback_data=f'delejfl {uid}')])
+    keyboard.append([InlineKeyboardButton('⬅️返回商品管理', callback_data='spgli')])
     fstext = f'''
-åˆ†ç±»: {fl_pro}
+分类: {fl_pro}
     '''
     query.edit_message_text(text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -2250,12 +2250,12 @@ def fejxxi(update: Update, context: CallbackContext):
     kc = len(list(hb.find({'nowuid': nowuid, 'state': 0})))
     ys = len(list(hb.find({'nowuid': nowuid, 'state': 1})))
     fstext = f'''
-ä¸»åˆ†ç±»: {fl_pro}
-äºŒçº§åˆ†ç±»: {ej_projectname}
+主分类: {fl_pro}
+二级分类: {ej_projectname}
 
-ä»·æ ¼: {money}U
-åº“å­˜: {kc}
-å·²å”®: {ys}
+价格: {money}U
+库存: {kc}
+已售: {ys}
     '''
     query.edit_message_text(text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -2267,10 +2267,10 @@ def update_xyh(update: Update, context: CallbackContext):
     bot_id = context.bot.id
     nowuid = query.data.replace('update_xyh ', '')
     fstext = f'''
-å‘é€åè®®å·åŽ‹ç¼©åŒ…ï¼Œè‡ªåŠ¨è¯†åˆ«é‡Œé¢çš„jsonæˆ–sessionæ ¼å¼
+发送协议号压缩包，自动识别里面的json或session格式
     '''
     user.update_one({"user_id": user_id}, {"$set": {"sign": f'update_xyh {nowuid}'}})
-    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å–æ¶ˆ', callback_data=f'close {user_id}')]]
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -2281,10 +2281,10 @@ def update_gg(update: Update, context: CallbackContext):
     bot_id = context.bot.id
     nowuid = query.data.replace('update_gg ', '')
     fstext = f'''
-å‘é€txtæ–‡ä»¶
+发送txt文件
     '''
     user.update_one({"user_id": user_id}, {"$set": {"sign": f'update_gg {nowuid}'}})
-    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å–æ¶ˆ', callback_data=f'close {user_id}')]]
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -2295,10 +2295,10 @@ def update_txt(update: Update, context: CallbackContext):
     bot_id = context.bot.id
     nowuid = query.data.replace('update_txt ', '')
     fstext = f'''
-apiå·ç é“¾æŽ¥ä¸“ç”¨ï¼Œè¯·æ­£ç¡®ä¸Šä¼ ï¼Œå‘é€txtæ–‡ä»¶ï¼Œä¸€è¡Œä¸€ä¸ª
+api号码链接专用，请正确上传，发送txt文件，一行一个
     '''
     user.update_one({"user_id": user_id}, {"$set": {"sign": f'update_txt {nowuid}'}})
-    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å–æ¶ˆ', callback_data=f'close {user_id}')]]
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -2313,11 +2313,11 @@ def update_sysm(update: Update, context: CallbackContext):
     context.bot.send_message(chat_id=user_id, text=dqts, parse_mode='HTML')
 
     fstext = f'''
-å½“å‰ä½¿ç”¨è¯´æ˜Žä¸ºä¸Šé¢
-è¾“å…¥æ–°çš„æ–‡å­—æ›´æ”¹
+当前使用说明为上面
+输入新的文字更改
     '''
     user.update_one({"user_id": user_id}, {"$set": {"sign": f'update_sysm {nowuid}'}})
-    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å–æ¶ˆ', callback_data=f'close {user_id}')]]
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -2332,11 +2332,11 @@ def update_wbts(update: Update, context: CallbackContext):
     context.bot.send_message(chat_id=user_id, text=dqts, parse_mode='HTML')
 
     fstext = f'''
-å½“å‰åˆ†ç±»æç¤ºä¸ºä¸Šé¢
-è¾“å…¥æ–°çš„æ–‡å­—æ›´æ”¹
+当前分类提示为上面
+输入新的文字更改
     '''
     user.update_one({"user_id": user_id}, {"$set": {"sign": f'update_wbts {nowuid}'}})
-    keyboard = [[InlineKeyboardButton('å–æ¶ˆ', callback_data=f'close {user_id}')]]
+    keyboard = [[InlineKeyboardButton('取消', callback_data=f'close {user_id}')]]
     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -2347,16 +2347,16 @@ def update_hy(update: Update, context: CallbackContext):
     bot_id = context.bot.id
     nowuid = query.data.replace('update_hy ', '')
     fstext = f'''
-å‘é€é“¾æŽ¥ï¼Œæ¢è¡Œä»£è¡¨å¤šä¸ª
-å•ä¸ª
+发送链接，换行代表多个
+单个
 https://t.me/giftcode/IApV5cqF2FCzAQAA5aDXkeEqQrQ
-å¤šä¸ª
+多个
 https://t.me/giftcode/IApV5cqF2FCzAQAA5aDXkeEqQrQ
 https://t.me/giftcode/wI_oG9K2oFBSAQAA-Z2W0Fb3ng8
 https://t.me/giftcode/_xSoPUXMgVBmAQAAiKBPNxWWIpY
     '''
     user.update_one({"user_id": user_id}, {"$set": {"sign": f'update_hy {nowuid}'}})
-    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å–æ¶ˆ', callback_data=f'close {user_id}')]]
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard),
                              disable_web_page_preview=True)
 
@@ -2368,10 +2368,10 @@ def update_hb(update: Update, context: CallbackContext):
     bot_id = context.bot.id
     nowuid = query.data.replace('update_hb ', '')
     fstext = f'''
-å‘é€å·åŒ…
+发送号包
     '''
     user.update_one({"user_id": user_id}, {"$set": {"sign": f'update_hb {nowuid}'}})
-    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å–æ¶ˆ', callback_data=f'close {user_id}')]]
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -2382,11 +2382,11 @@ def upmoney(update: Update, context: CallbackContext):
     bot_id = context.bot.id
     uid = query.data.replace('upmoney ', '')
     fstext = f'''
-è¾“å…¥æ–°çš„ä»·æ ¼
+输入新的价格
     '''
 
     user.update_one({"user_id": user_id}, {"$set": {"sign": f'upmoney {uid}'}})
-    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å–æ¶ˆ', callback_data=f'close {user_id}')]]
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -2397,12 +2397,12 @@ def upejflname(update: Update, context: CallbackContext):
     bot_id = context.bot.id
     uid = query.data.replace('upejflname ', '')
     fstext = f'''
-è¾“å…¥æ–°çš„åå­—
-ä¾‹å¦‚ ðŸ‡¨ðŸ‡³+86ä¸­å›½~ç›´ç™»å·(tadta)
+输入新的名字
+例如 🇨🇳+86中国~直登号(tadta)
     '''
 
     user.update_one({"user_id": user_id}, {"$set": {"sign": f'upejflname {uid}'}})
-    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å–æ¶ˆ', callback_data=f'close {user_id}')]]
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -2413,12 +2413,12 @@ def upspname(update: Update, context: CallbackContext):
     bot_id = context.bot.id
     uid = query.data.replace('upspname ', '')
     fstext = f'''
-è¾“å…¥æ–°çš„åå­—
-ä¾‹å¦‚ ðŸŒŽäºšæ´²å›½å®¶~âœˆç›´ç™»å·(tadta)
+输入新的名字
+例如 🌎亚洲国家~✈直登号(tadta)
     '''
 
     user.update_one({"user_id": user_id}, {"$set": {"sign": f'upspname {uid}'}})
-    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å–æ¶ˆ', callback_data=f'close {user_id}')]]
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -2435,7 +2435,7 @@ def newejfl(update: Update, context: CallbackContext):
     else:
         maxrow = maxrow['row'] + 1
     nowuid = generate_24bit_uid()
-    erjifenleibiao(uid, nowuid, 'ç‚¹å‡»æŒ‰é’®ä¿®æ”¹', maxrow)
+    erjifenleibiao(uid, nowuid, '点击按钮修改', maxrow)
     fl_pro = fenlei.find_one({'uid': uid})['projectname']
     keyboard = [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
                 [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
@@ -2448,13 +2448,13 @@ def newejfl(update: Update, context: CallbackContext):
         row = i['row']
         keyboard[row - 1].append(InlineKeyboardButton(f'{projectname}', callback_data=f'fejxxi {nowuid}'))
 
-    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}ä¿®æ”¹åˆ†ç±»å', callback_data=f'upspname {uid}'),
-                     InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}æ–°å¢žäºŒçº§åˆ†ç±»', callback_data=f'newejfl {uid}')])
-    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}è°ƒæ•´äºŒçº§åˆ†ç±»æŽ’åº', callback_data=f'paixuejfl {uid}'),
-                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}åˆ é™¤äºŒçº§åˆ†ç±»', callback_data=f'delejfl {uid}')])
-    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')])
+    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}修改分类名', callback_data=f'upspname {uid}'),
+                     InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}新增二级分类', callback_data=f'newejfl {uid}')])
+    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}调整二级分类排序', callback_data=f'paixuejfl {uid}'),
+                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除二级分类', callback_data=f'delejfl {uid}')])
+    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
     fstext = f'''
-åˆ†ç±»: {fl_pro}
+分类: {fl_pro}
     '''
     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -2475,16 +2475,16 @@ def addzdykey(update: Update, context: CallbackContext):
         first = i['first']
         keyboard[i["Row"] - 1].append(InlineKeyboardButton(projectname, callback_data=f'keyxq {row}:{first}'))
     if keylist == []:
-        keyboard = [[InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}æ–°å»ºä¸€è¡Œ', callback_data='newrow')]]
+        keyboard = [[InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}新建一行', callback_data='newrow')]]
     else:
-        keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}æ–°å»ºä¸€è¡Œ', callback_data='newrow'),
-                         InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}åˆ é™¤ä¸€è¡Œ', callback_data='delrow'),
-                         InlineKeyboardButton(f'{MOOD_EMOJI_FAST}è°ƒæ•´è¡ŒæŽ’åº', callback_data='paixurow')])
-        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}ä¿®æ”¹æŒ‰é’®', callback_data='newkey')])
+        keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}新建一行', callback_data='newrow'),
+                         InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除一行', callback_data='delrow'),
+                         InlineKeyboardButton(f'{MOOD_EMOJI_FAST}调整行排序', callback_data='paixurow')])
+        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}修改按钮', callback_data='newkey')])
         
-    keyboard.append([InlineKeyboardButton('â¬…ï¸è¿”å›žä¸»ç•Œé¢', callback_data=f'backstart')])
+    keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
     text = f'''
-è‡ªå®šä¹‰æŒ‰é’®
+自定义按钮
     '''
     query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
@@ -2507,16 +2507,16 @@ def newkey(update: Update, context: CallbackContext):
         keyboard[i["Row"] - 1].append(InlineKeyboardButton(projectname, callback_data=f'keyxq {row}:{first}'))
         count.append(row)
     if count == []:
-        context.bot.send_message(chat_id=user_id, text='è¯·å…ˆæ–°å»ºä¸€è¡Œ')
+        context.bot.send_message(chat_id=user_id, text='请先新建一行')
     else:
         maxrow = max(count)
         for i in range(0, maxrow):
-            keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_STAR}ç¬¬{i + 1}è¡Œ', callback_data=f'dddd'),
-                             InlineKeyboardButton('âž•', callback_data=f'addhangkey {i + 1}'),
-                             InlineKeyboardButton('âž–', callback_data=f'delhangkey {i + 1}')])
-        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')])
-        keyboard.append([InlineKeyboardButton('â¬…ï¸è¿”å›žä¸»ç•Œé¢', callback_data=f'backstart')])
-        query.edit_message_text(text='è‡ªå®šä¹‰æŒ‰é’®', reply_markup=InlineKeyboardMarkup(keyboard))
+            keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_STAR}第{i + 1}行', callback_data=f'dddd'),
+                             InlineKeyboardButton('➕', callback_data=f'addhangkey {i + 1}'),
+                             InlineKeyboardButton('➖', callback_data=f'delhangkey {i + 1}')])
+        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
+        keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
+        query.edit_message_text(text='自定义按钮', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def newrow(update: Update, context: CallbackContext):
@@ -2541,12 +2541,12 @@ def newrow(update: Update, context: CallbackContext):
         row = i['Row']
         first = i['first']
         keyboard[i["Row"] - 1].append(InlineKeyboardButton(projectname, callback_data=f'keyxq {row}:{first}'))
-    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}æ–°å»ºä¸€è¡Œ', callback_data='newrow'),
-                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}åˆ é™¤ä¸€è¡Œ', callback_data='delrow'),
-                     InlineKeyboardButton(f'{MOOD_EMOJI_FAST}è°ƒæ•´è¡ŒæŽ’åº', callback_data='paixurow')])
-    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}ä¿®æ”¹æŒ‰é’®', callback_data='newkey')])
-    keyboard.append([InlineKeyboardButton('â¬…ï¸è¿”å›žä¸»ç•Œé¢', callback_data=f'backstart')])
-    context.bot.send_message(chat_id=user_id, text='è‡ªå®šä¹‰æŒ‰é’®', reply_markup=InlineKeyboardMarkup(keyboard))
+    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}新建一行', callback_data='newrow'),
+                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除一行', callback_data='delrow'),
+                     InlineKeyboardButton(f'{MOOD_EMOJI_FAST}调整行排序', callback_data='paixurow')])
+    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}修改按钮', callback_data='newkey')])
+    keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
+    context.bot.send_message(chat_id=user_id, text='自定义按钮', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def close(update: Update, context: CallbackContext):
@@ -2580,26 +2580,26 @@ def paixurow(update: Update, context: CallbackContext):
         keyboard[i["Row"] - 1].append(InlineKeyboardButton(projectname, callback_data=f'keyxq {row}:{first}'))
         count.append(row)
     if count == []:
-        context.bot.send_message(chat_id=user_id, text='æ²¡æœ‰æŒ‰é’®å­˜åœ¨')
+        context.bot.send_message(chat_id=user_id, text='没有按钮存在')
     else:
         maxrow = max(count)
         if maxrow == 1:
-            context.bot.send_message(chat_id=user_id, text='åªæœ‰ä¸€è¡ŒæŒ‰é’®æ— æ³•è°ƒæ•´')
+            context.bot.send_message(chat_id=user_id, text='只有一行按钮无法调整')
         else:
             for i in range(0, maxrow):
                 if i == 0:
                     keyboard.append(
-                        [InlineKeyboardButton(f'{MOOD_EMOJI_FAST}ç¬¬{i + 1}è¡Œä¸‹ç§»', callback_data=f'paixuyidong xiayi:{i + 1}')])
+                        [InlineKeyboardButton(f'{MOOD_EMOJI_FAST}第{i + 1}行下移', callback_data=f'paixuyidong xiayi:{i + 1}')])
                 elif i == maxrow - 1:
                     keyboard.append(
-                        [InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}ç¬¬{i + 1}è¡Œä¸Šç§»', callback_data=f'paixuyidong shangyi:{i + 1}')])
+                        [InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}第{i + 1}行上移', callback_data=f'paixuyidong shangyi:{i + 1}')])
                 else:
                     keyboard.append(
-                        [InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}ç¬¬{i + 1}è¡Œä¸Šç§»', callback_data=f'paixuyidong shangyi:{i + 1}'),
-                         InlineKeyboardButton(f'{MOOD_EMOJI_FAST}ç¬¬{i + 1}è¡Œä¸‹ç§»', callback_data=f'paixuyidong xiayi:{i + 1}')])
-            keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')])
-            keyboard.append([InlineKeyboardButton('â¬…ï¸è¿”å›žä¸»ç•Œé¢', callback_data=f'backstart')])
-            query.edit_message_text(text='è‡ªå®šä¹‰æŒ‰é’®', reply_markup=InlineKeyboardMarkup(keyboard))
+                        [InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}第{i + 1}行上移', callback_data=f'paixuyidong shangyi:{i + 1}'),
+                         InlineKeyboardButton(f'{MOOD_EMOJI_FAST}第{i + 1}行下移', callback_data=f'paixuyidong xiayi:{i + 1}')])
+            keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
+            keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
+            query.edit_message_text(text='自定义按钮', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def paixuyidong(update: Update, context: CallbackContext):
@@ -2629,12 +2629,12 @@ def paixuyidong(update: Update, context: CallbackContext):
         row = i['Row']
         first = i['first']
         keyboard[i["Row"] - 1].append(InlineKeyboardButton(projectname, callback_data=f'keyxq {row}:{first}'))
-    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}æ–°å»ºä¸€è¡Œ', callback_data='newrow'),
-                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}åˆ é™¤ä¸€è¡Œ', callback_data='delrow'),
-                     InlineKeyboardButton(f'{MOOD_EMOJI_FAST}è°ƒæ•´è¡ŒæŽ’åº', callback_data='paixurow')])
-    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}ä¿®æ”¹æŒ‰é’®', callback_data='newkey')])
-    keyboard.append([InlineKeyboardButton('â¬…ï¸è¿”å›žä¸»ç•Œé¢', callback_data=f'backstart')])
-    query.edit_message_text(text='è‡ªå®šä¹‰æŒ‰é’®', reply_markup=InlineKeyboardMarkup(keyboard))
+    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}新建一行', callback_data='newrow'),
+                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除一行', callback_data='delrow'),
+                     InlineKeyboardButton(f'{MOOD_EMOJI_FAST}调整行排序', callback_data='paixurow')])
+    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}修改按钮', callback_data='newkey')])
+    keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
+    query.edit_message_text(text='自定义按钮', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def delrow(update: Update, context: CallbackContext):
@@ -2655,14 +2655,14 @@ def delrow(update: Update, context: CallbackContext):
         keyboard[i["Row"] - 1].append(InlineKeyboardButton(projectname, callback_data=f'keyxq {row}:{first}'))
         count.append(row)
     if count == []:
-        context.bot.send_message(chat_id=user_id, text='æ²¡æœ‰æŒ‰é’®å­˜åœ¨')
+        context.bot.send_message(chat_id=user_id, text='没有按钮存在')
     else:
         maxrow = max(count)
         for i in range(0, maxrow):
-            keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}åˆ é™¤ç¬¬{i + 1}è¡Œ', callback_data=f'qrscdelrow {i + 1}')])
-        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')])
-        keyboard.append([InlineKeyboardButton('â¬…ï¸è¿”å›žä¸»ç•Œé¢', callback_data=f'backstart')])
-        query.edit_message_text(text='è‡ªå®šä¹‰æŒ‰é’®', reply_markup=InlineKeyboardMarkup(keyboard))
+            keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除第{i + 1}行', callback_data=f'qrscdelrow {i + 1}')])
+        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
+        keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
+        query.edit_message_text(text='自定义按钮', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def qrscdelrow(update: Update, context: CallbackContext):
@@ -2693,12 +2693,12 @@ def qrscdelrow(update: Update, context: CallbackContext):
         row = i['Row']
         first = i['first']
         keyboard[i["Row"] - 1].append(InlineKeyboardButton(projectname, callback_data=f'keyxq {row}:{first}'))
-    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}æ–°å»ºä¸€è¡Œ', callback_data='newrow'),
-                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}åˆ é™¤ä¸€è¡Œ', callback_data='delrow'),
-                     InlineKeyboardButton(f'{MOOD_EMOJI_FAST}è°ƒæ•´è¡ŒæŽ’åº', callback_data='paixurow')])
-    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}ä¿®æ”¹æŒ‰é’®', callback_data='newkey')])
-    keyboard.append([InlineKeyboardButton('â¬…ï¸è¿”å›žä¸»ç•Œé¢', callback_data=f'backstart')])
-    context.bot.send_message(chat_id=user_id,text='è‡ªå®šä¹‰æŒ‰é’®', reply_markup=InlineKeyboardMarkup(keyboard))
+    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}新建一行', callback_data='newrow'),
+                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除一行', callback_data='delrow'),
+                     InlineKeyboardButton(f'{MOOD_EMOJI_FAST}调整行排序', callback_data='paixurow')])
+    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}修改按钮', callback_data='newkey')])
+    keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
+    context.bot.send_message(chat_id=user_id,text='自定义按钮', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def delhangkey(update: Update, context: CallbackContext):
@@ -2720,15 +2720,15 @@ def delhangkey(update: Update, context: CallbackContext):
         keyboard[i["Row"] - 1].append(InlineKeyboardButton(projectname, callback_data=f'keyxq {row}:{first}'))
         count.append(row)
     if count == []:
-        context.bot.send_message(chat_id=user_id, text='æ²¡æœ‰æŒ‰é’®å­˜åœ¨')
+        context.bot.send_message(chat_id=user_id, text='没有按钮存在')
     else:
 
         # maxrow = max(count)
         for i in range(0, len(count)):
-            keyboard[count[i]].append(InlineKeyboardButton('âž–', callback_data=f'qrdelliekey {row}:{i + 1}'))
-        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')])
-        keyboard.append([InlineKeyboardButton('â¬…ï¸è¿”å›žä¸»ç•Œé¢', callback_data=f'backstart')])
-        query.edit_message_text(text='è‡ªå®šä¹‰æŒ‰é’®', reply_markup=InlineKeyboardMarkup(keyboard))
+            keyboard[count[i]].append(InlineKeyboardButton('➖', callback_data=f'qrdelliekey {row}:{i + 1}'))
+        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
+        keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
+        query.edit_message_text(text='自定义按钮', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def keyxq(update: Update, context: CallbackContext):
@@ -2744,20 +2744,20 @@ def keyxq(update: Update, context: CallbackContext):
     projectname = key_list['projectname']
     text = key_list['text']
     print_text = f'''
-è¿™æ˜¯ç¬¬{row}è¡Œç¬¬{first}ä¸ªæŒ‰é’®
+这是第{row}行第{first}个按钮
 
-æŒ‰é’®åç§°: {projectname}
+按钮名称: {projectname}
     '''
 
     keyboard = [
-        [InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}å›¾æ–‡è®¾ç½®', callback_data=f'settuwenset {row}:{first}'),
-         InlineKeyboardButton(f'{MOOD_EMOJI_STAR}æŸ¥çœ‹å›¾æ–‡è®¾ç½®', callback_data=f'cattuwenset {row}:{first}')],
-        [InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}ä¿®æ”¹å°¾éšæŒ‰é’®', callback_data=f'setkeyboard {row}:{first}'),
-         InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}ä¿®æ”¹æŒ‰é’®åå­—', callback_data=f'setkeyname {row}:{first}')],
-        [InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')]
+        [InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}图文设置', callback_data=f'settuwenset {row}:{first}'),
+         InlineKeyboardButton(f'{MOOD_EMOJI_STAR}查看图文设置', callback_data=f'cattuwenset {row}:{first}')],
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}修改尾随按钮', callback_data=f'setkeyboard {row}:{first}'),
+         InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}修改按钮名字', callback_data=f'setkeyname {row}:{first}')],
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')]
     ]
 
-    keyboard.append([InlineKeyboardButton('â¬…ï¸è¿”å›žä¸»ç•Œé¢', callback_data=f'backstart')])
+    keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
     query.edit_message_text(text=print_text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -2771,21 +2771,21 @@ def setkeyname(update: Update, context: CallbackContext):
     row = int(qudataall[0])
     first = int(qudataall[1])
     text = f'''
-è¾“å…¥è¦ä¿®æ”¹çš„åå­—
+输入要修改的名字
 
-é¢œè‰²å‰ç¼€ï¼š
-#r = çº¢è‰²
-#g = ç»¿è‰²
-#b = è“è‰²
+颜色前缀：
+#r = 红色
+#g = 绿色
+#b = 蓝色
 
-ä¾‹å¦‚ï¼š
-#r ðŸ˜ƒå•†å“åˆ—è¡¨
-#g ðŸ‘¤ä¸ªäººä¸­å¿ƒ
-#b ðŸ’¸æˆ‘è¦å……å€¼
+例如：
+#r 😃商品列表
+#g 👤个人中心
+#b 💸我要充值
     '''
     user.update_one({'user_id': user_id}, {"$set": {"sign": f'setkeyname {row}:{first}'}})
-    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')]]
-    keyboard.append([InlineKeyboardButton('â¬…ï¸è¿”å›žä¸»ç•Œé¢', callback_data=f'backstart')])
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')]]
+    keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
     query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -2799,17 +2799,17 @@ def setkeyboard(update: Update, context: CallbackContext):
     row = int(qudataall[0])
     first = int(qudataall[1])
     text = f'''
-æŒ‰ä»¥ä¸‹æ ¼å¼è®¾ç½®æŒ‰é’®ï¼Œå¡«å…¥â—ˆä¹‹é—´ï¼ŒåŒä¸€è¡Œç”¨ | éš”å¼€
-æŒ‰é’®åç§°&https://t.me/... | æŒ‰é’®åç§°&https://t.me/...
-æŒ‰é’®åç§°&https://t.me/... | æŒ‰é’®åç§°&https://t.me/... | æŒ‰é’®åç§°&https://t.me/....
+按以下格式设置按钮，填入◈之间，同一行用 | 隔开
+按钮名称&https://t.me/... | 按钮名称&https://t.me/...
+按钮名称&https://t.me/... | 按钮名称&https://t.me/... | 按钮名称&https://t.me/....
     '''
     key_list = get_key.find_one({'Row': row, 'first': first})
     key_text = key_list['key_text']
     if key_text != '':
         context.bot.send_message(chat_id=user_id, text=key_text)
     user.update_one({'user_id': user_id}, {"$set": {"sign": f'setkeyboard {row}:{first}'}})
-    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')]]
-    keyboard.append([InlineKeyboardButton('â¬…ï¸è¿”å›žä¸»ç•Œé¢', callback_data=f'backstart')])
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')]]
+    keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
     query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -2845,12 +2845,12 @@ def settuwenset(update: Update, context: CallbackContext):
                                                        reply_markup=InlineKeyboardMarkup(keyboard),
                                                        caption_entities=entities)
     text = f'''
-âœï¸ å‘é€ä½ çš„å›¾æ–‡è®¾ç½®
+✍️ 发送你的图文设置
 
-æ–‡å­—ã€è§†é¢‘ã€å›¾ç‰‡ã€gifã€å›¾æ–‡
+文字、视频、图片、gif、图文
     '''
     user.update_one({'user_id': user_id}, {"$set": {"sign": f'settuwenset {row}:{first}'}})
-    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')]]
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')]]
     context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -2871,7 +2871,7 @@ def cattuwenset(update: Update, context: CallbackContext):
     entities = safe_pickle_loads(key_list['entities'])
     keyboard = safe_pickle_loads(key_list['keyboard'])
     if text == '' and file_id == '':
-        message_id = context.bot.send_message(chat_id=user_id, text='è¯·è®¾ç½®å›¾æ–‡åŽç‚¹å‡»')
+        message_id = context.bot.send_message(chat_id=user_id, text='请设置图文后点击')
         timer11 = Timer(3, del_message, args=[message_id])
         timer11.start()
     else:
@@ -2919,15 +2919,15 @@ def qrdelliekey(update: Update, context: CallbackContext):
         keyboard[i["Row"] - 1].append(InlineKeyboardButton(projectname, callback_data=f'keyxq {row}:{first}'))
         count.append(row)
     if count == []:
-        context.bot.send_message(chat_id=user_id, text='è¯·å…ˆæ–°å»ºä¸€è¡Œ')
+        context.bot.send_message(chat_id=user_id, text='请先新建一行')
     else:
         maxrow = max(count)
         for i in range(0, maxrow):
-            keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_STAR}ç¬¬{i + 1}è¡Œ', callback_data=f'dddd'),
-                             InlineKeyboardButton('âž•', callback_data=f'addhangkey {i + 1}'),
-                             InlineKeyboardButton('âž–', callback_data=f'delhangkey {i + 1}')])
-        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')])
-        context.bot.send_message(chat_id=user_id, text='è‡ªå®šä¹‰æŒ‰é’®', reply_markup=InlineKeyboardMarkup(keyboard))
+            keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_STAR}第{i + 1}行', callback_data=f'dddd'),
+                             InlineKeyboardButton('➕', callback_data=f'addhangkey {i + 1}'),
+                             InlineKeyboardButton('➖', callback_data=f'delhangkey {i + 1}')])
+        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
+        context.bot.send_message(chat_id=user_id, text='自定义按钮', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def addhangkey(update: Update, context: CallbackContext):
@@ -2953,15 +2953,15 @@ def addhangkey(update: Update, context: CallbackContext):
         keyboard[i["Row"] - 1].append(InlineKeyboardButton(projectname, callback_data=f'keyxq {row}:{first}'))
         count.append(row)
     if count == []:
-        context.bot.send_message(chat_id=user_id, text='è¯·å…ˆæ–°å»ºä¸€è¡Œ')
+        context.bot.send_message(chat_id=user_id, text='请先新建一行')
     else:
         maxrow = max(count)
         for i in range(0, maxrow):
-            keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_STAR}ç¬¬{i + 1}è¡Œ', callback_data=f'dddd'),
-                             InlineKeyboardButton('âž•', callback_data=f'addhangkey {i + 1}'),
-                             InlineKeyboardButton('âž–', callback_data=f'delhangkey {i + 1}')])
-        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')])
-        context.bot.send_message(chat_id=user_id, text='è‡ªå®šä¹‰æŒ‰é’®', reply_markup=InlineKeyboardMarkup(keyboard))
+            keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_STAR}第{i + 1}行', callback_data=f'dddd'),
+                             InlineKeyboardButton('➕', callback_data=f'addhangkey {i + 1}'),
+                             InlineKeyboardButton('➖', callback_data=f'delhangkey {i + 1}')])
+        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
+        context.bot.send_message(chat_id=user_id, text='自定义按钮', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def settrc20(update: Update, context: CallbackContext):
@@ -2970,9 +2970,9 @@ def settrc20(update: Update, context: CallbackContext):
     query.answer()
     bot_id = context.bot.id
     text = f'''
-è¯·è¾“å…¥ä»¥ T å¼€å¤´ã€å…± 34 ä½çš„ TRC20-USDT æ”¶æ¬¾åœ°å€
+请输入以 T 开头、共 34 位的 TRC20-USDT 收款地址
 '''
-    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å–æ¶ˆ', callback_data=f'close {user_id}')]]
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
     user.update_one({'user_id': user_id}, {"$set": {"sign": 'settrc20'}})
     context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -2981,26 +2981,26 @@ def build_okpay_config_text():
     shop_id = get_okpay_shop_id()
     token = get_okpay_shop_token()
     name = get_okpay_name()
-    enabled = 'å·²å¼€å¯' if refresh_okpay_entry_status() else 'æœªå¼€å¯'
-    masked_token = (token[:6] + '******' + token[-4:]) if len(token) >= 12 else ('å·²è®¾ç½®' if token else 'æœªè®¾ç½®')
+    enabled = '已开启' if refresh_okpay_entry_status() else '未开启'
+    masked_token = (token[:6] + '******' + token[-4:]) if len(token) >= 12 else ('已设置' if token else '未设置')
     return f'''
-<b>OKPay å½“å‰é…ç½®</b>
+<b>OKPay 当前配置</b>
 
-å•†æˆ·IDï¼š<code>{shop_id or 'æœªè®¾ç½®'}</code>
-Tokenï¼š<code>{masked_token}</code>
-åç§°ï¼š<code>{name or 'æœªè®¾ç½®'}</code>
-å……å€¼å…¥å£ï¼š<code>{enabled}</code>
+商户ID：<code>{shop_id or '未设置'}</code>
+Token：<code>{masked_token}</code>
+名称：<code>{name or '未设置'}</code>
+充值入口：<code>{enabled}</code>
 
-å½“ å•†æˆ·ID / Token / åç§° ä¸‰é¡¹éƒ½é…ç½®å®ŒæˆåŽï¼Œä¼šè‡ªåŠ¨å¼€å¯ OKPay å……å€¼å…¥å£ã€‚
+当 商户ID / Token / 名称 三项都配置完成后，会自动开启 OKPay 充值入口。
 '''
 
 
 def build_okpay_config_keyboard(user_id):
     return [
-        [InlineKeyboardButton(f'{ADMIN_EMOJI_OKPAY}è®¾ç½®å•†æˆ·ID', callback_data='setokpayid'), InlineKeyboardButton(f'{MOOD_EMOJI_STAR}è®¾ç½®Token', callback_data='setokpaytoken')],
-        [InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}è®¾ç½®åç§°', callback_data='setokpayname')],
-        [InlineKeyboardButton('â¬…ï¸è¿”å›žä¸»ç•Œé¢', callback_data='backstart')],
-        [InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')]
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_OKPAY}设置商户ID', callback_data='setokpayid'), InlineKeyboardButton(f'{MOOD_EMOJI_STAR}设置Token', callback_data='setokpaytoken')],
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}设置名称', callback_data='setokpayname')],
+        [InlineKeyboardButton('⬅️返回主界面', callback_data='backstart')],
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')]
     ]
 
 
@@ -3016,27 +3016,27 @@ def setokpayid(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
     query.answer()
-    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å–æ¶ˆ', callback_data=f'close {user_id}')]]
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
     user.update_one({'user_id': user_id}, {"$set": {"sign": 'setokpayid'}})
-    context.bot.send_message(chat_id=user_id, text='è¯·è¾“å…¥ OKPay å•†æˆ·ID', reply_markup=InlineKeyboardMarkup(keyboard))
+    context.bot.send_message(chat_id=user_id, text='请输入 OKPay 商户ID', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def setokpaytoken(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
     query.answer()
-    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å–æ¶ˆ', callback_data=f'close {user_id}')]]
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
     user.update_one({'user_id': user_id}, {"$set": {"sign": 'setokpaytoken'}})
-    context.bot.send_message(chat_id=user_id, text='è¯·è¾“å…¥ OKPay Token', reply_markup=InlineKeyboardMarkup(keyboard))
+    context.bot.send_message(chat_id=user_id, text='请输入 OKPay Token', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def setokpayname(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
     query.answer()
-    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å–æ¶ˆ', callback_data=f'close {user_id}')]]
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
     user.update_one({'user_id': user_id}, {"$set": {"sign": 'setokpayname'}})
-    context.bot.send_message(chat_id=user_id, text='è¯·è¾“å…¥ OKPay åç§°ï¼ˆä¾‹å¦‚ï¼šå·é“ºï¼‰', reply_markup=InlineKeyboardMarkup(keyboard))
+    context.bot.send_message(chat_id=user_id, text='请输入 OKPay 名称（例如：号铺）', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def can_use_clonebot(state):
@@ -3048,10 +3048,10 @@ def can_use_clonebot(state):
 def build_clone_purchase_keyboard(user_id, user_balance, fee):
     keyboard = []
     if Decimal(str(user_balance)) >= fee:
-        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_OKPAY}æ”¯ä»˜ {format_clone_price(fee)} USDT å¹¶ç»§ç»­', callback_data='clonepay')])
+        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_OKPAY}支付 {format_clone_price(fee)} USDT 并继续', callback_data='clonepay')])
     else:
-        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_OKPAY}ä½™é¢ä¸è¶³ï¼Œå…ˆåŽ»å……å€¼', callback_data='recharge_menu')])
-    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å–æ¶ˆ', callback_data=f'close {user_id}')])
+        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_OKPAY}余额不足，先去充值', callback_data='recharge_menu')])
+    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')])
     return keyboard
 
 
@@ -3059,32 +3059,32 @@ def send_clonebot_prompt(context, user_id):
     user_list = user.find_one({'user_id': user_id}) or {}
     state = user_list.get('state')
     if not can_use_clonebot(state):
-        context.bot.send_message(chat_id=user_id, text='å½“å‰æœªå¼€æ”¾ä¸€é”®å…‹éš†åŠŸèƒ½')
+        context.bot.send_message(chat_id=user_id, text='当前未开放一键克隆功能')
         return
     fee = get_clone_price_decimal()
     clone_credit = get_user_clone_credit(user_id)
     if fee > 0 and not is_clone_fee_exempt(user_id, state) and clone_credit <= 0:
         balance = Decimal(str(user_list.get('USDT', 0) or 0)).quantize(Decimal('0.01'))
         text = f'''
-[emoji:5445353829304387411:ðŸ’³] å½“å‰ä¸€é”®å…‹éš†ä¸ºä»˜è´¹æ¨¡å¼
+[emoji:5445353829304387411:💳] 当前一键克隆为付费模式
 
-[emoji:4965219701572503640:ðŸ’°] å…‹éš†ä»·æ ¼ï¼š<code>{format_clone_price(fee)} USDT</code>
-[emoji:4972482444025398275:ðŸ‘›] å½“å‰ä½™é¢ï¼š<code>{format_clone_price(balance)} USDT</code>
+[emoji:4965219701572503640:💰] 克隆价格：<code>{format_clone_price(fee)} USDT</code>
+[emoji:4972482444025398275:👛] 当前余额：<code>{format_clone_price(balance)} USDT</code>
 
-[emoji:5301246586918024418:âš ï¸] æ”¯ä»˜æˆåŠŸåŽï¼Œæ‰èƒ½ç»§ç»­å‘é€æ–° Bot Token è¿›è¡Œå…‹éš†ã€‚
+[emoji:5301246586918024418:⚠️] 支付成功后，才能继续发送新 Bot Token 进行克隆。
         '''
         keyboard = build_clone_purchase_keyboard(user_id, balance, fee)
         context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
         return
     text = '''
-[emoji:5287684458881756303:ðŸ¤–] è¯·å‘é€ä½ è¦å…‹éš†çš„æ–° Bot Token
+[emoji:5287684458881756303:🤖] 请发送你要克隆的新 Bot Token
 
-[emoji:5217818964612108191:âœ¨] ä¾‹å¦‚ï¼š
+[emoji:5217818964612108191:✨] 例如：
 123456789:ABCdefGhIJKlmNoPQRsTUVwxyz123456789
 
-[emoji:5220195537520711716:âš¡ï¸] é»˜è®¤ä¼šæŠŠå½“å‰æ“ä½œç”¨æˆ·è®¾ä¸ºæ–° Bot ç®¡ç†å‘˜ï¼Œå¹¶è‡ªåŠ¨æ‹‰èµ·æ–° Botã€‚
+[emoji:5220195537520711716:⚡️] 默认会把当前操作用户设为新 Bot 管理员，并自动拉起新 Bot。
 '''
-    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å–æ¶ˆ', callback_data=f'close {user_id}')]]
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
     user.update_one({'user_id': user_id}, {"$set": {"sign": 'clonebottoken'}})
     context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -3096,7 +3096,7 @@ def clonepay(update: Update, context: CallbackContext):
     user_list = user.find_one({'user_id': user_id}) or {}
     state = user_list.get('state')
     if not can_use_clonebot(state):
-        context.bot.send_message(chat_id=user_id, text='å½“å‰æœªå¼€æ”¾ä¸€é”®å…‹éš†åŠŸèƒ½')
+        context.bot.send_message(chat_id=user_id, text='当前未开放一键克隆功能')
         return
     fee = get_clone_price_decimal()
     if fee <= 0 or is_clone_fee_exempt(user_id, state):
@@ -3105,7 +3105,7 @@ def clonepay(update: Update, context: CallbackContext):
 
     balance = Decimal(str(user_list.get('USDT', 0) or 0)).quantize(Decimal('0.01'))
     if balance < fee:
-        text = f'ä½™é¢ä¸è¶³ï¼Œå½“å‰éœ€æ”¯ä»˜ {format_clone_price(fee)} USDTï¼Œæ‚¨çŽ°åœ¨ä½™é¢ä¸º {format_clone_price(balance)} USDTã€‚'
+        text = f'余额不足，当前需支付 {format_clone_price(fee)} USDT，您现在余额为 {format_clone_price(balance)} USDT。'
         keyboard = build_clone_purchase_keyboard(user_id, balance, fee)
         try:
             query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard))
@@ -3116,7 +3116,7 @@ def clonepay(update: Update, context: CallbackContext):
     order_id = 'CLONEPAY' + time.strftime('%Y%m%d%H%M%S', time.localtime()) + str(user_id)
     new_balance = (balance - fee).quantize(Decimal('0.01'))
     user.update_one({'user_id': user_id}, {'$set': {'USDT': float(new_balance)}, '$inc': {'clone_credit': 1}})
-    user_logging(order_id, 'å…‹éš†åŒæ¬¾ä»˜è´¹', user_id, float(fee), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()))
+    user_logging(order_id, '克隆同款付费', user_id, float(fee), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()))
     send_clonebot_prompt(context, user_id)
 
 
@@ -3125,7 +3125,7 @@ def clonebot(update: Update, context: CallbackContext):
     user_id = query.from_user.id
     query.answer()
     if not BOT_CLONE_ENABLED:
-        context.bot.send_message(chat_id=user_id, text='å½“å‰æœºå™¨äººæœªå¼€æ”¾å…‹éš†åŠŸèƒ½')
+        context.bot.send_message(chat_id=user_id, text='当前机器人未开放克隆功能')
         return
     send_clonebot_prompt(context, user_id)
 
@@ -3135,11 +3135,11 @@ def clonelist(update: Update, context: CallbackContext):
     user_id = query.from_user.id
     query.answer()
     if not BOT_CLONE_ENABLED:
-        context.bot.send_message(chat_id=user_id, text='å½“å‰æœºå™¨äººæœªå¼€æ”¾å…‹éš†ç®¡ç†')
+        context.bot.send_message(chat_id=user_id, text='当前机器人未开放克隆管理')
         return
     user_list = user.find_one({'user_id': user_id}) or {}
     if str(user_list.get('state')) != '4' and user_id not in get_source_admin_user_ids():
-        context.bot.send_message(chat_id=user_id, text='åªæœ‰æºæœºå™¨äººç®¡ç†å‘˜å¯ä»¥æŸ¥çœ‹å…‹éš†åˆ—è¡¨')
+        context.bot.send_message(chat_id=user_id, text='只有源机器人管理员可以查看克隆列表')
         return
     data = str(query.data or '').replace('clonelist', '', 1).strip()
     try:
@@ -3149,12 +3149,12 @@ def clonelist(update: Update, context: CallbackContext):
     keyboard, total = build_clone_list_keyboard(user_id, page)
     price_text = format_clone_price()
     text = f'''
-<b>[emoji:5287684458881756303:ðŸ¤–] å…‹éš†åˆ—è¡¨</b>
+<b>[emoji:5287684458881756303:🤖] 克隆列表</b>
 
-å½“å‰ä»˜è´¹ä»·æ ¼ï¼š<code>{price_text} USDT</code>
-æ´»è·ƒå…‹éš†æ•°ï¼š<code>{total}</code>
+当前付费价格：<code>{price_text} USDT</code>
+活跃克隆数：<code>{total}</code>
 
-ç‚¹ä¸‹é¢æœºå™¨äººå¯æŸ¥çœ‹è¯¦æƒ…æˆ–åˆ é™¤ã€‚
+点下面机器人可查看详情或删除。
     '''
     try:
         query.edit_message_text(text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
@@ -3167,37 +3167,37 @@ def cloneinfo(update: Update, context: CallbackContext):
     user_id = query.from_user.id
     query.answer()
     if not BOT_CLONE_ENABLED:
-        context.bot.send_message(chat_id=user_id, text='å½“å‰æœºå™¨äººæœªå¼€æ”¾å…‹éš†ç®¡ç†')
+        context.bot.send_message(chat_id=user_id, text='当前机器人未开放克隆管理')
         return
     user_list = user.find_one({'user_id': user_id}) or {}
     if str(user_list.get('state')) != '4' and user_id not in get_source_admin_user_ids():
-        context.bot.send_message(chat_id=user_id, text='åªæœ‰æºæœºå™¨äººç®¡ç†å‘˜å¯ä»¥æŸ¥çœ‹å…‹éš†è¯¦æƒ…')
+        context.bot.send_message(chat_id=user_id, text='只有源机器人管理员可以查看克隆详情')
         return
     bot_id = str(query.data.replace('cloneinfo ', '', 1)).strip()
     row = clone_instances.find_one({'bot_id': bot_id})
     if row is None:
-        context.bot.send_message(chat_id=user_id, text='æœªæ‰¾åˆ°è¿™ä¸ªå…‹éš†å®žä¾‹')
+        context.bot.send_message(chat_id=user_id, text='未找到这个克隆实例')
         return
     requester_user_id = row.get('requester_user_id')
     requester_name = str(row.get('requester_name') or requester_user_id or '')
     requester_username = str(row.get('requester_username') or '').strip()
     text = f'''
-<b>[emoji:5287684458881756303:ðŸ¤–] å…‹éš†è¯¦æƒ…</b>
+<b>[emoji:5287684458881756303:🤖] 克隆详情</b>
 
-æœºå™¨äººï¼š@{row.get('bot_username')}
-ç®¡ç†å‘˜ï¼š<code>{requester_user_id}</code>
-ç”¨æˆ·ï¼š{requester_name} @{requester_username}
-æ”¯ä»˜é‡‘é¢ï¼š<code>{format_clone_price(row.get('fee_paid', 0))} USDT</code>
-åˆ›å»ºæ—¶é—´ï¼š<code>{row.get('created_at', '')}</code>
+机器人：@{row.get('bot_username')}
+管理员：<code>{requester_user_id}</code>
+用户：{requester_name} @{requester_username}
+支付金额：<code>{format_clone_price(row.get('fee_paid', 0))} USDT</code>
+创建时间：<code>{row.get('created_at', '')}</code>
 
-ç›®å½•ï¼š<code>{row.get('clone_dir', '')}</code>
-æ•°æ®åº“ï¼š<code>{row.get('db_name', '')}</code>
-BotæœåŠ¡ï¼š<code>{row.get('service_name', '')}.service</code>
-ç›‘å¬æœåŠ¡ï¼š<code>{row.get('listener_service_name', '')}.service</code>
+目录：<code>{row.get('clone_dir', '')}</code>
+数据库：<code>{row.get('db_name', '')}</code>
+Bot服务：<code>{row.get('service_name', '')}.service</code>
+监听服务：<code>{row.get('listener_service_name', '')}.service</code>
     '''
     keyboard = [
-        [InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}åˆ é™¤è¿™ä¸ªå…‹éš†', callback_data=f'clonedelete {bot_id}')],
-        [InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}è¿”å›žå…‹éš†åˆ—è¡¨', callback_data='clonelist 0')]
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除这个克隆', callback_data=f'clonedelete {bot_id}')],
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}返回克隆列表', callback_data='clonelist 0')]
     ]
     try:
         query.edit_message_text(text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
@@ -3209,20 +3209,20 @@ def clonedelete(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
     try:
-        query.answer('æ­£åœ¨åˆ é™¤ï¼Œè¯·ç¨å€™...')
+        query.answer('正在删除，请稍候...')
     except Exception:
         pass
     if not BOT_CLONE_ENABLED:
-        context.bot.send_message(chat_id=user_id, text='å½“å‰æœºå™¨äººæœªå¼€æ”¾å…‹éš†ç®¡ç†')
+        context.bot.send_message(chat_id=user_id, text='当前机器人未开放克隆管理')
         return
     user_list = user.find_one({'user_id': user_id}) or {}
     if str(user_list.get('state')) != '4' and user_id not in get_source_admin_user_ids():
-        context.bot.send_message(chat_id=user_id, text='åªæœ‰æºæœºå™¨äººç®¡ç†å‘˜å¯ä»¥åˆ é™¤å…‹éš†å®žä¾‹')
+        context.bot.send_message(chat_id=user_id, text='只有源机器人管理员可以删除克隆实例')
         return
     bot_id = str(query.data.replace('clonedelete ', '', 1)).strip()
     preview_record = clone_instances.find_one({'bot_id': bot_id, 'state': {'$ne': 'deleted'}}) or {}
     bot_username = str(preview_record.get('bot_username') or '').strip()
-    waiting_text = f'[emoji:5220195537520711716:âš¡ï¸] æ­£åœ¨åˆ é™¤å…‹éš†å®žä¾‹ï¼Œè¯·ç¨å€™â€¦\n\n[emoji:5287684458881756303:ðŸ¤–] æœºå™¨äººï¼š@{bot_username}' if bot_username else f'[emoji:5220195537520711716:âš¡ï¸] æ­£åœ¨åˆ é™¤å…‹éš†å®žä¾‹ï¼Œè¯·ç¨å€™â€¦\n\n[emoji:5287684458881756303:ðŸ¤–] æœºå™¨äººï¼š<code>{bot_id}</code>'
+    waiting_text = f'[emoji:5220195537520711716:⚡️] 正在删除克隆实例，请稍候…\n\n[emoji:5287684458881756303:🤖] 机器人：@{bot_username}' if bot_username else f'[emoji:5220195537520711716:⚡️] 正在删除克隆实例，请稍候…\n\n[emoji:5287684458881756303:🤖] 机器人：<code>{bot_id}</code>'
     try:
         query.edit_message_text(text=waiting_text, parse_mode='HTML')
     except Exception:
@@ -3231,7 +3231,7 @@ def clonedelete(update: Update, context: CallbackContext):
         record = remove_clone_instance(bot_id, deleted_by=user_id)
     except Exception as exc:
         try:
-            context.bot.send_message(chat_id=user_id, text=f'åˆ é™¤å…‹éš†å¤±è´¥ï¼š{exc}')
+            context.bot.send_message(chat_id=user_id, text=f'删除克隆失败：{exc}')
         except Exception:
             pass
         return
@@ -3239,8 +3239,8 @@ def clonedelete(update: Update, context: CallbackContext):
     requester_user_id = record.get('requester_user_id')
     bot_username = str(record.get('bot_username') or bot_username or '').strip()
     display_bot = f'@{bot_username}' if bot_username else str(record.get("bot_id"))
-    text = f'[emoji:5312028599803460968:ðŸ†—] å·²åˆ é™¤å…‹éš†å®žä¾‹\n\n[emoji:5287684458881756303:ðŸ¤–] æœºå™¨äººï¼š{display_bot}\n[emoji:6321041414067068140:ðŸ‘¤] ç®¡ç†å‘˜ï¼š{requester_user_id}'
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}è¿”å›žå…‹éš†åˆ—è¡¨', callback_data='clonelist 0')]])
+    text = f'[emoji:5312028599803460968:🆗] 已删除克隆实例\n\n[emoji:5287684458881756303:🤖] 机器人：{display_bot}\n[emoji:6321041414067068140:👤] 管理员：{requester_user_id}'
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}返回克隆列表', callback_data='clonelist 0')]])
     try:
         query.edit_message_text(text=text, reply_markup=keyboard)
     except Exception:
@@ -3251,7 +3251,7 @@ def clonedelete(update: Update, context: CallbackContext):
 
     notify_source_admins(
         context,
-        f'<b>{ADMIN_EMOJI_CLOSE}å…‹éš†å®žä¾‹å·²åˆ é™¤</b>\n\n[emoji:5287684458881756303:ðŸ¤–] æœºå™¨äººï¼š{display_bot}\n[emoji:6321041414067068140:ðŸ‘¤] ç®¡ç†å‘˜ï¼š<code>{requester_user_id}</code>\n[emoji:6321041414067068140:ðŸ‘¤] åˆ é™¤äººï¼š<code>{user_id}</code>'
+        f'<b>{ADMIN_EMOJI_CLOSE}克隆实例已删除</b>\n\n[emoji:5287684458881756303:🤖] 机器人：{display_bot}\n[emoji:6321041414067068140:👤] 管理员：<code>{requester_user_id}</code>\n[emoji:6321041414067068140:👤] 删除人：<code>{user_id}</code>'
     )
 
 
@@ -3260,14 +3260,14 @@ def setcloneprice(update: Update, context: CallbackContext):
     user_id = query.from_user.id
     query.answer()
     if not BOT_CLONE_ENABLED:
-        context.bot.send_message(chat_id=user_id, text='å½“å‰æœºå™¨äººæœªå¼€æ”¾å…‹éš†ç®¡ç†')
+        context.bot.send_message(chat_id=user_id, text='当前机器人未开放克隆管理')
         return
     user_list = user.find_one({'user_id': user_id}) or {}
     if str(user_list.get('state')) != '4' and user_id not in get_source_admin_user_ids():
-        context.bot.send_message(chat_id=user_id, text='åªæœ‰æºæœºå™¨äººç®¡ç†å‘˜å¯ä»¥è®¾ç½®å…‹éš†ä»·æ ¼')
+        context.bot.send_message(chat_id=user_id, text='只有源机器人管理员可以设置克隆价格')
         return
-    text = f'è¯·è¾“å…¥ä¸€é”®å…‹éš†ä»·æ ¼ï¼ˆUSDTï¼‰\n\nå½“å‰ä»·æ ¼ï¼š{format_clone_price()}\nè¾“å…¥ 0 è¡¨ç¤ºå…è´¹ã€‚'
-    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å–æ¶ˆ', callback_data=f'close {user_id}')]]
+    text = f'请输入一键克隆价格（USDT）\n\n当前价格：{format_clone_price()}\n输入 0 表示免费。'
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
     user.update_one({'user_id': user_id}, {'$set': {'sign': 'setcloneprice'}})
     context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -3278,9 +3278,9 @@ def startupdate(update: Update, context: CallbackContext):
     query.answer()
     bot_id = context.bot.id
     text = f'''
-è¾“å…¥æ–°çš„æ¬¢è¿Žè¯­
+输入新的欢迎语
 '''
-    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å–æ¶ˆ', callback_data=f'close {user_id}')]]
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
     user.update_one({'user_id': user_id}, {"$set": {"sign": 'startupdate'}})
     context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -3288,18 +3288,18 @@ def startupdate(update: Update, context: CallbackContext):
 def build_recharge_method_keyboard(user_id):
     keyboard = []
     if SHOW_TRC20_RECHARGE_ENTRY:
-        keyboard.append([InlineKeyboardButton('[emoji:5080312910866024090:ðŸ˜€] USDT ç›´å…… | é“¾ä¸Šåˆ°è´¦', callback_data='recharge_trc20')])
+        keyboard.append([InlineKeyboardButton('[emoji:5080312910866024090:😀] USDT 直充 | 链上到账', callback_data='recharge_trc20')])
     if okpay_entry_enabled():
-        keyboard.append([InlineKeyboardButton('[emoji:6321339712430676611:ðŸ˜„] OKPayæ”¯ä»˜ | ç§’é€Ÿåˆ°è´¦', callback_data='recharge_okpay')])
-    keyboard.append([InlineKeyboardButton('å–æ¶ˆå……å€¼', callback_data=f'close {user_id}')])
+        keyboard.append([InlineKeyboardButton('[emoji:6321339712430676611:😄] OKPay支付 | 秒速到账', callback_data='recharge_okpay')])
+    keyboard.append([InlineKeyboardButton('取消充值', callback_data=f'close {user_id}')])
     return keyboard
 
 
 def send_recharge_method_menu(context, user_id):
     if not SHOW_TRC20_RECHARGE_ENTRY and not okpay_entry_enabled():
-        context.bot.send_message(chat_id=user_id, text='å½“å‰æœªå¼€å¯ä»»ä½•å……å€¼æ–¹å¼ï¼Œè¯·è”ç³»ç®¡ç†å‘˜')
+        context.bot.send_message(chat_id=user_id, text='当前未开启任何充值方式，请联系管理员')
         return
-    fstext = '[emoji:5197474438970363734:â¤µï¸] è¯·é€‰æ‹©æ”¯ä»˜æ–¹å¼'
+    fstext = '[emoji:5197474438970363734:⤵️] 请选择支付方式'
     keyboard = build_recharge_method_keyboard(user_id)
     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -3316,9 +3316,9 @@ def zdycz(update: Update, context: CallbackContext):
     user_id = query.from_user.id
     query.answer()
     text = f'''
-è¾“å…¥å……å€¼é‡‘é¢
+输入充值金额
 '''
-    keyboard = [[InlineKeyboardButton('å–æ¶ˆ', callback_data=f'close {user_id}')]]
+    keyboard = [[InlineKeyboardButton('取消', callback_data=f'close {user_id}')]]
 
     message_id = context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -3330,9 +3330,9 @@ def okzdycz(update: Update, context: CallbackContext):
     user_id = query.from_user.id
     query.answer()
     text = f'''
-è¾“å…¥OKPayå……å€¼é‡‘é¢
+输入OKPay充值金额
 '''
-    keyboard = [[InlineKeyboardButton('å–æ¶ˆ', callback_data=f'close {user_id}')]]
+    keyboard = [[InlineKeyboardButton('取消', callback_data=f'close {user_id}')]]
 
     message_id = context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -3360,9 +3360,9 @@ def recharge_trc20(update: Update, context: CallbackContext):
     query.answer()
     user_id = query.from_user.id
     fstext = f'''
-<b>ðŸ’°è¯·é€‰æ‹©ä¸‹é¢ TRC20-USDT å……å€¼é‡‘é¢
+<b>💰请选择下面 TRC20-USDT 充值金额
 
-â™¥ç³»ç»Ÿä¼šç”Ÿæˆå”¯ä¸€å°æ•°é‡‘é¢ï¼Œè¯·ä¸¥æ ¼æŒ‰è®¢å•é‡‘é¢è½¬è´¦[emoji:5219866512961062330:â‰ï¸]</b>
+♥系统会生成唯一小数金额，请严格按订单金额转账[emoji:5219866512961062330:⁉️]</b>
     '''
     keyboard = [
         [InlineKeyboardButton('10USDT', callback_data='yuecz 10'),
@@ -3374,9 +3374,9 @@ def recharge_trc20(update: Update, context: CallbackContext):
         [InlineKeyboardButton('1000USDT', callback_data='yuecz 1000'),
          InlineKeyboardButton('1500USDT', callback_data='yuecz 1500'),
          InlineKeyboardButton('2000USDT', callback_data='yuecz 2000')],
-        [InlineKeyboardButton('è‡ªå®šä¹‰å……å€¼é‡‘é¢', callback_data='zdycz')],
-        [InlineKeyboardButton('è¿”å›žæ”¯ä»˜æ–¹å¼', callback_data='recharge_menu')],
-        [InlineKeyboardButton('å–æ¶ˆå……å€¼', callback_data=f'close {user_id}')]
+        [InlineKeyboardButton('自定义充值金额', callback_data='zdycz')],
+        [InlineKeyboardButton('返回支付方式', callback_data='recharge_menu')],
+        [InlineKeyboardButton('取消充值', callback_data=f'close {user_id}')]
     ]
     context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
                              reply_markup=InlineKeyboardMarkup(keyboard))
@@ -3387,7 +3387,7 @@ def recharge_okpay(update: Update, context: CallbackContext):
     query.answer()
     user_id = query.from_user.id
     fstext = f'''
-<b>è¯·é€‰æ‹©ä¸‹é¢ OKPay å……å€¼é‡‘é¢</b>
+<b>请选择下面 OKPay 充值金额</b>
     '''
     keyboard = [
         [InlineKeyboardButton('10USDT', callback_data='okyuecz 10'),
@@ -3399,9 +3399,9 @@ def recharge_okpay(update: Update, context: CallbackContext):
         [InlineKeyboardButton('1000USDT', callback_data='okyuecz 1000'),
          InlineKeyboardButton('1500USDT', callback_data='okyuecz 1500'),
          InlineKeyboardButton('2000USDT', callback_data='okyuecz 2000')],
-        [InlineKeyboardButton('è‡ªå®šä¹‰å……å€¼é‡‘é¢', callback_data='okzdycz')],
-        [InlineKeyboardButton('è¿”å›žæ”¯ä»˜æ–¹å¼', callback_data='recharge_menu')],
-        [InlineKeyboardButton('å–æ¶ˆå……å€¼', callback_data=f'close {user_id}')]
+        [InlineKeyboardButton('自定义充值金额', callback_data='okzdycz')],
+        [InlineKeyboardButton('返回支付方式', callback_data='recharge_menu')],
+        [InlineKeyboardButton('取消充值', callback_data=f'close {user_id}')]
     ]
     context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
                              reply_markup=InlineKeyboardMarkup(keyboard))
@@ -3413,8 +3413,8 @@ def catejflsp(update: Update, context: CallbackContext):
     zhsl = int(query.data.replace('catejflsp ', '').split(':')[1])
     #     if zhsl == 0:
     #         fstext =f'''
-    # ðŸš«æš‚æ— å•†å“ï¼Œè”ç³»å®¢æœä¸Šæž¶
-    # å®¢æœ@momoziziya
+    # 🚫暂无商品，联系客服上架
+    # 客服@momoziziya
     #         '''
     #         query.answer(fstext, show_alert=bool("true"))
     #         return
@@ -3435,15 +3435,15 @@ def catejflsp(update: Update, context: CallbackContext):
         keyboard[row - 1].append(InlineKeyboardButton(f'{projectname}  ({hsl})', callback_data=f'gmsp {nowuid}:{hsl}'))
 
     fstext = f'''
-<b>ðŸ›’è¿™æ˜¯å•†å“åˆ—è¡¨  é€‰æ‹©ä½ éœ€è¦çš„å•†å“ï¼š
+<b>🛒这是商品列表  选择你需要的商品：
 
-â—ï¸æ²¡ä½¿ç”¨è¿‡çš„æœ¬åº—å•†å“çš„ï¼Œè¯·å…ˆå°‘é‡è´­ä¹°æµ‹è¯•ï¼Œä»¥å…é€ æˆä¸å¿…è¦çš„äº‰æ‰§ï¼è°¢è°¢åˆä½œï¼
+❗️没使用过的本店商品的，请先少量购买测试，以免造成不必要的争执！谢谢合作！
 
-â—ï¸è´¦æˆ·æ”¾ä¹…éš¾å…ä¼šæ­»ï¼Œæœ‰å·®å¼‚ï¼Œè¯·è”ç³»å®¢æœå”®åŽï¼æœ›ç†è§£ï¼</b>
+❗️账户放久难免会死，有差异，请联系客服售后！望理解！</b>
     '''
 
-    keyboard.append([InlineKeyboardButton('ðŸ ä¸»èœå•', callback_data='backzcd'),
-                     InlineKeyboardButton('â¬…ï¸è¿”å›ž', callback_data=f'backzcd')])
+    keyboard.append([InlineKeyboardButton('🏠主菜单', callback_data='backzcd'),
+                     InlineKeyboardButton('⬅️返回', callback_data=f'backzcd')])
     query.edit_message_text(fstext, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
@@ -3464,27 +3464,27 @@ def gmsp(update: Update, context: CallbackContext):
     uid = ejfl_list['uid']
     #     if hsl == 0:
     #         fstext =f'''
-    # ðŸš«æš‚æ— å•†å“ï¼Œè”ç³»å®¢æœä¸Šæž¶
-    # å®¢æœ@momoziziya
+    # 🚫暂无商品，联系客服上架
+    # 客服@momoziziya
     #         '''
     #         query.answer(fstext, show_alert=bool("true"))
     #         return
     # else:
     query.answer()
     fstext = f'''
-<b>âœ…æ‚¨æ­£åœ¨è´­ä¹°:  {projectname}
+<b>✅您正在购买:  {projectname}
 
-ðŸ’° ä»·æ ¼ï¼š {money} USDT
+💰 价格： {money} USDT
 
-ðŸ“Š åº“å­˜ï¼š {hsl}
+📊 库存： {hsl}
 
-â—ï¸ æœªä½¿ç”¨è¿‡çš„æœ¬åº—å•†å“çš„ï¼Œè¯·å…ˆå°‘é‡è´­ä¹°æµ‹è¯•ï¼Œä»¥å…é€ æˆä¸å¿…è¦çš„äº‰æ‰§ï¼è°¢è°¢åˆä½œï¼</b>
+❗️ 未使用过的本店商品的，请先少量购买测试，以免造成不必要的争执！谢谢合作！</b>
     '''
 
     keyboard = [
-        [InlineKeyboardButton('âœ…è´­ä¹°', callback_data=f'gmqq {nowuid}')],
-        [InlineKeyboardButton('ðŸ ä¸»èœå•', callback_data='backzcd'),
-         InlineKeyboardButton('â¬…ï¸è¿”å›ž', callback_data=f'catejflsp {uid}:1000')]
+        [InlineKeyboardButton('✅购买', callback_data=f'gmqq {nowuid}')],
+        [InlineKeyboardButton('🏠主菜单', callback_data='backzcd'),
+         InlineKeyboardButton('⬅️返回', callback_data=f'catejflsp {uid}:1000')]
 
     ]
     query.edit_message_text(fstext, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
@@ -3505,7 +3505,7 @@ def gmqq(update: Update, context: CallbackContext):
     USDT = user_list['USDT']
     if USDT < money:
         fstext = f'''
-âŒä½™é¢ä¸è¶³ï¼Œè¯·ç«‹å³å……å€¼
+❌余额不足，请立即充值
         '''
         query.answer(fstext, show_alert=bool("true"))
         return
@@ -3513,8 +3513,8 @@ def gmqq(update: Update, context: CallbackContext):
         query.answer()
         # del_message(query.message)
         fstext = f'''
-<b>è¯·è¾“å…¥æ•°é‡ï¼š
-æ ¼å¼ï¼š</b><code>10</code>
+<b>请输入数量：
+格式：</b><code>10</code>
         '''
 
         message_id = context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML')
@@ -3541,26 +3541,26 @@ def paixuejfl(update: Update, context: CallbackContext):
         keyboard[i["row"] - 1].append(InlineKeyboardButton(projectname, callback_data=f'fejxxi {nowuid}'))
         count.append(row)
     if count == []:
-        context.bot.send_message(chat_id=user_id, text='æ²¡æœ‰æŒ‰é’®å­˜åœ¨')
+        context.bot.send_message(chat_id=user_id, text='没有按钮存在')
     else:
         maxrow = max(count)
         if maxrow == 1:
-            context.bot.send_message(chat_id=user_id, text='åªæœ‰ä¸€è¡ŒæŒ‰é’®æ— æ³•è°ƒæ•´')
+            context.bot.send_message(chat_id=user_id, text='只有一行按钮无法调整')
         else:
             for i in range(0, maxrow):
                 pxuid = ejfl.find_one({'uid': uid, 'row': i + 1})['nowuid']
                 if i == 0:
                     keyboard.append(
-                        [InlineKeyboardButton(f'ç¬¬{i + 1}è¡Œä¸‹ç§»', callback_data=f'ejfpaixu xiayi:{i + 1}:{pxuid}')])
+                        [InlineKeyboardButton(f'第{i + 1}行下移', callback_data=f'ejfpaixu xiayi:{i + 1}:{pxuid}')])
                 elif i == maxrow - 1:
                     keyboard.append(
-                        [InlineKeyboardButton(f'ç¬¬{i + 1}è¡Œä¸Šç§»', callback_data=f'ejfpaixu shangyi:{i + 1}:{pxuid}')])
+                        [InlineKeyboardButton(f'第{i + 1}行上移', callback_data=f'ejfpaixu shangyi:{i + 1}:{pxuid}')])
                 else:
                     keyboard.append(
-                        [InlineKeyboardButton(f'ç¬¬{i + 1}è¡Œä¸Šç§»', callback_data=f'ejfpaixu shangyi:{i + 1}:{pxuid}'),
-                         InlineKeyboardButton(f'ç¬¬{i + 1}è¡Œä¸‹ç§»', callback_data=f'ejfpaixu xiayi:{i + 1}:{pxuid}')])
-            keyboard.append([InlineKeyboardButton('âŒå…³é—­', callback_data=f'close {user_id}')])
-            context.bot.send_message(chat_id=user_id, text=f'åˆ†ç±»: {fl_pro}',
+                        [InlineKeyboardButton(f'第{i + 1}行上移', callback_data=f'ejfpaixu shangyi:{i + 1}:{pxuid}'),
+                         InlineKeyboardButton(f'第{i + 1}行下移', callback_data=f'ejfpaixu xiayi:{i + 1}:{pxuid}')])
+            keyboard.append([InlineKeyboardButton('❌关闭', callback_data=f'close {user_id}')])
+            context.bot.send_message(chat_id=user_id, text=f'分类: {fl_pro}',
                                      reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -3596,13 +3596,13 @@ def ejfpaixu(update: Update, context: CallbackContext):
         row = i['row']
         keyboard[row - 1].append(InlineKeyboardButton(f'{projectname}', callback_data=f'fejxxi {nowuid}'))
 
-    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}ä¿®æ”¹åˆ†ç±»å', callback_data=f'upspname {uid}'),
-                     InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}æ–°å¢žäºŒçº§åˆ†ç±»', callback_data=f'newejfl {uid}')])
-    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}è°ƒæ•´äºŒçº§åˆ†ç±»æŽ’åº', callback_data=f'paixuejfl {uid}'),
-                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}åˆ é™¤äºŒçº§åˆ†ç±»', callback_data=f'delejfl {uid}')])
-    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')])
+    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}修改分类名', callback_data=f'upspname {uid}'),
+                     InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}新增二级分类', callback_data=f'newejfl {uid}')])
+    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}调整二级分类排序', callback_data=f'paixuejfl {uid}'),
+                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除二级分类', callback_data=f'delejfl {uid}')])
+    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
     fstext = f'''
-åˆ†ç±»: {fl_pro}
+分类: {fl_pro}
     '''
     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -3625,22 +3625,22 @@ def paixufl(update: Update, context: CallbackContext):
         keyboard[i["row"] - 1].append(InlineKeyboardButton(projectname, callback_data=f'flxxi {uid}'))
         count.append(row)
     if count == []:
-        context.bot.send_message(chat_id=user_id, text='æ²¡æœ‰æŒ‰é’®å­˜åœ¨')
+        context.bot.send_message(chat_id=user_id, text='没有按钮存在')
     else:
         maxrow = max(count)
         if maxrow == 1:
-            context.bot.send_message(chat_id=user_id, text='åªæœ‰ä¸€è¡ŒæŒ‰é’®æ— æ³•è°ƒæ•´')
+            context.bot.send_message(chat_id=user_id, text='只有一行按钮无法调整')
         else:
             for i in range(0, maxrow):
                 if i == 0:
-                    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}ç¬¬{i + 1}è¡Œä¸‹ç§»', callback_data=f'flpxyd xiayi:{i + 1}')])
+                    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}第{i + 1}行下移', callback_data=f'flpxyd xiayi:{i + 1}')])
                 elif i == maxrow - 1:
-                    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}ç¬¬{i + 1}è¡Œä¸Šç§»', callback_data=f'flpxyd shangyi:{i + 1}')])
+                    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}第{i + 1}行上移', callback_data=f'flpxyd shangyi:{i + 1}')])
                 else:
-                    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}ç¬¬{i + 1}è¡Œä¸Šç§»', callback_data=f'flpxyd shangyi:{i + 1}'),
-                                     InlineKeyboardButton(f'{MOOD_EMOJI_FAST}ç¬¬{i + 1}è¡Œä¸‹ç§»', callback_data=f'flpxyd xiayi:{i + 1}')])
-            keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')])
-            context.bot.send_message(chat_id=user_id, text='å•†å“ç®¡ç†', reply_markup=InlineKeyboardMarkup(keyboard))
+                    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}第{i + 1}行上移', callback_data=f'flpxyd shangyi:{i + 1}'),
+                                     InlineKeyboardButton(f'{MOOD_EMOJI_FAST}第{i + 1}行下移', callback_data=f'flpxyd xiayi:{i + 1}')])
+            keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
+            context.bot.send_message(chat_id=user_id, text='商品管理', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def flpxyd(update: Update, context: CallbackContext):
@@ -3670,10 +3670,10 @@ def flpxyd(update: Update, context: CallbackContext):
         projectname = i['projectname']
         row = i['row']
         keyboard[row - 1].append(InlineKeyboardButton(f'{projectname}', callback_data=f'flxxi {uid}'))
-    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}æ–°å»ºä¸€è¡Œ', callback_data='newfl'),
-                     InlineKeyboardButton(f'{MOOD_EMOJI_FAST}è°ƒæ•´è¡ŒæŽ’åº', callback_data='paixufl'),
-                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}åˆ é™¤ä¸€è¡Œ', callback_data='delfl')])
-    context.bot.send_message(chat_id=user_id, text='å•†å“ç®¡ç†', reply_markup=InlineKeyboardMarkup(keyboard))
+    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}新建一行', callback_data='newfl'),
+                     InlineKeyboardButton(f'{MOOD_EMOJI_FAST}调整行排序', callback_data='paixufl'),
+                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除一行', callback_data='delfl')])
+    context.bot.send_message(chat_id=user_id, text='商品管理', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def delejfl(update: Update, context: CallbackContext):
@@ -3696,14 +3696,14 @@ def delejfl(update: Update, context: CallbackContext):
         keyboard[i["row"] - 1].append(InlineKeyboardButton(projectname, callback_data=f'fejxxi {nowuid}'))
         count.append(row)
     if count == []:
-        context.bot.send_message(chat_id=user_id, text='æ²¡æœ‰æŒ‰é’®å­˜åœ¨')
+        context.bot.send_message(chat_id=user_id, text='没有按钮存在')
     else:
         maxrow = max(count)
         for i in range(0, maxrow):
             pxuid = ejfl.find_one({'uid': uid, 'row': i + 1})['nowuid']
-            keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}åˆ é™¤ç¬¬{i + 1}è¡Œ', callback_data=f'qrscejrow {i + 1}:{pxuid}')])
-        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')])
-        context.bot.send_message(chat_id=user_id, text=f'åˆ†ç±»: {fl_pro}', reply_markup=InlineKeyboardMarkup(keyboard))
+            keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除第{i + 1}行', callback_data=f'qrscejrow {i + 1}:{pxuid}')])
+        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
+        context.bot.send_message(chat_id=user_id, text=f'分类: {fl_pro}', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def qrscejrow(update: Update, context: CallbackContext):
@@ -3734,13 +3734,13 @@ def qrscejrow(update: Update, context: CallbackContext):
         row = i['row']
         keyboard[row - 1].append(InlineKeyboardButton(f'{projectname}', callback_data=f'fejxxi {nowuid}'))
 
-    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}ä¿®æ”¹åˆ†ç±»å', callback_data=f'upspname {uid}'),
-                     InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}æ–°å¢žäºŒçº§åˆ†ç±»', callback_data=f'newejfl {uid}')])
-    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}è°ƒæ•´äºŒçº§åˆ†ç±»æŽ’åº', callback_data=f'paixuejfl {uid}'),
-                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}åˆ é™¤äºŒçº§åˆ†ç±»', callback_data=f'delejfl {uid}')])
-    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')])
+    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}修改分类名', callback_data=f'upspname {uid}'),
+                     InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}新增二级分类', callback_data=f'newejfl {uid}')])
+    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}调整二级分类排序', callback_data=f'paixuejfl {uid}'),
+                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除二级分类', callback_data=f'delejfl {uid}')])
+    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
     fstext = f'''
-åˆ†ç±»: {fl_pro}
+分类: {fl_pro}
     '''
     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -3763,13 +3763,13 @@ def delfl(update: Update, context: CallbackContext):
         keyboard[i["row"] - 1].append(InlineKeyboardButton(projectname, callback_data=f'flxxi {uid}'))
         count.append(row)
     if count == []:
-        context.bot.send_message(chat_id=user_id, text='æ²¡æœ‰æŒ‰é’®å­˜åœ¨')
+        context.bot.send_message(chat_id=user_id, text='没有按钮存在')
     else:
         maxrow = max(count)
         for i in range(0, maxrow):
-            keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}åˆ é™¤ç¬¬{i + 1}è¡Œ', callback_data=f'qrscflrow {i + 1}')])
-        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')])
-        context.bot.send_message(chat_id=user_id, text='å•†å“ç®¡ç†', reply_markup=InlineKeyboardMarkup(keyboard))
+            keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除第{i + 1}行', callback_data=f'qrscflrow {i + 1}')])
+        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
+        context.bot.send_message(chat_id=user_id, text='商品管理', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def qrscflrow(update: Update, context: CallbackContext):
@@ -3794,10 +3794,10 @@ def qrscflrow(update: Update, context: CallbackContext):
         projectname = i['projectname']
         row = i['row']
         keyboard[row - 1].append(InlineKeyboardButton(f'{projectname}', callback_data=f'flxxi {uid}'))
-    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}æ–°å»ºä¸€è¡Œ', callback_data='newfl'),
-                     InlineKeyboardButton(f'{MOOD_EMOJI_FAST}è°ƒæ•´è¡ŒæŽ’åº', callback_data='paixufl'),
-                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}åˆ é™¤ä¸€è¡Œ', callback_data='delfl')])
-    context.bot.send_message(chat_id=user_id, text='å•†å“ç®¡ç†', reply_markup=InlineKeyboardMarkup(keyboard))
+    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}新建一行', callback_data='newfl'),
+                     InlineKeyboardButton(f'{MOOD_EMOJI_FAST}调整行排序', callback_data='paixufl'),
+                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除一行', callback_data='delfl')])
+    context.bot.send_message(chat_id=user_id, text='商品管理', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def backzcd(update: Update, context: CallbackContext):
@@ -3821,13 +3821,13 @@ def backzcd(update: Update, context: CallbackContext):
             hsl += len(list(hb.find({'nowuid': nowuid, 'state': 0})))
         keyboard[row - 1].append(InlineKeyboardButton(f'{projectname}({hsl})', callback_data=f'catejflsp {uid}:{hsl}'))
     fstext = f'''
-<b>ðŸ›’è¿™æ˜¯å•†å“åˆ—è¡¨  é€‰æ‹©ä½ éœ€è¦çš„å•†å“ï¼š
+<b>🛒这是商品列表  选择你需要的商品：
 
-â—ï¸æ²¡ä½¿ç”¨è¿‡çš„æœ¬åº—å•†å“çš„ï¼Œè¯·å…ˆå°‘é‡è´­ä¹°æµ‹è¯•ï¼Œä»¥å…é€ æˆä¸å¿…è¦çš„äº‰æ‰§ï¼è°¢è°¢åˆä½œï¼
+❗️没使用过的本店商品的，请先少量购买测试，以免造成不必要的争执！谢谢合作！
 
-â—ï¸è´¦æˆ·æ”¾ä¹…éš¾å…ä¼šæ­»ï¼Œæœ‰å·®å¼‚ï¼Œè¯·è”ç³»å®¢æœå”®åŽï¼æœ›ç†è§£ï¼</b>
+❗️账户放久难免会死，有差异，请联系客服售后！望理解！</b>
     '''
-    keyboard.append([InlineKeyboardButton('âŒå…³é—­', callback_data=f'close {user_id}')])
+    keyboard.append([InlineKeyboardButton('❌关闭', callback_data=f'close {user_id}')])
     query.edit_message_text(fstext, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
@@ -3849,7 +3849,7 @@ def is_number(s):
 
 
 def get_trc20_address():
-    row = shangtext.find_one({'projectname': 'å……å€¼åœ°å€'}) or {}
+    row = shangtext.find_one({'projectname': '充值地址'}) or {}
     return str(row.get('text', '') or '').strip()
 
 
@@ -3866,7 +3866,7 @@ def set_text_config(projectname, value):
 
 
 def get_clone_price_decimal():
-    raw = str(get_text_config('ä¸€é”®å…‹éš†ä»·æ ¼', '0') or '0').strip()
+    raw = str(get_text_config('一键克隆价格', '0') or '0').strip()
     try:
         price = Decimal(raw)
     except Exception:
@@ -3932,14 +3932,14 @@ def build_clone_list_keyboard(user_id, page=0, page_size=8):
     total = clone_instances.count_documents({'state': {'$ne': 'deleted'}})
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}ä¸Šä¸€é¡µ', callback_data=f'clonelist {page - 1}'))
+        nav.append(InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}上一页', callback_data=f'clonelist {page - 1}'))
     if (page + 1) * page_size < total:
-        nav.append(InlineKeyboardButton(f'{MOOD_EMOJI_FAST}ä¸‹ä¸€é¡µ', callback_data=f'clonelist {page + 1}'))
+        nav.append(InlineKeyboardButton(f'{MOOD_EMOJI_FAST}下一页', callback_data=f'clonelist {page + 1}'))
     if nav:
         keyboard.append(nav)
-    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_OKPAY}è®¾ç½®å…‹éš†ä»·æ ¼', callback_data='setcloneprice')])
-    keyboard.append([InlineKeyboardButton('â¬…ï¸è¿”å›žä¸»ç•Œé¢', callback_data='backstart'),
-                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')])
+    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_OKPAY}设置克隆价格', callback_data='setcloneprice')])
+    keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data='backstart'),
+                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
     return keyboard, total
 
 
@@ -3949,26 +3949,26 @@ def send_clone_success_notice(context, requester_user_id, result, fee_paid='0'):
     requester_username = str(requester.get('username', '') or '').strip()
     fee_text = format_clone_price(fee_paid)
     text = f'''
-<b>ðŸ¤– æœ‰äººå…‹éš†äº†ä½ çš„æœºå™¨äºº</b>
+<b>🤖 有人克隆了你的机器人</b>
 
-å…‹éš†ç”¨æˆ·ï¼š<a href="tg://user?id={requester_user_id}">{requester_name}</a> @{requester_username}
-æœºå™¨äººï¼š@{result['bot_username']}
-ç®¡ç†å‘˜ï¼š<code>{requester_user_id}</code>
-æ”¯ä»˜é‡‘é¢ï¼š<code>{fee_text} USDT</code>
+克隆用户：<a href="tg://user?id={requester_user_id}">{requester_name}</a> @{requester_username}
+机器人：@{result['bot_username']}
+管理员：<code>{requester_user_id}</code>
+支付金额：<code>{fee_text} USDT</code>
 
-ç›®å½•ï¼š<code>{result['clone_dir']}</code>
-æ•°æ®åº“ï¼š<code>{result['db_name']}</code>
-BotæœåŠ¡ï¼š<code>{result['service_name']}.service</code>
-ç›‘å¬æœåŠ¡ï¼š<code>{result['listener_service_name']}.service</code>
+目录：<code>{result['clone_dir']}</code>
+数据库：<code>{result['db_name']}</code>
+Bot服务：<code>{result['service_name']}.service</code>
+监听服务：<code>{result['listener_service_name']}.service</code>
     '''
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}å…‹éš†åˆ—è¡¨', callback_data='clonelist 0')]])
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}克隆列表', callback_data='clonelist 0')]])
     notify_source_admins(context, text, reply_markup=keyboard)
 
 
 def remove_clone_instance(bot_id, deleted_by=None):
     record = clone_instances.find_one({'bot_id': str(bot_id), 'state': {'$ne': 'deleted'}})
     if record is None:
-        raise RuntimeError('æœªæ‰¾åˆ°è¿™ä¸ªå…‹éš†å®žä¾‹')
+        raise RuntimeError('未找到这个克隆实例')
 
     for service_name in [record.get('service_name'), record.get('listener_service_name')]:
         if not service_name:
@@ -4010,7 +4010,7 @@ def remove_clone_instance(bot_id, deleted_by=None):
 
 
 def get_okpay_shop_id():
-    return str(get_text_config('OKPayå•†æˆ·ID', OKPAY_SHOP_ID) or '').strip()
+    return str(get_text_config('OKPay商户ID', OKPAY_SHOP_ID) or '').strip()
 
 
 def get_okpay_shop_token():
@@ -4018,7 +4018,7 @@ def get_okpay_shop_token():
 
 
 def get_okpay_name():
-    return str(get_text_config('OKPayåç§°', OKPAY_NAME) or '').strip()
+    return str(get_text_config('OKPay名称', OKPAY_NAME) or '').strip()
 
 
 def get_okpay_bot_username(bot=None):
@@ -4029,17 +4029,17 @@ def get_okpay_bot_username(bot=None):
     username = getattr(OKPAY_BOT, 'username', '') if OKPAY_BOT is not None else ''
     if username:
         return str(username).strip().lstrip('@')
-    return str(get_text_config('OKPayæœºå™¨äººç”¨æˆ·å', OKPAY_BOT_USERNAME) or '').strip().lstrip('@')
+    return str(get_text_config('OKPay机器人用户名', OKPAY_BOT_USERNAME) or '').strip().lstrip('@')
 
 
 def refresh_okpay_entry_status():
     enabled = bool(get_okpay_shop_id() and get_okpay_shop_token() and get_okpay_name())
-    set_text_config('OKPayå…¥å£å¼€å¯', 1 if enabled else 0)
+    set_text_config('OKPay入口开启', 1 if enabled else 0)
     return enabled
 
 
 def okpay_entry_enabled():
-    row = shangtext.find_one({'projectname': 'OKPayå…¥å£å¼€å¯'})
+    row = shangtext.find_one({'projectname': 'OKPay入口开启'})
     if row is not None:
         value = row.get('text')
         return str(value).strip() in ('1', 'true', 'True', 'yes', 'on')
@@ -4077,7 +4077,7 @@ def allocate_trc20_pay_amount(base_amount, user_id):
         pay_amount_text = format_usdt_amount(pay_amount)
         if pay_amount_text not in pending_amounts:
             return pay_amount, pay_amount_text
-    raise RuntimeError('å½“å‰å¾…æ”¯ä»˜TRC20è®¢å•è¿‡å¤šï¼Œè¯·ç¨åŽé‡è¯•')
+    raise RuntimeError('当前待支付TRC20订单过多，请稍后重试')
 
 
 def okpay_enabled():
@@ -4088,7 +4088,7 @@ def okpay_sign(data):
     shop_id = get_okpay_shop_id()
     shop_token = get_okpay_shop_token()
     if not shop_id or not shop_token:
-        raise RuntimeError('OKPayæœªé…ç½®ï¼Œè¯·å…ˆåœ¨åŽå°è®¾ç½®å•†æˆ·IDå’ŒToken')
+        raise RuntimeError('OKPay未配置，请先在后台设置商户ID和Token')
     data = dict(data)
     data['id'] = shop_id
     data = {k: v for k, v in data.items() if v is not None and v != ''}
@@ -4111,7 +4111,7 @@ def okpay_pay_link(unique_id, amount, coin='USDT', include_callback=True, bot=No
     okpay_bot_username = get_okpay_bot_username(bot)
     data = {
         'unique_id': unique_id,
-        'name': f'{okpay_name}å……å€¼',
+        'name': f'{okpay_name}充值',
         'amount': amount,
         'return_url': f'https://t.me/{okpay_bot_username}' if okpay_bot_username else 'https://t.me/',
         'coin': coin
@@ -4222,17 +4222,17 @@ def okpay_mark_deposit_paid(payload):
         'coin': coin,
         'paid_amount': money
     }})
-    user_logging(unique_id, 'OKPayå……å€¼', user_id, money, timer)
+    user_logging(unique_id, 'OKPay充值', user_id, money, timer)
 
     if OKPAY_BOT is not None:
         try:
             OKPAY_BOT.send_message(
                 chat_id=user_id,
-                text=f'<b>âœ… OKPayå……å€¼åˆ°è´¦ï¼š{money} {coin}\n\nðŸ’³ å½“å‰ä½™é¢ï¼š{now_money} USDT</b>',
+                text=f'<b>✅ OKPay充值到账：{money} {coin}\n\n💳 当前余额：{now_money} USDT</b>',
                 parse_mode='HTML'
             )
         except Exception as exc:
-            print(f'OKPayåˆ°è´¦é€šçŸ¥å¤±è´¥: {exc}')
+            print(f'OKPay到账通知失败: {exc}')
     return True, 'paid'
 
 
@@ -4305,7 +4305,7 @@ def start_okpay_callback_server(bot):
     global OKPAY_BOT, OKPAY_HTTPD
     OKPAY_BOT = bot
     if not okpay_enabled():
-        print('OKPayæœªé…ç½®ï¼Œè·³è¿‡å›žè°ƒæœåŠ¡')
+        print('OKPay未配置，跳过回调服务')
         return
     if OKPAY_HTTPD is not None:
         return
@@ -4313,9 +4313,9 @@ def start_okpay_callback_server(bot):
         OKPAY_HTTPD = ThreadingHTTPServer((OKPAY_CALLBACK_HOST, OKPAY_CALLBACK_PORT), OkpayCallbackHandler)
         t = threading.Thread(target=OKPAY_HTTPD.serve_forever, daemon=True)
         t.start()
-        print(f'OKPayå›žè°ƒæœåŠ¡å·²å¯åŠ¨: {OKPAY_CALLBACK_HOST}:{OKPAY_CALLBACK_PORT}')
+        print(f'OKPay回调服务已启动: {OKPAY_CALLBACK_HOST}:{OKPAY_CALLBACK_PORT}')
     except Exception as exc:
-        print(f'OKPayå›žè°ƒæœåŠ¡å¯åŠ¨å¤±è´¥: {exc}')
+        print(f'OKPay回调服务启动失败: {exc}')
 
 
 async def on_post_init(application):
@@ -4327,12 +4327,12 @@ async def on_post_init(application):
 def create_trc20_deposit_order(context, user_id, amount):
     trc20 = get_trc20_address()
     if not is_valid_trc20_address(trc20):
-        context.bot.send_message(chat_id=user_id, text='TRC20å……å€¼åœ°å€æœªæ­£ç¡®é…ç½®ï¼Œè¯·å…ˆè”ç³»ç®¡ç†å‘˜è®¾ç½®æœ‰æ•ˆåœ°å€')
+        context.bot.send_message(chat_id=user_id, text='TRC20充值地址未正确配置，请先联系管理员设置有效地址')
         return
 
     amount = Decimal(str(amount)).quantize(Decimal('0.0001'))
     if amount <= 0:
-        context.bot.send_message(chat_id=user_id, text='å……å€¼é‡‘é¢å¿…é¡»å¤§äºŽ0')
+        context.bot.send_message(chat_id=user_id, text='充值金额必须大于0')
         return
 
     created_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
@@ -4347,7 +4347,7 @@ def create_trc20_deposit_order(context, user_id, amount):
         try:
             pay_amount, pay_amount_text = allocate_trc20_pay_amount(amount, user_id)
         except Exception as exc:
-            context.bot.send_message(chat_id=user_id, text=f'åˆ›å»ºTRC20å……å€¼è®¢å•å¤±è´¥ï¼š{exc}')
+            context.bot.send_message(chat_id=user_id, text=f'创建TRC20充值订单失败：{exc}')
             return
 
         try:
@@ -4373,26 +4373,26 @@ def create_trc20_deposit_order(context, user_id, amount):
             continue
 
     if reserved_id is None:
-        context.bot.send_message(chat_id=user_id, text='å½“å‰TRC20è®¢å•åˆ›å»ºäººæ•°è¾ƒå¤šï¼Œè¯·ç¨åŽé‡è¯•')
+        context.bot.send_message(chat_id=user_id, text='当前TRC20订单创建人数较多，请稍后重试')
         return
 
     caption = f'''
-<b>[emoji:6323075330189826977:ðŸ˜ƒ] å……å€¼è¯¦æƒ…</b>
+<b>[emoji:6323075330189826977:😃] 充值详情</b>
 
-[emoji:5350486389806868244:âœ…] å”¯ä¸€æ”¶æ¬¾åœ°å€ï¼š<code>{trc20}</code>
-ï¼ˆæŽ¨èä½¿ç”¨æ‰«ç è½¬è´¦æ›´åŠ å®‰å…¨ ç‚¹å‡»ä¸Šæ–¹åœ°å€å³å¯å¿«é€Ÿå¤åˆ¶ç²˜è´´ï¼‰
+[emoji:5350486389806868244:✅] 唯一收款地址：<code>{trc20}</code>
+（推荐使用扫码转账更加安全 点击上方地址即可快速复制粘贴）
 
-[emoji:4965219701572503640:ðŸ’°] å®žé™…æ”¯ä»˜é‡‘é¢ï¼š<code>{pay_amount_text} USDT</code>
-ï¼ˆ[emoji:5416117059207572332:âž¡ï¸] ç‚¹å‡»ä¸Šæ–¹é‡‘é¢å¯å¿«é€Ÿå¤åˆ¶ç²˜è´´ï¼‰
+[emoji:4965219701572503640:💰] 实际支付金额：<code>{pay_amount_text} USDT</code>
+（[emoji:5416117059207572332:➡️] 点击上方金额可快速复制粘贴）
 
-[emoji:5370715226209525171:ðŸ”‹]å……å€¼è®¢å•åˆ›å»ºæ—¶é—´ï¼š{created_time}
-[emoji:5370688996844249600:ðŸª«]è½¬è´¦æœ€åŽæˆªæ­¢æ—¶é—´ï¼š{deadline_time}
+[emoji:5370715226209525171:🔋]充值订单创建时间：{created_time}
+[emoji:5370688996844249600:🪫]转账最后截止时间：{deadline_time}
 
-â—ï¸è¯·ä¸€å®šæŒ‰ç…§é‡‘é¢åŽé¢å°æ•°ç‚¹è½¬è´¦ï¼Œå¦åˆ™æ— æ³•è‡ªåŠ¨åˆ°è´¦
-â—ï¸ä»˜æ¬¾å‰è¯·å†æ¬¡æ ¸å¯¹åœ°å€ä¸Žé‡‘é¢ï¼Œé¿å…è½¬é”™
+❗️请一定按照金额后面小数点转账，否则无法自动到账
+❗️付款前请再次核对地址与金额，避免转错
     '''
     keyboard = [
-        [InlineKeyboardButton('âŒå–æ¶ˆè®¢å•', callback_data=f'qxdingdan {user_id}')]
+        [InlineKeyboardButton('❌取消订单', callback_data=f'qxdingdan {user_id}')]
     ]
 
     qr_image = qrcode.make(data=trc20)
@@ -4411,7 +4411,7 @@ def create_trc20_deposit_order(context, user_id, amount):
         )
     except Exception as exc:
         topup.delete_one({'_id': reserved_id})
-        context.bot.send_message(chat_id=user_id, text=f'åˆ›å»ºTRC20å……å€¼è®¢å•å¤±è´¥ï¼š{exc}')
+        context.bot.send_message(chat_id=user_id, text=f'创建TRC20充值订单失败：{exc}')
         return
 
     topup.update_one({'_id': reserved_id}, {'$set': {'message_id': message_id.message_id}})
@@ -4419,13 +4419,13 @@ def create_trc20_deposit_order(context, user_id, amount):
 
 def create_okpay_deposit_order(context, user_id, amount):
     if not refresh_okpay_entry_status():
-        context.bot.send_message(chat_id=user_id, text='OKPayæœªé…ç½®ï¼Œè¯·å…ˆè”ç³»ç®¡ç†å‘˜åœ¨åŽå°é…ç½®å•†æˆ·IDã€Token å’Œ åç§°')
+        context.bot.send_message(chat_id=user_id, text='OKPay未配置，请先联系管理员在后台配置商户ID、Token 和 名称')
         return
 
     amount = standard_num(amount)
     amount = float(amount) if str(amount).count('.') > 0 else int(amount)
     if float(amount) <= 0:
-        context.bot.send_message(chat_id=user_id, text='å……å€¼é‡‘é¢å¿…é¡»å¤§äºŽ0')
+        context.bot.send_message(chat_id=user_id, text='充值金额必须大于0')
         return
 
     topup.delete_many({'user_id': user_id, 'state': {'$ne': 1}})
@@ -4434,37 +4434,37 @@ def create_okpay_deposit_order(context, user_id, amount):
     try:
         result = okpay_pay_link(bianhao, amount, 'USDT', bot=context.bot)
     except Exception as exc:
-        context.bot.send_message(chat_id=user_id, text=f'åˆ›å»ºOKPayå……å€¼è®¢å•å¤±è´¥ï¼š{exc}')
+        context.bot.send_message(chat_id=user_id, text=f'创建OKPay充值订单失败：{exc}')
         return
 
     if isinstance(result, dict) and result.get('status') == 'error':
         msg = str(result.get('msg') or '')
-        if 'callback_url' in msg and ('éªŒè¯å¤±è´¥' in msg or 'å®‰å…¨é£Žé™©' in msg):
+        if 'callback_url' in msg and ('验证失败' in msg or '安全风险' in msg):
             try:
                 result = okpay_pay_link(bianhao, amount, 'USDT', include_callback=False, bot=context.bot)
             except Exception as exc:
-                context.bot.send_message(chat_id=user_id, text=f'åˆ›å»ºOKPayå……å€¼è®¢å•å¤±è´¥ï¼š{exc}')
+                context.bot.send_message(chat_id=user_id, text=f'创建OKPay充值订单失败：{exc}')
                 return
 
     data = result.get('data') or {}
     pay_url = data.get('pay_url') or result.get('pay_url')
     okpay_order_id = data.get('order_id') or result.get('order_id')
     if not pay_url:
-        context.bot.send_message(chat_id=user_id, text=f'åˆ›å»ºOKPayå……å€¼è®¢å•å¤±è´¥ï¼š{result}')
+        context.bot.send_message(chat_id=user_id, text=f'创建OKPay充值订单失败：{result}')
         return
 
     text = f'''
-<b>OKPayå……å€¼è®¢å•å·²åˆ›å»º</b>
+<b>OKPay充值订单已创建</b>
 
-è®¢å•å·ï¼š<code>{bianhao}</code>
-å……å€¼é‡‘é¢ï¼š<code>{amount} USDT</code>
+订单号：<code>{bianhao}</code>
+充值金额：<code>{amount} USDT</code>
 
-è¯·ç‚¹å‡»ä¸‹é¢æŒ‰é’®å®Œæˆæ”¯ä»˜ï¼Œæ”¯ä»˜æˆåŠŸåŽç³»ç»Ÿä¼šè‡ªåŠ¨åŠ ä½™é¢ã€‚
+请点击下面按钮完成支付，支付成功后系统会自动加余额。
     '''
     keyboard = [
-        [InlineKeyboardButton('ðŸ’³ æ‰“å¼€OKPayæ”¯ä»˜', url=pay_url)],
-        [InlineKeyboardButton('âœ… æˆ‘å·²æ”¯ä»˜', callback_data=f'okpay_paid {bianhao}')],
-        [InlineKeyboardButton('âŒå–æ¶ˆè®¢å•', callback_data=f'qxdingdan {user_id}')]
+        [InlineKeyboardButton('💳 打开OKPay支付', url=pay_url)],
+        [InlineKeyboardButton('✅ 我已支付', callback_data=f'okpay_paid {bianhao}')],
+        [InlineKeyboardButton('❌取消订单', callback_data=f'qxdingdan {user_id}')]
     ]
     message_id = context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
     topup.insert_one({
@@ -4483,68 +4483,68 @@ def create_okpay_deposit_order(context, user_id, amount):
 
 
 def dabaohao(context, user_id, folder_names, leixing, nowuid, erjiprojectname, fstext, yssj):
-    if leixing == 'åè®®å·':
+    if leixing == '协议号':
         shijiancuo = int(time.time())
-        zip_filename = f"./åè®®å·å‘è´§/{user_id}_{shijiancuo}.zip"
+        zip_filename = f"./协议号发货/{user_id}_{shijiancuo}.zip"
         with zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED) as zipf:
-            # å°†æ¯ä¸ªæ–‡ä»¶åŠå…¶å†…å®¹æ·»åŠ åˆ° zip æ–‡ä»¶ä¸­ 
+            # 将每个文件及其内容添加到 zip 文件中
             for file_name in folder_names:
-                # æ£€æŸ¥æ˜¯å¦å­˜åœ¨ä»¥ .json æˆ– .session ç»“å°¾çš„æ–‡ä»¶
-                json_file_path = os.path.join(f"./åè®®å·/{nowuid}", file_name + ".json")
-                session_file_path = os.path.join(f"./åè®®å·/{nowuid}", file_name + ".session")
+                # 检查是否存在以 .json 或 .session 结尾的文件
+                json_file_path = os.path.join(f"./协议号/{nowuid}", file_name + ".json")
+                session_file_path = os.path.join(f"./协议号/{nowuid}", file_name + ".session")
                 if os.path.exists(json_file_path):
                     zipf.write(json_file_path, os.path.basename(json_file_path))
                 if os.path.exists(session_file_path):
                     zipf.write(session_file_path, os.path.basename(session_file_path))
         current_time = datetime.datetime.now()
 
-        # å°†å½“å‰æ—¶é—´æ ¼å¼åŒ–ä¸ºå­—ç¬¦ä¸²
+        # 将当前时间格式化为字符串
         formatted_time = current_time.strftime("%Y%m%d%H%M%S")
 
-        # æ·»åŠ æ—¶é—´æˆ³
+        # 添加时间戳
         timestamp = str(current_time.timestamp()).replace(".", "")
 
-        # ç»„åˆç¼–å·
+        # 组合编号
         bianhao = formatted_time + timestamp
         timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-        goumaijilua('åè®®å·', bianhao, user_id, erjiprojectname, zip_filename, fstext, timer)
-        # å‘é€ zip æ–‡ä»¶ç»™ç”¨æˆ·
+        goumaijilua('协议号', bianhao, user_id, erjiprojectname, zip_filename, fstext, timer)
+        # 发送 zip 文件给用户
         context.bot.send_document(chat_id=user_id, document=open(zip_filename, "rb"))
-    elif leixing == 'ç›´ç™»å·':
+    elif leixing == '直登号':
         shijiancuo = int(time.time())
-        zip_filename = f"./å‘è´§/{user_id}_{shijiancuo}.zip"
+        zip_filename = f"./发货/{user_id}_{shijiancuo}.zip"
         with zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED) as zipf:
-            # å°†æ¯ä¸ªæ–‡ä»¶å¤¹åŠå…¶å†…å®¹æ·»åŠ åˆ° zip æ–‡ä»¶ä¸­
+            # 将每个文件夹及其内容添加到 zip 文件中
             for folder_name in folder_names:
-                full_folder_path = os.path.join(f"./å·åŒ…/{nowuid}", folder_name)
+                full_folder_path = os.path.join(f"./号包/{nowuid}", folder_name)
                 if os.path.exists(full_folder_path):
-                    # æ·»åŠ æ–‡ä»¶å¤¹åŠå…¶å†…å®¹
+                    # 添加文件夹及其内容
                     for root, dirs, files in os.walk(full_folder_path):
                         for file in files:
                             file_path = os.path.join(root, file)
-                            # ä½¿ç”¨ç›¸å¯¹è·¯å¾„åœ¨åŽ‹ç¼©åŒ…ä¸­æ·»åŠ æ–‡ä»¶ï¼Œå¹¶è®¾ç½®åŽ‹ç¼©åŒ…å†…éƒ¨çš„è·¯å¾„
+                            # 使用相对路径在压缩包中添加文件，并设置压缩包内部的路径
                             zipf.write(file_path,
                                        os.path.join(folder_name, os.path.relpath(file_path, full_folder_path)))
                 else:
-                    # update.message.reply_text(f"æ–‡ä»¶å¤¹ '{folder_name}' ä¸å­˜åœ¨ï¼")
+                    # update.message.reply_text(f"文件夹 '{folder_name}' 不存在！")
                     pass
 
-        # å‘é€ zip æ–‡ä»¶ç»™ç”¨æˆ·
+        # 发送 zip 文件给用户
 
         folder_names = '\n'.join(folder_names)
 
         current_time = datetime.datetime.now()
 
-        # å°†å½“å‰æ—¶é—´æ ¼å¼åŒ–ä¸ºå­—ç¬¦ä¸²
+        # 将当前时间格式化为字符串
         formatted_time = current_time.strftime("%Y%m%d%H%M%S")
 
-        # æ·»åŠ æ—¶é—´æˆ³
+        # 添加时间戳
         timestamp = str(current_time.timestamp()).replace(".", "")
 
-        # ç»„åˆç¼–å·
+        # 组合编号
         bianhao = formatted_time + timestamp
         timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-        goumaijilua('ç›´ç™»å·', bianhao, user_id, erjiprojectname, zip_filename, fstext, timer)
+        goumaijilua('直登号', bianhao, user_id, erjiprojectname, zip_filename, fstext, timer)
 
         context.bot.send_document(chat_id=user_id, document=open(zip_filename, "rb"))
 
@@ -4564,11 +4564,11 @@ def qrgaimai(update: Update, context: CallbackContext):
     USDT = user_list['USDT']
     kc = len(list(hb.find({'nowuid': nowuid, 'state': 0})))
     if kc < gmsl:
-        context.bot.send_message(chat_id=user_id, text='å½“å‰åº“å­˜ä¸è¶³')
+        context.bot.send_message(chat_id=user_id, text='当前库存不足')
         return
     if zxymoney == 0:
         return
-    keyboard = [[InlineKeyboardButton('âœ…å·²è¯»ï¼ˆç‚¹å‡»é”€æ¯æ­¤æ¶ˆæ¯ï¼‰', callback_data=f'close {user_id}')]]
+    keyboard = [[InlineKeyboardButton('✅已读（点击销毁此消息）', callback_data=f'close {user_id}')]]
     if USDT >= zxymoney:
         now_price = standard_num(float(USDT) - float(zxymoney))
         now_price = float(now_price) if str((now_price)).count('.') > 0 else int(standard_num(now_price))
@@ -4582,7 +4582,7 @@ def qrgaimai(update: Update, context: CallbackContext):
         yiji_list = fenlei.find_one({'uid': yijiid})
         yijiprojectname = yiji_list['projectname']
         fstext = ejfl_list['text']
-        if fhtype == 'åè®®å·':
+        if fhtype == '协议号':
             zgje = user_list['zgje']
             zgsl = user_list['zgsl']
             user.update_one({'user_id': user_id},
@@ -4621,11 +4621,11 @@ def qrgaimai(update: Update, context: CallbackContext):
             context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML', disable_web_page_preview=True,
                                      reply_markup=InlineKeyboardMarkup(keyboard))
             fstext = f'''
-ç”¨æˆ·: <a href="tg://user?id={user_id}">{fullname}</a> @{username}
-ç”¨æˆ·ID: <code>{user_id}</code>
-è´­ä¹°å•†å“: {yijiprojectname}/{erjiprojectname}
-è´­ä¹°æ•°é‡: {gmsl}
-è´­ä¹°é‡‘é¢: {zxymoney}
+用户: <a href="tg://user?id={user_id}">{fullname}</a> @{username}
+用户ID: <code>{user_id}</code>
+购买商品: {yijiprojectname}/{erjiprojectname}
+购买数量: {gmsl}
+购买金额: {zxymoney}
             '''
             for i in list(user.find({"state": '4'})):
                 try:
@@ -4634,37 +4634,37 @@ def qrgaimai(update: Update, context: CallbackContext):
                     pass
 
             Timer(1, dabaohao,
-                  args=[context, user_id, folder_names, 'åè®®å·', nowuid, erjiprojectname, fstext, timer]).start()
+                  args=[context, user_id, folder_names, '协议号', nowuid, erjiprojectname, fstext, timer]).start()
             # shijiancuo = int(time.time())
-            # zip_filename = f"./åè®®å·å‘è´§/{user_id}_{shijiancuo}.zip"
+            # zip_filename = f"./协议号发货/{user_id}_{shijiancuo}.zip"
             # with zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED) as zipf:
-            #     # å°†æ¯ä¸ªæ–‡ä»¶åŠå…¶å†…å®¹æ·»åŠ åˆ° zip æ–‡ä»¶ä¸­
+            #     # 将每个文件及其内容添加到 zip 文件中
             #     for file_name in folder_names:
-            #         # æ£€æŸ¥æ˜¯å¦å­˜åœ¨ä»¥ .json æˆ– .session ç»“å°¾çš„æ–‡ä»¶
-            #         json_file_path = os.path.join(f"./åè®®å·/{nowuid}", file_name + ".json")
-            #         session_file_path = os.path.join(f"./åè®®å·/{nowuid}", file_name + ".session")
+            #         # 检查是否存在以 .json 或 .session 结尾的文件
+            #         json_file_path = os.path.join(f"./协议号/{nowuid}", file_name + ".json")
+            #         session_file_path = os.path.join(f"./协议号/{nowuid}", file_name + ".session")
             #         if os.path.exists(json_file_path):
             #             zipf.write(json_file_path, os.path.basename(json_file_path))
             #         if os.path.exists(session_file_path):
             #             zipf.write(session_file_path, os.path.basename(session_file_path))
             # current_time = datetime.datetime.now()
 
-            # # å°†å½“å‰æ—¶é—´æ ¼å¼åŒ–ä¸ºå­—ç¬¦ä¸²
+            # # 将当前时间格式化为字符串
             # formatted_time = current_time.strftime("%Y%m%d%H%M%S")
 
-            # # æ·»åŠ æ—¶é—´æˆ³
+            # # 添加时间戳
             # timestamp = str(current_time.timestamp()).replace(".", "")
 
-            # # ç»„åˆç¼–å·
+            # # 组合编号
             # bianhao = formatted_time + timestamp
             # timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            # goumaijilua('åè®®å·', bianhao, user_id, erjiprojectname,zip_filename,fstext, timer)
-            # # å‘é€ zip æ–‡ä»¶ç»™ç”¨æˆ·
+            # goumaijilua('协议号', bianhao, user_id, erjiprojectname,zip_filename,fstext, timer)
+            # # 发送 zip 文件给用户
             # query.message.reply_document(open(zip_filename, "rb"))
 
 
 
-        elif fhtype == 'è°·æ­Œ':
+        elif fhtype == '谷歌':
             zgje = user_list['zgje']
             zgsl = user_list['zgsl']
             user.update_one({'user_id': user_id},
@@ -4675,45 +4675,45 @@ def qrgaimai(update: Update, context: CallbackContext):
             context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML', disable_web_page_preview=True,
                                      reply_markup=InlineKeyboardMarkup(keyboard))
             folder_names = []
-            for j in list(hb.find({"nowuid": nowuid, 'state': 0, 'leixing': 'è°·æ­Œ'}, limit=gmsl)):
+            for j in list(hb.find({"nowuid": nowuid, 'state': 0, 'leixing': '谷歌'}, limit=gmsl)):
                 projectname = j['projectname']
                 hbid = j['hbid']
                 timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
                 hb.update_one({'hbid': hbid}, {"$set": {'state': 1, 'yssj': timer, 'gmid': user_id}})
                 data = j['data']
-                us1 = data['è´¦æˆ·']
-                us2 = data['å¯†ç ']
-                us3 = data['å­é‚®ä»¶']
-                fste23xt = f'è´¦æˆ·: {us1}\nå¯†ç : {us2}\nå­é‚®ä»¶: {us3}\n'
+                us1 = data['账户']
+                us2 = data['密码']
+                us3 = data['子邮件']
+                fste23xt = f'账户: {us1}\n密码: {us2}\n子邮件: {us3}\n'
                 folder_names.append(fste23xt)
 
             folder_names = '\n'.join(folder_names)
 
             shijiancuo = int(time.time())
-            zip_filename = f"./è°·æ­Œå‘è´§/{user_id}_{shijiancuo}.txt"
+            zip_filename = f"./谷歌发货/{user_id}_{shijiancuo}.txt"
             with open(zip_filename, "w") as f:
                 f.write(folder_names)
             current_time = datetime.datetime.now()
 
-            # å°†å½“å‰æ—¶é—´æ ¼å¼åŒ–ä¸ºå­—ç¬¦ä¸²
+            # 将当前时间格式化为字符串
             formatted_time = current_time.strftime("%Y%m%d%H%M%S")
 
-            # æ·»åŠ æ—¶é—´æˆ³
+            # 添加时间戳
             timestamp = str(current_time.timestamp()).replace(".", "")
 
-            # ç»„åˆç¼–å·
+            # 组合编号
             bianhao = formatted_time + timestamp
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            goumaijilua('è°·æ­Œ', bianhao, user_id, erjiprojectname, zip_filename, fstext, timer)
+            goumaijilua('谷歌', bianhao, user_id, erjiprojectname, zip_filename, fstext, timer)
 
             query.message.reply_document(open(zip_filename, "rb"))
 
             fstext = f'''
-ç”¨æˆ·: <a href="tg://user?id={user_id}">{fullname}</a> @{username}
-ç”¨æˆ·ID: <code>{user_id}</code>
-è´­ä¹°å•†å“: {yijiprojectname}/{erjiprojectname}
-è´­ä¹°æ•°é‡: {gmsl}
-è´­ä¹°é‡‘é¢: {zxymoney}
+用户: <a href="tg://user?id={user_id}">{fullname}</a> @{username}
+用户ID: <code>{user_id}</code>
+购买商品: {yijiprojectname}/{erjiprojectname}
+购买数量: {gmsl}
+购买金额: {zxymoney}
             '''
             for i in list(user.find({"state": '4'})):
                 try:
@@ -4742,39 +4742,39 @@ def qrgaimai(update: Update, context: CallbackContext):
 
             shijiancuo = int(time.time())
 
-            zip_filename = f"./æ‰‹æœºæŽ¥ç å‘è´§/{user_id}_{shijiancuo}.txt"
+            zip_filename = f"./手机接码发货/{user_id}_{shijiancuo}.txt"
             with open(zip_filename, "w") as f:
                 for folder_name in folder_names:
                     f.write(folder_name + "\n")
 
             current_time = datetime.datetime.now()
 
-            # å°†å½“å‰æ—¶é—´æ ¼å¼åŒ–ä¸ºå­—ç¬¦ä¸²
+            # 将当前时间格式化为字符串
             formatted_time = current_time.strftime("%Y%m%d%H%M%S")
 
-            # æ·»åŠ æ—¶é—´æˆ³
+            # 添加时间戳
             timestamp = str(current_time.timestamp()).replace(".", "")
 
-            # ç»„åˆç¼–å·
+            # 组合编号
             bianhao = formatted_time + timestamp
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            goumaijilua('APIé“¾æŽ¥', bianhao, user_id, erjiprojectname, zip_filename, fstext, timer)
+            goumaijilua('API链接', bianhao, user_id, erjiprojectname, zip_filename, fstext, timer)
 
             query.message.reply_document(open(zip_filename, "rb"))
 
             fstext = f'''
-ç”¨æˆ·: <a href="tg://user?id={user_id}">{fullname}</a> @{username}
-ç”¨æˆ·ID: <code>{user_id}</code>
-è´­ä¹°å•†å“: {yijiprojectname}/{erjiprojectname}
-è´­ä¹°æ•°é‡: {gmsl}
-è´­ä¹°é‡‘é¢: {zxymoney}
+用户: <a href="tg://user?id={user_id}">{fullname}</a> @{username}
+用户ID: <code>{user_id}</code>
+购买商品: {yijiprojectname}/{erjiprojectname}
+购买数量: {gmsl}
+购买金额: {zxymoney}
             '''
             for i in list(user.find({"state": '4'})):
                 try:
                     context.bot.send_message(chat_id=i['user_id'], text=fstext, parse_mode='HTML')
                 except:
                     pass
-        elif fhtype == 'ä¼šå‘˜é“¾æŽ¥':
+        elif fhtype == '会员链接':
             zgje = user_list['zgje']
             zgsl = user_list['zgsl']
             user.update_one({'user_id': user_id},
@@ -4796,25 +4796,25 @@ def qrgaimai(update: Update, context: CallbackContext):
 
             current_time = datetime.datetime.now()
 
-            # å°†å½“å‰æ—¶é—´æ ¼å¼åŒ–ä¸ºå­—ç¬¦ä¸²
+            # 将当前时间格式化为字符串
             formatted_time = current_time.strftime("%Y%m%d%H%M%S")
 
-            # æ·»åŠ æ—¶é—´æˆ³
+            # 添加时间戳
             timestamp = str(current_time.timestamp()).replace(".", "")
 
-            # ç»„åˆç¼–å·
+            # 组合编号
             bianhao = formatted_time + timestamp
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            goumaijilua('ä¼šå‘˜é“¾æŽ¥', bianhao, user_id, erjiprojectname, folder_names, fstext, timer)
+            goumaijilua('会员链接', bianhao, user_id, erjiprojectname, folder_names, fstext, timer)
 
             context.bot.send_message(chat_id=user_id, text=folder_names, disable_web_page_preview=True)
 
             fstext = f'''
-ç”¨æˆ·: <a href="tg://user?id={user_id}">{fullname}</a> @{username}
-ç”¨æˆ·ID: <code>{user_id}</code>
-è´­ä¹°å•†å“: {yijiprojectname}/{erjiprojectname}
-è´­ä¹°æ•°é‡: {gmsl}
-è´­ä¹°é‡‘é¢: {zxymoney}
+用户: <a href="tg://user?id={user_id}">{fullname}</a> @{username}
+用户ID: <code>{user_id}</code>
+购买商品: {yijiprojectname}/{erjiprojectname}
+购买数量: {gmsl}
+购买金额: {zxymoney}
             '''
             for i in list(user.find({"state": '4'})):
                 try:
@@ -4859,11 +4859,11 @@ def qrgaimai(update: Update, context: CallbackContext):
                                      reply_markup=InlineKeyboardMarkup(keyboard))
 
             fstext = f'''
-ç”¨æˆ·: <a href="tg://user?id={user_id}">{fullname}</a> @{username}
-ç”¨æˆ·ID: <code>{user_id}</code>
-è´­ä¹°å•†å“: {yijiprojectname}/{erjiprojectname}
-è´­ä¹°æ•°é‡: {gmsl}
-è´­ä¹°é‡‘é¢: {zxymoney}
+用户: <a href="tg://user?id={user_id}">{fullname}</a> @{username}
+用户ID: <code>{user_id}</code>
+购买商品: {yijiprojectname}/{erjiprojectname}
+购买数量: {gmsl}
+购买金额: {zxymoney}
             '''
             for i in list(user.find({"state": '4'})):
                 try:
@@ -4872,40 +4872,40 @@ def qrgaimai(update: Update, context: CallbackContext):
                     pass
 
             Timer(1, dabaohao,
-                  args=[context, user_id, folder_names, 'ç›´ç™»å·', nowuid, erjiprojectname, fstext, timer]).start()
+                  args=[context, user_id, folder_names, '直登号', nowuid, erjiprojectname, fstext, timer]).start()
             # shijiancuo = int(time.time())
-            # zip_filename = f"./å‘è´§/{user_id}_{shijiancuo}.zip"
+            # zip_filename = f"./发货/{user_id}_{shijiancuo}.zip"
             # with zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED) as zipf:
-            #     # å°†æ¯ä¸ªæ–‡ä»¶å¤¹åŠå…¶å†…å®¹æ·»åŠ åˆ° zip æ–‡ä»¶ä¸­
+            #     # 将每个文件夹及其内容添加到 zip 文件中
             #     for folder_name in folder_names:
-            #         full_folder_path = os.path.join(f"./å·åŒ…/{nowuid}", folder_name)
+            #         full_folder_path = os.path.join(f"./号包/{nowuid}", folder_name)
             #         if os.path.exists(full_folder_path):
-            #             # æ·»åŠ æ–‡ä»¶å¤¹åŠå…¶å†…å®¹
+            #             # 添加文件夹及其内容
             #             for root, dirs, files in os.walk(full_folder_path):
             #                 for file in files:
             #                     file_path = os.path.join(root, file)
-            #                     # ä½¿ç”¨ç›¸å¯¹è·¯å¾„åœ¨åŽ‹ç¼©åŒ…ä¸­æ·»åŠ æ–‡ä»¶ï¼Œå¹¶è®¾ç½®åŽ‹ç¼©åŒ…å†…éƒ¨çš„è·¯å¾„
+            #                     # 使用相对路径在压缩包中添加文件，并设置压缩包内部的路径
             #                     zipf.write(file_path, os.path.join(folder_name, os.path.relpath(file_path, full_folder_path)))
             #         else:
-            #             # update.message.reply_text(f"æ–‡ä»¶å¤¹ '{folder_name}' ä¸å­˜åœ¨ï¼")
+            #             # update.message.reply_text(f"文件夹 '{folder_name}' 不存在！")
             #             pass
 
-            # # å‘é€ zip æ–‡ä»¶ç»™ç”¨æˆ·
+            # # 发送 zip 文件给用户
 
             # folder_names = '\n'.join(folder_names)
 
             # current_time = datetime.datetime.now()
 
-            # # å°†å½“å‰æ—¶é—´æ ¼å¼åŒ–ä¸ºå­—ç¬¦ä¸²
+            # # 将当前时间格式化为字符串
             # formatted_time = current_time.strftime("%Y%m%d%H%M%S")
 
-            # # æ·»åŠ æ—¶é—´æˆ³
+            # # 添加时间戳
             # timestamp = str(current_time.timestamp()).replace(".", "")
 
-            # # ç»„åˆç¼–å·
+            # # 组合编号
             # bianhao = formatted_time + timestamp
             # timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            # goumaijilua('ç›´ç™»å·', bianhao, user_id, erjiprojectname, zip_filename,fstext, timer)
+            # goumaijilua('直登号', bianhao, user_id, erjiprojectname, zip_filename,fstext, timer)
 
             # query.message.reply_document(open(zip_filename, "rb"))
 
@@ -4913,7 +4913,7 @@ def qrgaimai(update: Update, context: CallbackContext):
 
 
     else:
-        context.bot.send_message(chat_id=user_id, text='âŒ ä½™é¢ä¸è¶³ï¼Œè¯·åŠæ—¶å……å€¼ï¼')
+        context.bot.send_message(chat_id=user_id, text='❌ 余额不足，请及时充值！')
         user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
         return
 
@@ -4934,7 +4934,7 @@ def qchuall(update: Update, context: CallbackContext):
     yijiprojectname = yiji_list['projectname']
 
     folder_names = []
-    if fhtype == 'åè®®å·':
+    if fhtype == '协议号':
         for j in list(hb.find({"nowuid": nowuid, 'state': 0})):
             projectname = j['projectname']
             hbid = j['hbid']
@@ -4942,13 +4942,13 @@ def qchuall(update: Update, context: CallbackContext):
             hb.delete_one({'hbid': hbid})
             folder_names.append(projectname)
         shijiancuo = int(time.time())
-        zip_filename = f"./åè®®å·å‘è´§/{user_id}_{shijiancuo}.zip"
+        zip_filename = f"./协议号发货/{user_id}_{shijiancuo}.zip"
         with zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED) as zipf:
-            # å°†æ¯ä¸ªæ–‡ä»¶åŠå…¶å†…å®¹æ·»åŠ åˆ° zip æ–‡ä»¶ä¸­
+            # 将每个文件及其内容添加到 zip 文件中
             for file_name in folder_names:
-                # æ£€æŸ¥æ˜¯å¦å­˜åœ¨ä»¥ .json æˆ– .session ç»“å°¾çš„æ–‡ä»¶
-                json_file_path = os.path.join(f"./åè®®å·/{nowuid}", file_name + ".json")
-                session_file_path = os.path.join(f"./åè®®å·/{nowuid}", file_name + ".session")
+                # 检查是否存在以 .json 或 .session 结尾的文件
+                json_file_path = os.path.join(f"./协议号/{nowuid}", file_name + ".json")
+                session_file_path = os.path.join(f"./协议号/{nowuid}", file_name + ".session")
                 if os.path.exists(json_file_path):
                     zipf.write(json_file_path, os.path.basename(json_file_path))
                 if os.path.exists(session_file_path):
@@ -4965,30 +4965,30 @@ def qchuall(update: Update, context: CallbackContext):
 
         shijiancuo = int(time.time())
 
-        zip_filename = f"./æ‰‹æœºæŽ¥ç å‘è´§/{user_id}_{shijiancuo}.txt"
+        zip_filename = f"./手机接码发货/{user_id}_{shijiancuo}.txt"
         with open(zip_filename, "w") as f:
             for folder_name in folder_names:
                 f.write(folder_name + "\n")
 
         query.message.reply_document(open(zip_filename, "rb"))
 
-    elif fhtype == 'è°·æ­Œ':
-        for j in list(hb.find({"nowuid": nowuid, 'state': 0, 'leixing': 'è°·æ­Œ'})):
+    elif fhtype == '谷歌':
+        for j in list(hb.find({"nowuid": nowuid, 'state': 0, 'leixing': '谷歌'})):
             projectname = j['projectname']
             hbid = j['hbid']
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
             hb.update_one({'hbid': hbid}, {"$set": {'state': 1, 'yssj': timer, 'gmid': user_id}})
             data = j['data']
-            us1 = data['è´¦æˆ·']
-            us2 = data['å¯†ç ']
-            us3 = data['å­é‚®ä»¶']
+            us1 = data['账户']
+            us2 = data['密码']
+            us3 = data['子邮件']
             fste23xt = f'login: {us1}\npassword: {us2}\nsubmail: {us3}\n'
             hb.delete_one({'hbid': hbid})
             folder_names.append(fste23xt)
         folder_names = '\n'.join(folder_names)
         shijiancuo = int(time.time())
 
-        zip_filename = f"./è°·æ­Œå‘è´§/{user_id}_{shijiancuo}.txt"
+        zip_filename = f"./谷歌发货/{user_id}_{shijiancuo}.txt"
         with open(zip_filename, "w") as f:
 
             f.write(folder_names)
@@ -4996,7 +4996,7 @@ def qchuall(update: Update, context: CallbackContext):
         query.message.reply_document(open(zip_filename, "rb"))
 
 
-    elif fhtype == 'ä¼šå‘˜é“¾æŽ¥':
+    elif fhtype == '会员链接':
         for j in list(hb.find({"nowuid": nowuid, 'state': 0})):
             projectname = j['projectname']
             hbid = j['hbid']
@@ -5015,21 +5015,21 @@ def qchuall(update: Update, context: CallbackContext):
             folder_names.append(projectname)
 
         shijiancuo = int(time.time())
-        zip_filename = f"./å‘è´§/{user_id}_{shijiancuo}.zip"
+        zip_filename = f"./发货/{user_id}_{shijiancuo}.zip"
         with zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED) as zipf:
-            # å°†æ¯ä¸ªæ–‡ä»¶å¤¹åŠå…¶å†…å®¹æ·»åŠ åˆ° zip æ–‡ä»¶ä¸­
+            # 将每个文件夹及其内容添加到 zip 文件中
             for folder_name in folder_names:
-                full_folder_path = os.path.join(f"./å·åŒ…/{nowuid}", folder_name)
+                full_folder_path = os.path.join(f"./号包/{nowuid}", folder_name)
                 if os.path.exists(full_folder_path):
-                    # æ·»åŠ æ–‡ä»¶å¤¹åŠå…¶å†…å®¹
+                    # 添加文件夹及其内容
                     for root, dirs, files in os.walk(full_folder_path):
                         for file in files:
                             file_path = os.path.join(root, file)
-                            # ä½¿ç”¨ç›¸å¯¹è·¯å¾„åœ¨åŽ‹ç¼©åŒ…ä¸­æ·»åŠ æ–‡ä»¶ï¼Œå¹¶è®¾ç½®åŽ‹ç¼©åŒ…å†…éƒ¨çš„è·¯å¾„
+                            # 使用相对路径在压缩包中添加文件，并设置压缩包内部的路径
                             zipf.write(file_path,
                                        os.path.join(folder_name, os.path.relpath(file_path, full_folder_path)))
                 else:
-                    # update.message.reply_text(f"æ–‡ä»¶å¤¹ '{folder_name}' ä¸å­˜åœ¨ï¼")
+                    # update.message.reply_text(f"文件夹 '{folder_name}' 不存在！")
                     pass
 
         query.message.reply_document(open(zip_filename, "rb"))
@@ -5043,12 +5043,12 @@ def qchuall(update: Update, context: CallbackContext):
     kc = len(list(hb.find({'nowuid': nowuid, 'state': 0})))
     ys = len(list(hb.find({'nowuid': nowuid, 'state': 1})))
     fstext = f'''
-ä¸»åˆ†ç±»: {fl_pro}
-äºŒçº§åˆ†ç±»: {ej_projectname}
+主分类: {fl_pro}
+二级分类: {ej_projectname}
 
-ä»·æ ¼: {money}U
-åº“å­˜: {kc}
-å·²å”®: {ys}
+价格: {money}U
+库存: {kc}
+已售: {ys}
     '''
     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -5067,33 +5067,33 @@ def qxdingdan(update: Update, context: CallbackContext):
 
 def okpay_paid(update: Update, context: CallbackContext):
     query = update.callback_query
-    query.answer('æ­£åœ¨æ£€æŸ¥æ”¯ä»˜çŠ¶æ€ï¼Œè¯·ç¨å€™...')
+    query.answer('正在检查支付状态，请稍候...')
     user_id = query.from_user.id
     unique_id = query.data.replace('okpay_paid ', '', 1).strip()
     order = topup.find_one({'bianhao': unique_id})
     if order is None or order.get('type') != 'okpay':
-        context.bot.send_message(chat_id=user_id, text='æœªæ‰¾åˆ°å¯¹åº”çš„OKPayå……å€¼è®¢å•ï¼Œè¯·é‡æ–°åˆ›å»ºè®¢å•')
+        context.bot.send_message(chat_id=user_id, text='未找到对应的OKPay充值订单，请重新创建订单')
         return
     if order.get('user_id') != user_id:
-        context.bot.send_message(chat_id=user_id, text='è¿™ç¬”è®¢å•ä¸å±žäºŽä½ ï¼Œæ— æ³•ä¸»åŠ¨æŸ¥å•')
+        context.bot.send_message(chat_id=user_id, text='这笔订单不属于你，无法主动查单')
         return
     if order.get('state') == 1:
-        context.bot.send_message(chat_id=user_id, text='è¿™ç¬”OKPayè®¢å•å·²ç»åˆ°è´¦ï¼Œæ— éœ€é‡å¤æ£€æŸ¥')
+        context.bot.send_message(chat_id=user_id, text='这笔OKPay订单已经到账，无需重复检查')
         return
 
     try:
         ok, msg, result = okpay_check_and_credit(unique_id)
     except Exception as exc:
-        context.bot.send_message(chat_id=user_id, text=f'æŸ¥è¯¢OKPayè®¢å•å¤±è´¥ï¼š{exc}')
+        context.bot.send_message(chat_id=user_id, text=f'查询OKPay订单失败：{exc}')
         return
 
     if ok:
-        keyboard = [[InlineKeyboardButton('âœ…å·²åˆ°è´¦ï¼ˆç‚¹å‡»å…³é—­ï¼‰', callback_data=f'close {user_id}')]]
+        keyboard = [[InlineKeyboardButton('✅已到账（点击关闭）', callback_data=f'close {user_id}')]]
         try:
             context.bot.edit_message_text(
                 chat_id=user_id,
                 message_id=query.message.message_id,
-                text='âœ… OKPayè®¢å•å·²ç¡®è®¤æ”¯ä»˜ï¼Œä½™é¢å·²è‡ªåŠ¨åˆ°è´¦ã€‚',
+                text='✅ OKPay订单已确认支付，余额已自动到账。',
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
         except Exception:
@@ -5101,12 +5101,12 @@ def okpay_paid(update: Update, context: CallbackContext):
         return
 
     if msg == 'already_paid':
-        context.bot.send_message(chat_id=user_id, text='è¿™ç¬”OKPayè®¢å•å·²ç»åˆ°è´¦ï¼Œæ— éœ€é‡å¤æ£€æŸ¥')
+        context.bot.send_message(chat_id=user_id, text='这笔OKPay订单已经到账，无需重复检查')
         return
 
     context.bot.send_message(
         chat_id=user_id,
-        text='æš‚æœªæŸ¥è¯¢åˆ°è¿™ç¬”OKPayè®¢å•å·²ä»˜æ¬¾ï¼Œè¯·ç¡®è®¤æ”¯ä»˜æˆåŠŸåŽç¨ç­‰å‡ ç§’å†ç‚¹ä¸€æ¬¡â€œæˆ‘å·²æ”¯ä»˜â€ã€‚'
+        text='暂未查询到这笔OKPay订单已付款，请确认支付成功后稍等几秒再点一次“我已支付”。'
     )
 
 
@@ -5133,7 +5133,7 @@ def textkeyboard(update: Update, context: CallbackContext):
         text = get_message_match_text(update.message) or raw_text
         normalized_text = normalize_menu_text(text)
         zxh = update.message.text_html
-        yyzt = shangtext.find_one({'projectname': 'è¥ä¸šçŠ¶æ€'})['text']
+        yyzt = shangtext.find_one({'projectname': '营业状态'})['text']
         if yyzt == 0:
             if state != '4':
                 return
@@ -5160,19 +5160,19 @@ def textkeyboard(update: Update, context: CallbackContext):
 
                         money = float(text) if text.count('.') > 0 else int(text)
                         if money < 1:
-                            context.bot.send_message(chat_id=user_id, text='âš ï¸ è¾“å…¥é”™è¯¯ï¼Œæœ€å°‘é‡‘é¢ä¸èƒ½å°äºŽ1U')
+                            context.bot.send_message(chat_id=user_id, text='⚠️ 输入错误，最少金额不能小于1U')
                             return
                         if USDT >= money:
-                            keyboard = [[InlineKeyboardButton('ðŸš«å–æ¶ˆ', callback_data=f'close {user_id}')]]
+                            keyboard = [[InlineKeyboardButton('🚫取消', callback_data=f'close {user_id}')]]
                             user.update_one({'user_id': user_id}, {"$set": {'sign': f'sethbsl {money}'}})
-                            context.bot.send_message(chat_id=user_id, text='<b>ðŸ’¡ è¯·å›žå¤ä½ è¦å‘é€çš„çº¢åŒ…æ•°é‡</b>',
+                            context.bot.send_message(chat_id=user_id, text='<b>💡 请回复你要发送的红包数量</b>',
                                                      parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
 
                         else:
                             user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
-                            context.bot.send_message(chat_id=user_id, text='âš ï¸ æ“ä½œå¤±è´¥ï¼Œä½™é¢ä¸è¶³')
+                            context.bot.send_message(chat_id=user_id, text='⚠️ 操作失败，余额不足')
                     else:
-                        context.bot.send_message(chat_id=user_id, text='âš ï¸ è¾“å…¥é”™è¯¯ï¼Œè¯·è¾“å…¥æ•°å­—ï¼')
+                        context.bot.send_message(chat_id=user_id, text='⚠️ 输入错误，请输入数字！')
                 elif 'sethbsl' in sign:
                     money = sign.replace('sethbsl ', '')
                     money = float(money) if money.count('.') > 0 else int(money)
@@ -5180,16 +5180,16 @@ def textkeyboard(update: Update, context: CallbackContext):
                     if is_number(text) and text.count('.') == 0:
                         hbsl = int(text)
                         if hbsl == 0:
-                            context.bot.send_message(chat_id=user_id, text='çº¢åŒ…æ•°é‡ä¸èƒ½ä¸º0')
+                            context.bot.send_message(chat_id=user_id, text='红包数量不能为0')
                             return
                         if hbsl > 100:
-                            context.bot.send_message(chat_id=user_id, text='çº¢åŒ…æ•°é‡æœ€å¤§ä¸º100')
+                            context.bot.send_message(chat_id=user_id, text='红包数量最大为100')
                             return
                         user_list = user.find_one({"user_id": user_id})
                         USDT = user_list['USDT']
                         if USDT < money:
                             user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
-                            context.bot.send_message(chat_id=user_id, text='âš ï¸ æ“ä½œå¤±è´¥ï¼Œä½™é¢ä¸è¶³')
+                            context.bot.send_message(chat_id=user_id, text='⚠️ 操作失败，余额不足')
                             return
                         user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                         uid = generate_24bit_uid()
@@ -5208,13 +5208,13 @@ def textkeyboard(update: Update, context: CallbackContext):
                             standard_num(now_money))
                         user.update_one({'user_id': user_id}, {"$set": {'USDT': now_money}})
                         fstext = f'''
-ðŸ§§ <a href="tg://user?id={user_id}">{fullname}</a> å‘é€äº†ä¸€ä¸ªçº¢åŒ…
-ðŸ’µæ€»é‡‘é¢:{money} USDTðŸ’° å‰©ä½™:{hbsl}/{hbsl}
+🧧 <a href="tg://user?id={user_id}">{fullname}</a> 发送了一个红包
+💵总金额:{money} USDT💰 剩余:{hbsl}/{hbsl}
 
-âœ… çº¢åŒ…æ·»åŠ æˆåŠŸï¼Œè¯·ç‚¹å‡»æŒ‰é’®å‘é€
+✅ 红包添加成功，请点击按钮发送
                         '''
                         keyboard = [
-                            [InlineKeyboardButton('å‘é€çº¢åŒ…', switch_inline_query=f'redpacket {uid}')]
+                            [InlineKeyboardButton('发送红包', switch_inline_query=f'redpacket {uid}')]
                         ]
 
                         context.bot.send_message(chat_id=user_id, text=fstext,
@@ -5222,15 +5222,15 @@ def textkeyboard(update: Update, context: CallbackContext):
 
                     else:
                         user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
-                        context.bot.send_message(chat_id=user_id, text='âš ï¸ è¾“å…¥é”™è¯¯ï¼Œè¯·è¾“å…¥æ•°å­—ï¼')
+                        context.bot.send_message(chat_id=user_id, text='⚠️ 输入错误，请输入数字！')
 
 
                 elif sign == 'startupdate':
                     welcome_text = stored_text or text
-                    shangtext.update_one({"projectname": 'æ¬¢è¿Žè¯­'}, {"$set": {"text": welcome_text}})
-                    shangtext.update_one({"projectname": 'æ¬¢è¿Žè¯­æ ·å¼'}, {"$set": {"text": pickle.dumps([])}})
+                    shangtext.update_one({"projectname": '欢迎语'}, {"$set": {"text": welcome_text}})
+                    shangtext.update_one({"projectname": '欢迎语样式'}, {"$set": {"text": pickle.dumps([])}})
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
-                    context.bot.send_message(chat_id=user_id, text=f'å½“å‰æ¬¢è¿Žè¯­ä¸º:\n\n{welcome_text}')
+                    context.bot.send_message(chat_id=user_id, text=f'当前欢迎语为:\n\n{welcome_text}')
                 elif 'okzdycz' in sign:
                     if is_number(text):
                         del_message(update.message)
@@ -5244,8 +5244,8 @@ def textkeyboard(update: Update, context: CallbackContext):
                         create_okpay_deposit_order(context, user_id, money)
 
                     else:
-                        keyboard = [[InlineKeyboardButton('âŒå–æ¶ˆè¾“å…¥', callback_data=f'close {user_id}')]]
-                        context.bot.send_message(chat_id=user_id, text='è¯·è¾“å…¥æ•°å­—',
+                        keyboard = [[InlineKeyboardButton('❌取消输入', callback_data=f'close {user_id}')]]
+                        context.bot.send_message(chat_id=user_id, text='请输入数字',
                                                  reply_markup=InlineKeyboardMarkup(keyboard))
                 elif 'zdycz' in sign:
                     if is_number(text):
@@ -5260,8 +5260,8 @@ def textkeyboard(update: Update, context: CallbackContext):
                         create_trc20_deposit_order(context, user_id, money)
 
                     else:
-                        keyboard = [[InlineKeyboardButton('âŒå–æ¶ˆè¾“å…¥', callback_data=f'close {user_id}')]]
-                        context.bot.send_message(chat_id=user_id, text='è¯·è¾“å…¥æ•°å­—',
+                        keyboard = [[InlineKeyboardButton('❌取消输入', callback_data=f'close {user_id}')]]
+                        context.bot.send_message(chat_id=user_id, text='请输入数字',
                                                  reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -5284,33 +5284,33 @@ def textkeyboard(update: Update, context: CallbackContext):
                     if clean_text.isdigit():
                         gmsl = int(clean_text)
                         if gmsl <= 0:
-                            keyboard = [[InlineKeyboardButton('âŒå–æ¶ˆè´­ä¹°', callback_data=f'close {user_id}')]]
-                            context.bot.send_message(chat_id=user_id, text='è´­ä¹°æ•°é‡åªèƒ½è¾“å…¥å¤§äºŽ0çš„æ•´æ•°',
+                            keyboard = [[InlineKeyboardButton('❌取消购买', callback_data=f'close {user_id}')]]
+                            context.bot.send_message(chat_id=user_id, text='购买数量只能输入大于0的整数',
                                                      reply_markup=InlineKeyboardMarkup(keyboard))
                             return
 
                         zxymoney = standard_num(gmsl * money)
                         zxymoney = float(zxymoney) if str((zxymoney)).count('.') > 0 else int(standard_num(zxymoney))
                         if kc < gmsl:
-                            keyboard = [[InlineKeyboardButton('âŒå–æ¶ˆè´­ä¹°', callback_data=f'close {user_id}')]]
-                            context.bot.send_message(chat_id=user_id, text='å½“å‰åº“å­˜ä¸è¶³ã€è¯·å†æ¬¡è¾“å…¥æ•°é‡ã€‘',
+                            keyboard = [[InlineKeyboardButton('❌取消购买', callback_data=f'close {user_id}')]]
+                            context.bot.send_message(chat_id=user_id, text='当前库存不足【请再次输入数量】',
                                                      reply_markup=InlineKeyboardMarkup(keyboard))
 
                             return
 
                         fstext = f'''
-<b>[emoji:5451937962629544243:ðŸ›]æ‚¨æ­£åœ¨è´­ä¹°ï¼š{projectname}
+<b>[emoji:5451937962629544243:🛍]您正在购买：{projectname}
 
-[emoji:5028746137645876535:ðŸ“ˆ] æ•°é‡ï¼š{gmsl}
+[emoji:5028746137645876535:📈] 数量：{gmsl}
 
-ðŸ’°ä»·æ ¼ï¼š{zxymoney}
+💰价格：{zxymoney}
 
-ðŸ‘›æ‚¨çš„ä½™é¢ï¼š{USDT}</b>
+👛您的余额：{USDT}</b>
                         '''
                         keyboard = [
-                            [InlineKeyboardButton('âŒå–æ¶ˆäº¤æ˜“', callback_data=f'close {user_id}'),
-                             InlineKeyboardButton('ç¡®è®¤è´­ä¹°âœ…', callback_data=f'qrgaimai {nowuid}:{gmsl}:{zxymoney}')],
-                            [InlineKeyboardButton('ðŸ ä¸»èœå•', callback_data='backzcd')]
+                            [InlineKeyboardButton('❌取消交易', callback_data=f'close {user_id}'),
+                             InlineKeyboardButton('确认购买✅', callback_data=f'qrgaimai {nowuid}:{gmsl}:{zxymoney}')],
+                            [InlineKeyboardButton('🏠主菜单', callback_data='backzcd')]
 
                         ]
                         user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
@@ -5318,8 +5318,8 @@ def textkeyboard(update: Update, context: CallbackContext):
                                                  reply_markup=InlineKeyboardMarkup(keyboard))
 
                     else:
-                        keyboard = [[InlineKeyboardButton('âŒå–æ¶ˆè´­ä¹°', callback_data=f'close {user_id}')]]
-                        context.bot.send_message(chat_id=user_id, text='è´­ä¹°æ•°é‡åªèƒ½è¾“å…¥å¤§äºŽ0çš„æ•´æ•°ï¼Œä¸è´­ä¹°è¯·ç‚¹å‡»å–æ¶ˆ',
+                        keyboard = [[InlineKeyboardButton('❌取消购买', callback_data=f'close {user_id}')]]
+                        context.bot.send_message(chat_id=user_id, text='购买数量只能输入大于0的整数，不购买请点击取消',
                                                  reply_markup=InlineKeyboardMarkup(keyboard))
                         # user.update_one({'user_id': user_id},{"$set":{'sign': 0}})
 
@@ -5340,18 +5340,18 @@ def textkeyboard(update: Update, context: CallbackContext):
                         kc = len(list(hb.find({'nowuid': nowuid, 'state': 0})))
                         ys = len(list(hb.find({'nowuid': nowuid, 'state': 1})))
                         fstext = f'''
-ä¸»åˆ†ç±»: {fl_pro}
-äºŒçº§åˆ†ç±»: {ej_projectname}
+主分类: {fl_pro}
+二级分类: {ej_projectname}
 
-ä»·æ ¼: {money}U
-åº“å­˜: {kc}
-å·²å”®: {ys}
+价格: {money}U
+库存: {kc}
+已售: {ys}
                         '''
                         context.bot.send_message(chat_id=user_id, text=fstext,
                                                  reply_markup=InlineKeyboardMarkup(keyboard))
 
                     else:
-                        context.bot.send_message(chat_id=user_id, text=f'è¯·è¾“å…¥æ•°å­—', parse_mode='HTML')
+                        context.bot.send_message(chat_id=user_id, text=f'请输入数字', parse_mode='HTML')
 
                 elif 'upejflname' in sign:
                     nowuid = sign.replace('upejflname ', '')
@@ -5372,13 +5372,13 @@ def textkeyboard(update: Update, context: CallbackContext):
                         keyboard[row - 1].append(
                             InlineKeyboardButton(f'{projectname}', callback_data=f'fejxxi {nowuid}'))
 
-                    keyboard.append([InlineKeyboardButton('ä¿®æ”¹åˆ†ç±»å', callback_data=f'upspname {uid}'),
-                                     InlineKeyboardButton('æ–°å¢žäºŒçº§åˆ†ç±»', callback_data=f'newejfl {uid}')])
-                    keyboard.append([InlineKeyboardButton('è°ƒæ•´äºŒçº§åˆ†ç±»æŽ’åº', callback_data=f'paixuejfl {uid}'),
-                                     InlineKeyboardButton('åˆ é™¤äºŒçº§åˆ†ç±»', callback_data=f'delejfl {uid}')])
-                    keyboard.append([InlineKeyboardButton('âŒå…³é—­', callback_data=f'close {user_id}')])
+                    keyboard.append([InlineKeyboardButton('修改分类名', callback_data=f'upspname {uid}'),
+                                     InlineKeyboardButton('新增二级分类', callback_data=f'newejfl {uid}')])
+                    keyboard.append([InlineKeyboardButton('调整二级分类排序', callback_data=f'paixuejfl {uid}'),
+                                     InlineKeyboardButton('删除二级分类', callback_data=f'delejfl {uid}')])
+                    keyboard.append([InlineKeyboardButton('❌关闭', callback_data=f'close {user_id}')])
                     fstext = f'''
-åˆ†ç±»: {fl_pro}
+分类: {fl_pro}
                     '''
                     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -5398,58 +5398,58 @@ def textkeyboard(update: Update, context: CallbackContext):
                         projectname = i['projectname']
                         row = i['row']
                         keyboard[row - 1].append(InlineKeyboardButton(f'{projectname}', callback_data=f'flxxi {uid}'))
-                    keyboard.append([InlineKeyboardButton("æ–°å»ºä¸€è¡Œ", callback_data='newfl'),
-                                     InlineKeyboardButton('è°ƒæ•´è¡ŒæŽ’åº', callback_data='paixufl'),
-                                     InlineKeyboardButton('åˆ é™¤ä¸€è¡Œ', callback_data='delfl')])
-                    context.bot.send_message(chat_id=user_id, text='å•†å“ç®¡ç†',
+                    keyboard.append([InlineKeyboardButton("新建一行", callback_data='newfl'),
+                                     InlineKeyboardButton('调整行排序', callback_data='paixufl'),
+                                     InlineKeyboardButton('删除一行', callback_data='delfl')])
+                    context.bot.send_message(chat_id=user_id, text='商品管理',
                                              reply_markup=InlineKeyboardMarkup(keyboard))
                 elif sign == 'settrc20':
                     if not is_valid_trc20_address(text):
-                        keyboard = [[InlineKeyboardButton('âŒå–æ¶ˆè¾“å…¥', callback_data=f'close {user_id}')]]
-                        context.bot.send_message(chat_id=user_id, text='åœ°å€æ ¼å¼é”™è¯¯ï¼Œè¯·è¾“å…¥ä»¥ T å¼€å¤´ã€é•¿åº¦ 34 ä½çš„ TRC20 åœ°å€',
+                        keyboard = [[InlineKeyboardButton('❌取消输入', callback_data=f'close {user_id}')]]
+                        context.bot.send_message(chat_id=user_id, text='地址格式错误，请输入以 T 开头、长度 34 位的 TRC20 地址',
                                                  reply_markup=InlineKeyboardMarkup(keyboard))
                         return
-                    shangtext.update_one({"projectname": 'å……å€¼åœ°å€'}, {"$set": {"text": text}})
+                    shangtext.update_one({"projectname": '充值地址'}, {"$set": {"text": text}})
                     img = qrcode.make(data=text)
                     with open(f'{text}.png', 'wb') as f:
                         img.save(f)
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
-                    context.bot.send_message(chat_id=user_id, text=f'å½“å‰å……å€¼åœ°å€ä¸º: {text}', parse_mode='HTML')
+                    context.bot.send_message(chat_id=user_id, text=f'当前充值地址为: {text}', parse_mode='HTML')
                 elif sign == 'setokpayid':
-                    set_text_config('OKPayå•†æˆ·ID', text.strip())
+                    set_text_config('OKPay商户ID', text.strip())
                     if refresh_okpay_entry_status():
                         start_okpay_callback_server(SyncTelegramProxy(context.bot, lambda: APP_EVENT_LOOP))
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
-                    context.bot.send_message(chat_id=user_id, text=f'OKPay å•†æˆ·ID å·²ä¿å­˜\n\n{build_okpay_config_text()}', parse_mode='HTML', reply_markup=InlineKeyboardMarkup(build_okpay_config_keyboard(user_id)))
+                    context.bot.send_message(chat_id=user_id, text=f'OKPay 商户ID 已保存\n\n{build_okpay_config_text()}', parse_mode='HTML', reply_markup=InlineKeyboardMarkup(build_okpay_config_keyboard(user_id)))
                 elif sign == 'setokpaytoken':
                     set_text_config('OKPayToken', text.strip())
                     if refresh_okpay_entry_status():
                         start_okpay_callback_server(SyncTelegramProxy(context.bot, lambda: APP_EVENT_LOOP))
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
-                    context.bot.send_message(chat_id=user_id, text=f'OKPay Token å·²ä¿å­˜\n\n{build_okpay_config_text()}', parse_mode='HTML', reply_markup=InlineKeyboardMarkup(build_okpay_config_keyboard(user_id)))
+                    context.bot.send_message(chat_id=user_id, text=f'OKPay Token 已保存\n\n{build_okpay_config_text()}', parse_mode='HTML', reply_markup=InlineKeyboardMarkup(build_okpay_config_keyboard(user_id)))
                 elif sign == 'setokpayname':
-                    set_text_config('OKPayåç§°', text.strip())
+                    set_text_config('OKPay名称', text.strip())
                     if refresh_okpay_entry_status():
                         start_okpay_callback_server(SyncTelegramProxy(context.bot, lambda: APP_EVENT_LOOP))
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
-                    context.bot.send_message(chat_id=user_id, text=f'OKPay åç§°å·²ä¿å­˜\n\n{build_okpay_config_text()}', parse_mode='HTML', reply_markup=InlineKeyboardMarkup(build_okpay_config_keyboard(user_id)))
+                    context.bot.send_message(chat_id=user_id, text=f'OKPay 名称已保存\n\n{build_okpay_config_text()}', parse_mode='HTML', reply_markup=InlineKeyboardMarkup(build_okpay_config_keyboard(user_id)))
                 elif sign == 'setcloneprice':
                     if not is_number(text):
-                        keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å–æ¶ˆè¾“å…¥', callback_data=f'close {user_id}')]]
-                        context.bot.send_message(chat_id=user_id, text='è¯·è¾“å…¥æ•°å­—ï¼Œè¾“å…¥ 0 è¡¨ç¤ºå…è´¹', reply_markup=InlineKeyboardMarkup(keyboard))
+                        keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消输入', callback_data=f'close {user_id}')]]
+                        context.bot.send_message(chat_id=user_id, text='请输入数字，输入 0 表示免费', reply_markup=InlineKeyboardMarkup(keyboard))
                         return
                     price = Decimal(str(text)).quantize(Decimal('0.01'))
                     if price < 0:
                         price = Decimal('0')
-                    set_text_config('ä¸€é”®å…‹éš†ä»·æ ¼', format(price, 'f'))
+                    set_text_config('一键克隆价格', format(price, 'f'))
                     user.update_one({'user_id': user_id}, {'$set': {'sign': 0}})
                     keyboard, total = build_clone_list_keyboard(user_id, 0)
-                    text = f'<b>[emoji:5287684458881756303:ðŸ¤–] å…‹éš†åˆ—è¡¨</b>\n\nå½“å‰ä»˜è´¹ä»·æ ¼ï¼š<code>{format_clone_price(price)} USDT</code>\næ´»è·ƒå…‹éš†æ•°ï¼š<code>{total}</code>'
+                    text = f'<b>[emoji:5287684458881756303:🤖] 克隆列表</b>\n\n当前付费价格：<code>{format_clone_price(price)} USDT</code>\n活跃克隆数：<code>{total}</code>'
                     context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
                 elif sign == 'clonebottoken':
                     if not can_use_clonebot(state):
                         user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
-                        context.bot.send_message(chat_id=user_id, text='å½“å‰æœªå¼€æ”¾ä¸€é”®å…‹éš†åŠŸèƒ½')
+                        context.bot.send_message(chat_id=user_id, text='当前未开放一键克隆功能')
                         return
                     fee = get_clone_price_decimal()
                     fee_exempt = is_clone_fee_exempt(user_id, state)
@@ -5460,14 +5460,14 @@ def textkeyboard(update: Update, context: CallbackContext):
                         return
                     context.bot.send_message(
                         chat_id=user_id,
-                        text='[emoji:5220195537520711716:âš¡ï¸] æ­£åœ¨å…‹éš†ä¸­ï¼Œè¯·ç¨ç­‰â€¦\n\n[emoji:5287684458881756303:ðŸ¤–] å·²æ”¶åˆ°æ–°çš„ Bot Tokenï¼Œæ­£åœ¨ä¸ºä½ åˆ›å»ºå¹¶å¯åŠ¨æ–° Botã€‚',
+                        text='[emoji:5220195537520711716:⚡️] 正在克隆中，请稍等…\n\n[emoji:5287684458881756303:🤖] 已收到新的 Bot Token，正在为你创建并启动新 Bot。',
                         parse_mode='HTML'
                     )
                     try:
                         result = clone_bot_instance(text.strip(), user_id)
                     except Exception as exc:
-                        keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å–æ¶ˆè¾“å…¥', callback_data=f'close {user_id}')]]
-                        context.bot.send_message(chat_id=user_id, text=f'ä¸€é”®å…‹éš†å¤±è´¥ï¼š{exc}',
+                        keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消输入', callback_data=f'close {user_id}')]]
+                        context.bot.send_message(chat_id=user_id, text=f'一键克隆失败：{exc}',
                                                  reply_markup=InlineKeyboardMarkup(keyboard))
                         return
                     update_doc = {'sign': 0}
@@ -5495,10 +5495,10 @@ def textkeyboard(update: Update, context: CallbackContext):
                         upsert=True
                     )
                     clone_text = f'''
-[emoji:5312028599803460968:ðŸ†—] ä¸€é”®å…‹éš†æˆåŠŸ
+[emoji:5312028599803460968:🆗] 一键克隆成功
 
-[emoji:5287684458881756303:ðŸ¤–] æœºå™¨äººï¼š@{result['bot_username']}
-[emoji:6321041414067068140:ðŸ‘¤] ç®¡ç†å‘˜ï¼š{user_id}
+[emoji:5287684458881756303:🤖] 机器人：@{result['bot_username']}
+[emoji:6321041414067068140:👤] 管理员：{user_id}
                     '''
                     context.bot.send_message(chat_id=user_id, text=clone_text, parse_mode='HTML')
                     send_clone_success_notice(context, user_id, result, fee_paid=(float(fee) if fee > 0 and not fee_exempt else 0))
@@ -5520,12 +5520,12 @@ def textkeyboard(update: Update, context: CallbackContext):
                         first = i['first']
                         keyboard[i["Row"] - 1].append(
                             InlineKeyboardButton(projectname, callback_data=f'keyxq {row}:{first}'))
-                    keyboard.append([InlineKeyboardButton('æ–°å»ºä¸€è¡Œ', callback_data='newrow'),
-                                     InlineKeyboardButton('åˆ é™¤ä¸€è¡Œ', callback_data='delrow'),
-                                     InlineKeyboardButton('è°ƒæ•´è¡ŒæŽ’åº', callback_data='paixurow')])
-                    keyboard.append([InlineKeyboardButton('ä¿®æ”¹æŒ‰é’®', callback_data='newkey')])
+                    keyboard.append([InlineKeyboardButton('新建一行', callback_data='newrow'),
+                                     InlineKeyboardButton('删除一行', callback_data='delrow'),
+                                     InlineKeyboardButton('调整行排序', callback_data='paixurow')])
+                    keyboard.append([InlineKeyboardButton('修改按钮', callback_data='newkey')])
                     user.update_one({'user_id': user_id}, {"$set": {"sign": 0}})
-                    context.bot.send_message(chat_id=user_id, text='è‡ªå®šä¹‰æŒ‰é’®',
+                    context.bot.send_message(chat_id=user_id, text='自定义按钮',
                                              reply_markup=InlineKeyboardMarkup(keyboard))
                 elif 'settuwenset' in sign:
                     qudata = sign.replace('settuwenset ', '')
@@ -5546,19 +5546,19 @@ def textkeyboard(update: Update, context: CallbackContext):
                     qudataall = qudata.split(':')
                     row = int(qudataall[0])
                     first = int(qudataall[1])
-                    text = text.replace('ï½œ', '|').replace(' ', '')
+                    text = text.replace('｜', '|').replace(' ', '')
                     keyboard = parse_urls(text)
                     dumped = pickle.dumps(keyboard)
                     try:
-                        message_id = context.bot.send_message(chat_id=user_id, text=f'å°¾éšæŒ‰é’®è®¾ç½®',
+                        message_id = context.bot.send_message(chat_id=user_id, text=f'尾随按钮设置',
                                                               reply_markup=InlineKeyboardMarkup(keyboard))
                         get_key.update_one({'Row': row, 'first': first}, {"$set": {'keyboard': dumped}})
                         get_key.update_one({'Row': row, 'first': first}, {"$set": {'key_text': text}})
                         timer11 = Timer(3, del_message, args=[message_id])
                         timer11.start()
                     except:
-                        keyboard = [[InlineKeyboardButton('æ ¼å¼é…ç½®é”™è¯¯,è¯·æ£€æŸ¥', callback_data='ddd')]]
-                        message_id = context.bot.send_message(chat_id=user_id, text='æ ¼å¼é…ç½®é”™è¯¯,è¯·æ£€æŸ¥',
+                        keyboard = [[InlineKeyboardButton('格式配置错误,请检查', callback_data='ddd')]]
+                        message_id = context.bot.send_message(chat_id=user_id, text='格式配置错误,请检查',
                                                               reply_markup=InlineKeyboardMarkup(keyboard))
                         timer11 = Timer(3, del_message, args=[message_id])
                         timer11.start()
@@ -5568,7 +5568,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                     uid = ejfl.find_one({'nowuid': nowuid})['uid']
                     ejfl.update_one({"nowuid": nowuid}, {"$set": {'sysm': zxh}})
                     fstext = f'''
-æ–°çš„ä½¿ç”¨è¯´æ˜Žä¸º:
+新的使用说明为:
 {zxh}
                     '''
                     context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML')
@@ -5583,12 +5583,12 @@ def textkeyboard(update: Update, context: CallbackContext):
                     kc = len(list(hb.find({'nowuid': nowuid, 'state': 0})))
                     ys = len(list(hb.find({'nowuid': nowuid, 'state': 1})))
                     fstext = f'''
-ä¸»åˆ†ç±»: {fl_pro}
-äºŒçº§åˆ†ç±»: {ej_projectname}
+主分类: {fl_pro}
+二级分类: {ej_projectname}
 
-ä»·æ ¼: {money}U
-åº“å­˜: {kc}
-å·²å”®: {ys}
+价格: {money}U
+库存: {kc}
+已售: {ys}
                     '''
                     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
                 elif 'update_wbts' in sign:
@@ -5596,7 +5596,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                     uid = ejfl.find_one({'nowuid': nowuid})['uid']
                     ejfl.update_one({"nowuid": nowuid}, {"$set": {'text': zxh}})
                     fstext = f'''
-æ–°çš„æç¤ºä¸º:
+新的提示为:
 {zxh}
                     '''
                     context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML')
@@ -5611,12 +5611,12 @@ def textkeyboard(update: Update, context: CallbackContext):
                     kc = len(list(hb.find({'nowuid': nowuid, 'state': 0})))
                     ys = len(list(hb.find({'nowuid': nowuid, 'state': 1})))
                     fstext = f'''
-ä¸»åˆ†ç±»: {fl_pro}
-äºŒçº§åˆ†ç±»: {ej_projectname}
+主分类: {fl_pro}
+二级分类: {ej_projectname}
 
-ä»·æ ¼: {money}U
-åº“å­˜: {kc}
-å·²å”®: {ys}
+价格: {money}U
+库存: {kc}
+已售: {ys}
                     '''
                     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -5631,10 +5631,10 @@ def textkeyboard(update: Update, context: CallbackContext):
                         if 'https:' in i:
                             if hb.find_one({'nowuid': nowuid, 'projectname': i}) is None:
                                 hbid = generate_24bit_uid()
-                                shangchuanhaobao('ä¼šå‘˜é“¾æŽ¥',uid, nowuid, hbid, i, timer)
+                                shangchuanhaobao('会员链接',uid, nowuid, hbid, i, timer)
                                 count += 1
 
-                    update.message.reply_text(f'æœ¬æ¬¡ä¸Šä¼ äº†{count}ä¸ªé“¾æŽ¥')
+                    update.message.reply_text(f'本次上传了{count}个链接')
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
 
                     ej_list = ejfl.find_one({'nowuid': nowuid})
@@ -5646,12 +5646,12 @@ def textkeyboard(update: Update, context: CallbackContext):
                     kc = len(list(hb.find({'nowuid': nowuid, 'state': 0})))
                     ys = len(list(hb.find({'nowuid': nowuid, 'state': 1})))
                     fstext = f'''
-ä¸»åˆ†ç±»: {fl_pro}
-äºŒçº§åˆ†ç±»: {ej_projectname}
+主分类: {fl_pro}
+二级分类: {ej_projectname}
 
-ä»·æ ¼: {money}U
-åº“å­˜: {kc}
-å·²å”®: {ys}
+价格: {money}U
+库存: {kc}
+已售: {ys}
                     '''
                     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -5661,19 +5661,19 @@ def textkeyboard(update: Update, context: CallbackContext):
                     uid = ejfl.find_one({'nowuid': nowuid})['uid']
 
                     file = update.message.document
-                    # èŽ·å–æ–‡ä»¶å
+                    # 获取文件名
                     filename = file.file_name
 
-                    # èŽ·å–æ–‡ä»¶ID
+                    # 获取文件ID
                     file_id = file.file_id
-                    # ä¸‹è½½æ–‡ä»¶
+                    # 下载文件
                     new_file = context.bot.get_file(file_id)
-                    # å°†æ–‡ä»¶ä¿å­˜åˆ°æœ¬åœ°
-                    new_file_path = f'./ä¸´æ—¶æ–‡ä»¶å¤¹/{filename}'
+                    # 将文件保存到本地
+                    new_file_path = f'./临时文件夹/{filename}'
                     new_file.download(new_file_path)
 
-                    context.bot.send_message(chat_id=user_id, text='ä¸Šä¼ ä¸­ï¼Œè¯·å‹¿é‡å¤æ“ä½œ')
-                    # è§£åŽ‹ç¼©æ–‡ä»¶
+                    context.bot.send_message(chat_id=user_id, text='上传中，请勿重复操作')
+                    # 解压缩文件
                     count = 0
                     timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
                     with zipfile.ZipFile(new_file_path, 'r') as zip_ref:
@@ -5685,10 +5685,10 @@ def textkeyboard(update: Update, context: CallbackContext):
                                 if hb.find_one({'nowuid': nowuid, 'projectname': extracted_folder_name}) is None:
                                     count += 1
                                     hbid = generate_24bit_uid()
-                                    shangchuanhaobao('ç›´ç™»å·',uid, nowuid, hbid, extracted_folder_name, timer)
-                            zip_ref.extract(file_info, f'å·åŒ…/{nowuid}')
+                                    shangchuanhaobao('直登号',uid, nowuid, hbid, extracted_folder_name, timer)
+                            zip_ref.extract(file_info, f'号包/{nowuid}')
 
-                    update.message.reply_text(f'è§£åŽ‹å¹¶å¤„ç†å®Œæˆï¼æœ¬æ¬¡ä¸Šä¼ äº†{count}ä¸ªå·')
+                    update.message.reply_text(f'解压并处理完成！本次上传了{count}个号')
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
 
                     ej_list = ejfl.find_one({'nowuid': nowuid})
@@ -5700,12 +5700,12 @@ def textkeyboard(update: Update, context: CallbackContext):
                     kc = len(list(hb.find({'nowuid': nowuid, 'state': 0})))
                     ys = len(list(hb.find({'nowuid': nowuid, 'state': 1})))
                     fstext = f'''
-ä¸»åˆ†ç±»: {fl_pro}
-äºŒçº§åˆ†ç±»: {ej_projectname}
+主分类: {fl_pro}
+二级分类: {ej_projectname}
 
-ä»·æ ¼: {money}U
-åº“å­˜: {kc}
-å·²å”®: {ys}
+价格: {money}U
+库存: {kc}
+已售: {ys}
                     '''
                     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -5714,18 +5714,18 @@ def textkeyboard(update: Update, context: CallbackContext):
                     uid = ejfl.find_one({'nowuid': nowuid})['uid']
 
                     file = update.message.document
-                    # èŽ·å–æ–‡ä»¶å
+                    # 获取文件名
                     filename = file.file_name
 
-                    # èŽ·å–æ–‡ä»¶ID
+                    # 获取文件ID
                     file_id = file.file_id
-                    # ä¸‹è½½æ–‡ä»¶
+                    # 下载文件
                     new_file = context.bot.get_file(file_id)
-                    # å°†æ–‡ä»¶ä¿å­˜åˆ°æœ¬åœ°
-                    new_file_path = f'./ä¸´æ—¶æ–‡ä»¶å¤¹/{filename}'
+                    # 将文件保存到本地
+                    new_file_path = f'./临时文件夹/{filename}'
                     new_file.download(new_file_path)
 
-                    context.bot.send_message(chat_id=user_id, text='ä¸Šä¼ ä¸­ï¼Œè¯·å‹¿é‡å¤æ“ä½œ')
+                    context.bot.send_message(chat_id=user_id, text='上传中，请勿重复操作')
 
                     with open(new_file_path, 'r', encoding='utf-8') as file:
                         link_list = file.read()
@@ -5733,7 +5733,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                     login = re.findall('login: (.*)', link_list)
                     password = re.findall('password: (.*)', link_list)
                     submail = re.findall('submail: (.*)', link_list)
-                    # å°†åŒ¹é…ç»“æžœæ‰“åŒ…æˆå…ƒç»„åˆ—è¡¨
+                    # 将匹配结果打包成元组列表
                     matches = list(zip(login, password, submail))
 
                     timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
@@ -5742,14 +5742,14 @@ def textkeyboard(update: Update, context: CallbackContext):
                         login = i[0]
                         password = i[1]
                         submail = i[2]
-                        jihe12 = {'è´¦æˆ·': login, 'å¯†ç ': password, 'å­é‚®ä»¶': submail}
+                        jihe12 = {'账户': login, '密码': password, '子邮件': submail}
                         if hb.find_one({'nowuid': nowuid, 'projectname': login}) is None:
                             hbid = generate_24bit_uid()
-                            shangchuanhaobao('è°·æ­Œ',uid, nowuid, hbid, login, timer)
-                            hb.update_one({'hbid': hbid}, {"$set": {"leixing": 'è°·æ­Œ', 'data': jihe12}})
+                            shangchuanhaobao('谷歌',uid, nowuid, hbid, login, timer)
+                            hb.update_one({'hbid': hbid}, {"$set": {"leixing": '谷歌', 'data': jihe12}})
                             count += 1
 
-                    update.message.reply_text(f'å¤„ç†å®Œæˆï¼æœ¬æ¬¡ä¸Šä¼ äº†{count}ä¸ªè°·æ­Œå·')
+                    update.message.reply_text(f'处理完成！本次上传了{count}个谷歌号')
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
 
                     ej_list = ejfl.find_one({'nowuid': nowuid})
@@ -5761,12 +5761,12 @@ def textkeyboard(update: Update, context: CallbackContext):
                     kc = len(list(hb.find({'nowuid': nowuid, 'state': 0})))
                     ys = len(list(hb.find({'nowuid': nowuid, 'state': 1})))
                     fstext = f'''
-ä¸»åˆ†ç±»: {fl_pro}
-äºŒçº§åˆ†ç±»: {ej_projectname}
+主分类: {fl_pro}
+二级分类: {ej_projectname}
 
-ä»·æ ¼: {money}U
-åº“å­˜: {kc}
-å·²å”®: {ys}
+价格: {money}U
+库存: {kc}
+已售: {ys}
                     '''
                     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -5775,24 +5775,24 @@ def textkeyboard(update: Update, context: CallbackContext):
                     uid = ejfl.find_one({'nowuid': nowuid})['uid']
 
                     file = update.message.document
-                    # èŽ·å–æ–‡ä»¶å
+                    # 获取文件名
                     filename = file.file_name
 
-                    # èŽ·å–æ–‡ä»¶ID
+                    # 获取文件ID
                     file_id = file.file_id
-                    # ä¸‹è½½æ–‡ä»¶
+                    # 下载文件
                     new_file = context.bot.get_file(file_id)
-                    # å°†æ–‡ä»¶ä¿å­˜åˆ°æœ¬åœ°
-                    new_file_path = f'./ä¸´æ—¶æ–‡ä»¶å¤¹/{filename}'
+                    # 将文件保存到本地
+                    new_file_path = f'./临时文件夹/{filename}'
                     new_file.download(new_file_path)
 
-                    context.bot.send_message(chat_id=user_id, text='ä¸Šä¼ ä¸­ï¼Œè¯·å‹¿é‡å¤æ“ä½œ')
+                    context.bot.send_message(chat_id=user_id, text='上传中，请勿重复操作')
 
                     link_list = []
                     with open(new_file_path, 'r', encoding='utf-8') as file:
-                        # é€è¡Œè¯»å–æ–‡ä»¶å†…å®¹
+                        # 逐行读取文件内容
                         for line in file:
-                            # åŽ»é™¤æ¯è¡Œæœ«å°¾çš„æ¢è¡Œç¬¦å¹¶æ·»åŠ åˆ°åˆ—è¡¨ä¸­
+                            # 去除每行末尾的换行符并添加到列表中
                             link_list.append(line.strip())
                     timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
                     count = 0
@@ -5802,7 +5802,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                             shangchuanhaobao('API',uid, nowuid, hbid, i, timer)
                             count += 1
 
-                    update.message.reply_text(f'å¤„ç†å®Œæˆï¼æœ¬æ¬¡ä¸Šä¼ äº†{count}ä¸ªapié“¾æŽ¥')
+                    update.message.reply_text(f'处理完成！本次上传了{count}个api链接')
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
 
                     ej_list = ejfl.find_one({'nowuid': nowuid})
@@ -5814,12 +5814,12 @@ def textkeyboard(update: Update, context: CallbackContext):
                     kc = len(list(hb.find({'nowuid': nowuid, 'state': 0})))
                     ys = len(list(hb.find({'nowuid': nowuid, 'state': 1})))
                     fstext = f'''
-ä¸»åˆ†ç±»: {fl_pro}
-äºŒçº§åˆ†ç±»: {ej_projectname}
+主分类: {fl_pro}
+二级分类: {ej_projectname}
 
-ä»·æ ¼: {money}U
-åº“å­˜: {kc}
-å·²å”®: {ys}
+价格: {money}U
+库存: {kc}
+已售: {ys}
                     '''
                     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
                 elif 'update_xyh' in sign:
@@ -5827,19 +5827,19 @@ def textkeyboard(update: Update, context: CallbackContext):
                     uid = ejfl.find_one({'nowuid': nowuid})['uid']
 
                     file = update.message.document
-                    # èŽ·å–æ–‡ä»¶å
+                    # 获取文件名
                     filename = file.file_name
 
-                    # èŽ·å–æ–‡ä»¶ID
+                    # 获取文件ID
                     file_id = file.file_id
-                    # ä¸‹è½½æ–‡ä»¶
+                    # 下载文件
                     new_file = context.bot.get_file(file_id)
-                    # å°†æ–‡ä»¶ä¿å­˜åˆ°æœ¬åœ°
-                    new_file_path = f'./ä¸´æ—¶æ–‡ä»¶å¤¹/{filename}'
+                    # 将文件保存到本地
+                    new_file_path = f'./临时文件夹/{filename}'
                     new_file.download(new_file_path)
 
-                    context.bot.send_message(chat_id=user_id, text='ä¸Šä¼ ä¸­ï¼Œè¯·å‹¿é‡å¤æ“ä½œ')
-                    # è§£åŽ‹ç¼©æ–‡ä»¶
+                    context.bot.send_message(chat_id=user_id, text='上传中，请勿重复操作')
+                    # 解压缩文件
                     count = 0
                     tj_dict = {}
                     timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
@@ -5847,23 +5847,23 @@ def textkeyboard(update: Update, context: CallbackContext):
                         for file_info in zip_ref.infolist():
                             filename = file_info.filename
                             if filename.endswith('.json') or filename.endswith('.session'):
-                                # ä»…è§£åŽ‹ session æˆ–è€… json æ ¼å¼çš„æ–‡ä»¶
+                                # 仅解压 session 或者 json 格式的文件
                                 fli1 = filename.replace('.json', '').replace('.session', '')
                                 if fli1 not in tj_dict.keys():
 
                                     hbid = generate_24bit_uid()
                                     if hb.find_one({'nowuid': nowuid, 'projectname': fli1}) is None:
                                         tj_dict[fli1] = 1
-                                        shangchuanhaobao('åè®®å·',uid, nowuid, hbid, fli1, timer)
+                                        shangchuanhaobao('协议号',uid, nowuid, hbid, fli1, timer)
 
-                                zip_ref.extract(member=file_info, path=f'åè®®å·/{nowuid}')
+                                zip_ref.extract(member=file_info, path=f'协议号/{nowuid}')
                                 pass
                             else:
                                 pass
                     for i in tj_dict:
                         count += 1
 
-                    update.message.reply_text(f'è§£åŽ‹å¹¶å¤„ç†å®Œæˆï¼æœ¬æ¬¡ä¸Šä¼ äº†{count}ä¸ªåè®®å·')
+                    update.message.reply_text(f'解压并处理完成！本次上传了{count}个协议号')
 
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
 
@@ -5876,12 +5876,12 @@ def textkeyboard(update: Update, context: CallbackContext):
                     kc = len(list(hb.find({'nowuid': nowuid, 'state': 0})))
                     ys = len(list(hb.find({'nowuid': nowuid, 'state': 1})))
                     fstext = f'''
-ä¸»åˆ†ç±»: {fl_pro}
-äºŒçº§åˆ†ç±»: {ej_projectname}
+主分类: {fl_pro}
+二级分类: {ej_projectname}
 
-ä»·æ ¼: {money}U
-åº“å­˜: {kc}
-å·²å”®: {ys}
+价格: {money}U
+库存: {kc}
+已售: {ys}
                     '''
                     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -5930,63 +5930,63 @@ def textkeyboard(update: Update, context: CallbackContext):
                         timer11 = Timer(3, del_message, args=[message_id])
                         timer11.start()
         else:
-            if text == 'å¼€å§‹è¥ä¸š':
+            if text == '开始营业':
                 if state == '4':
-                    shangtext.update_one({'projectname': 'è¥ä¸šçŠ¶æ€'}, {"$set": {"text": 1}})
-                    context.bot.send_message(chat_id=user_id, text='å¼€å§‹è¥ä¸š')
-            elif text == 'åœæ­¢è¥ä¸š':
+                    shangtext.update_one({'projectname': '营业状态'}, {"$set": {"text": 1}})
+                    context.bot.send_message(chat_id=user_id, text='开始营业')
+            elif text == '停止营业':
                 if state == '4':
-                    shangtext.update_one({'projectname': 'è¥ä¸šçŠ¶æ€'}, {"$set": {"text": 0}})
-                    context.bot.send_message(chat_id=user_id, text='åœæ­¢è¥ä¸š')
+                    shangtext.update_one({'projectname': '营业状态'}, {"$set": {"text": 0}})
+                    context.bot.send_message(chat_id=user_id, text='停止营业')
 
             key_list = get_key.find_one({"projectname": raw_text})
             if key_list is None and text != raw_text:
                 key_list = get_key.find_one({"projectname": text})
             if key_list is None and normalized_text:
                 key_list = normalized_key_map.get(normalized_text)
-            if normalized_text in (normalize_menu_text('ðŸ¤–ä¸€é”®å…‹éš†åŒæ¬¾'), normalize_menu_text('ðŸ¤–ä¸€é”®å…‹éš†Bot')):
+            if normalized_text in (normalize_menu_text('🤖一键克隆同款'), normalize_menu_text('🤖一键克隆Bot')):
                 del_message(update.message)
                 send_clonebot_prompt(context, user_id)
-            elif normalized_text == normalize_menu_text('ðŸ‘¤ä¸ªäººä¸­å¿ƒ'):
+            elif normalized_text == normalize_menu_text('👤个人中心'):
                 del_message(update.message)
                 if username is None:
                     username = fullname
                 else:
                     username = f'<a href="https://t.me/{username}">{username}</a>'
                 fstext = f'''
-<b>[emoji:6321041414067068140:ðŸ‘¤] æ‚¨çš„ID:</b>  <code>{user_id}</code>
-<b>[emoji:5287684458881756303:ðŸ¤–] æ‚¨çš„ç”¨æˆ·å:</b>  {username}
-<b>[emoji:5217818964612108191:âœ¨] æ³¨å†Œæ—¥æœŸ:</b>  {creation_time}
+<b>[emoji:6321041414067068140:👤] 您的ID:</b>  <code>{user_id}</code>
+<b>[emoji:6323075330189826977:😃] 您的用户名:</b>  {username}
+<b>[emoji:5217818964612108191:✨] 注册日期:</b>  {creation_time}
 
-<b>[emoji:5220064167356025824:â­ï¸] æ€»è´­æ•°é‡:</b>  {zgsl}
+<b>[emoji:5220064167356025824:⭐️] 总购数量:</b>  {zgsl}
 
-<b>[emoji:5028746137645876535:ðŸ“ˆ] æ€»è´­é‡‘é¢:</b>  {standard_num(zgje)} USDT
+<b>[emoji:5028746137645876535:📈] 总购金额:</b>  {standard_num(zgje)} USDT
 
-<b>[emoji:4972482444025398275:ðŸ‘›] æ‚¨çš„ä½™é¢:</b>  {USDT} USDT
+<b>[emoji:4972482444025398275:👛] 您的余额:</b>  {USDT} USDT
                 '''
 
-                keyboard = [[InlineKeyboardButton('ðŸ›’è´­ä¹°è®°å½•', callback_data=f'gmaijilu {user_id}')],
-                            [InlineKeyboardButton('å…³é—­', callback_data=f'close {user_id}')]]
+                keyboard = [[InlineKeyboardButton('🛒购买记录', callback_data=f'gmaijilu {user_id}')],
+                            [InlineKeyboardButton('关闭', callback_data=f'close {user_id}')]]
                 context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
                                          reply_markup=InlineKeyboardMarkup(keyboard), disable_web_page_preview=True)
-            elif normalized_text == normalize_menu_text('ðŸ’¸æˆ‘è¦å……å€¼'):
+            elif normalized_text == normalize_menu_text('💸我要充值'):
                 del_message(update.message)
                 send_recharge_method_menu(context, user_id)
 
-            elif 'çº¢åŒ…' in text:
+            elif '红包' in text:
                 del_message(update.message)
                 fstext = f'''
-ä»Žä¸‹é¢çš„åˆ—è¡¨ä¸­é€‰æ‹©ä¸€ä¸ªçº¢åŒ…
+从下面的列表中选择一个红包
                 '''
                 keyboard = [
-                    [InlineKeyboardButton('â—¾ï¸è¿›è¡Œä¸­', callback_data='jxzhb'),
-                     InlineKeyboardButton('å·²ç»“æŸ', callback_data='yjshb')],
-                    [InlineKeyboardButton('âž•æ·»åŠ ', callback_data='addhb')],
-                    [InlineKeyboardButton('å…³é—­', callback_data=f'close {user_id}')]
+                    [InlineKeyboardButton('◾️进行中', callback_data='jxzhb'),
+                     InlineKeyboardButton('已结束', callback_data='yjshb')],
+                    [InlineKeyboardButton('➕添加', callback_data='addhb')],
+                    [InlineKeyboardButton('关闭', callback_data=f'close {user_id}')]
                 ]
                 context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
-            elif normalized_text == normalize_menu_text('ðŸ›’å•†å“åˆ—è¡¨'):
+            elif normalized_text == normalize_menu_text('🛒商品列表'):
                 del_message(update.message)
                 keylist = list(fenlei.find({}, sort=[('row', 1)]))
                 keyboard = [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
@@ -6006,13 +6006,13 @@ def textkeyboard(update: Update, context: CallbackContext):
                     keyboard[row - 1].append(
                         InlineKeyboardButton(f'{projectname}({hsl})', callback_data=f'catejflsp {uid}:{hsl}'))
                 fstext = f'''
-<b>ðŸ›’è¿™æ˜¯å•†å“åˆ—è¡¨  é€‰æ‹©ä½ éœ€è¦çš„å•†å“ï¼š
+<b>🛒这是商品列表  选择你需要的商品：
 
-â—ï¸æ²¡ä½¿ç”¨è¿‡çš„æœ¬åº—å•†å“çš„ï¼Œè¯·å…ˆå°‘é‡è´­ä¹°æµ‹è¯•ï¼Œä»¥å…é€ æˆä¸å¿…è¦çš„äº‰æ‰§ï¼è°¢è°¢åˆä½œï¼
+❗️没使用过的本店商品的，请先少量购买测试，以免造成不必要的争执！谢谢合作！
 
-â—ï¸è´¦æˆ·æ”¾ä¹…éš¾å…ä¼šæ­»ï¼Œæœ‰å·®å¼‚ï¼Œè¯·è”ç³»å®¢æœå”®åŽï¼æœ›ç†è§£ï¼</b>
+❗️账户放久难免会死，有差异，请联系客服售后！望理解！</b>
                 '''
-                keyboard.append([InlineKeyboardButton('âŒå…³é—­', callback_data=f'close {user_id}')])
+                keyboard.append([InlineKeyboardButton('❌关闭', callback_data=f'close {user_id}')])
                 context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
                                          reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -6024,7 +6024,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                     file_type = key_list['file_type']
                     file_id = key_list['file_id']
                     entities = safe_pickle_loads(key_list['entities'])
-                    keyboard = [[InlineKeyboardButton("å…³é—­", callback_data=f'close {user_id}')]]
+                    keyboard = [[InlineKeyboardButton("关闭", callback_data=f'close {user_id}')]]
                     if context.bot.username in ['TelergamKFbot', 'Tclelgnam_bot']:
                         pass
                     else:
@@ -6092,11 +6092,11 @@ def jiexi(context: CallbackContext):
 
             now_price = standard_num(float(USDT) + float(today_money))
             now_price = float(now_price) if str((now_price)).count('.') > 0 else int(standard_num(now_price))
-            keyboard = [[InlineKeyboardButton("âœ…å·²è¯»ï¼ˆç‚¹å‡»é”€æ¯æ­¤æ¶ˆæ¯ï¼‰", callback_data=f'close {user_id}')]]
+            keyboard = [[InlineKeyboardButton("✅已读（点击销毁此消息）", callback_data=f'close {user_id}')]]
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
             order_id = dj_list['bianhao']
 
-            user_logging(order_id, 'TRC20å……å€¼', user_id, float(today_money), timer)
+            user_logging(order_id, 'TRC20充值', user_id, float(today_money), timer)
             us_list = user.find_one({"user_id": user_id})
             user.update_one({'user_id': user_id}, {"$set": {'USDT': now_price}})
             topup.update_one({'_id': dj_list['_id']}, {'$set': {
@@ -6109,13 +6109,13 @@ def jiexi(context: CallbackContext):
                 'quant_raw': str(quant)
             }})
             text = f'''
-<b>âœ… TRC20å……å€¼åˆ°è´¦</b>
+<b>✅ TRC20充值到账</b>
 
-è®¢å•å·ï¼š<code>{dj_list['bianhao']}</code>
-åˆ°è´¦é‡‘é¢ï¼š<code>{pay_amount_text} USDT</code>
-äº¤æ˜“å“ˆå¸Œï¼š<code>{txid}</code>
+订单号：<code>{dj_list['bianhao']}</code>
+到账金额：<code>{pay_amount_text} USDT</code>
+交易哈希：<code>{txid}</code>
 
-ðŸ’³ å½“å‰ä½™é¢ï¼š<code>{now_price} USDT</code>
+💳 当前余额：<code>{now_price} USDT</code>
             '''
             try:
                 context.bot.edit_message_caption(chat_id=user_id, message_id=message_id, caption=text,
@@ -6125,10 +6125,10 @@ def jiexi(context: CallbackContext):
             us_firstname = us_list['fullname'].replace('<', '').replace('>', '')
             us_username = us_list['username']
             text = f'''
-ç”¨æˆ·: <a href="tg://user?id={user_id}">{us_firstname}</a> @{us_username} TRC20å……å€¼æˆåŠŸ
-åœ°å€: <code>{from_address}</code>
-å……å€¼: {pay_amount_text} USDT
-<a href="https://tronscan.org/#/transaction/{txid}">å……å€¼è¯¦ç»†</a>
+用户: <a href="tg://user?id={user_id}">{us_firstname}</a> @{us_username} TRC20充值成功
+地址: <code>{from_address}</code>
+充值: {pay_amount_text} USDT
+<a href="https://tronscan.org/#/transaction/{txid}">充值详细</a>
             '''
             for us in list(user.find({'state': '4'})):
                 try:
@@ -6151,21 +6151,21 @@ def jianceguoqi(context: CallbackContext):
             new_dt = dt + timedelta(minutes=10)
             new_time_str = new_dt.strftime('%Y-%m-%d %H:%M:%S')
 
-            keyboard = [[InlineKeyboardButton("âœ…å·²è¯»ï¼ˆç‚¹å‡»é”€æ¯æ­¤æ¶ˆæ¯ï¼‰", callback_data=f'close {user_id}')]]
+            keyboard = [[InlineKeyboardButton("✅已读（点击销毁此消息）", callback_data=f'close {user_id}')]]
 
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
             if timer >= new_time_str:
                 try:
                     if i.get('type') == 'okpay':
                         context.bot.edit_message_text(chat_id=user_id, message_id=message_id,
-                                                      text='âŒ OKPayå……å€¼è®¢å•å·²è¶…æ—¶ï¼Œè¯·é‡æ–°åˆ›å»ºè®¢å•ã€‚',
+                                                      text='❌ OKPay充值订单已超时，请重新创建订单。',
                                                       reply_markup=InlineKeyboardMarkup(keyboard))
                     elif i.get('type') == 'trc20':
                         context.bot.edit_message_caption(chat_id=user_id, message_id=message_id,
-                                                         caption='âŒ TRC20å……å€¼è®¢å•å·²è¶…æ—¶ï¼Œè¯·é‡æ–°åˆ›å»ºè®¢å•ã€‚',
+                                                         caption='❌ TRC20充值订单已超时，请重新创建订单。',
                                                          reply_markup=InlineKeyboardMarkup(keyboard))
                     else:
-                        context.bot.edit_message_media(chat_id=user_id, message_id=message_id, media=InputMediaPhoto(media='AgACAgQAAxkBAAI4Nmagu-8nD4AQrv6ftlzrLjLSxlOnAAJavzEbAZYIUch6ykGfk6CaAQADAgADeQADNQQ', caption='âŒ è®¢å•æ”¯ä»˜è¶…æ—¶(æˆ–é‡‘é¢é”™è¯¯)'),reply_markup=InlineKeyboardMarkup(keyboard))
+                        context.bot.edit_message_media(chat_id=user_id, message_id=message_id, media=InputMediaPhoto(media='AgACAgQAAxkBAAI4Nmagu-8nD4AQrv6ftlzrLjLSxlOnAAJavzEbAZYIUch6ykGfk6CaAQADAgADeQADNQQ', caption='❌ 订单支付超时(或金额错误)'),reply_markup=InlineKeyboardMarkup(keyboard))
 
                 except:
                     pass
@@ -6199,18 +6199,18 @@ def fbgg(update: Update, context: CallbackContext):
         state = user_list['state']
         if state == '4':
 
-            context.bot.send_message(chat_id=user_id, text='å¼€å§‹å‘é€å¹¿å‘Š')
+            context.bot.send_message(chat_id=user_id, text='开始发送广告')
             fstext = text.replace('/gg ', '')
             for i in user.find({}):
                 yh_id = i['user_id']
-                keyboard = [[InlineKeyboardButton("âœ…å·²è¯»ï¼ˆç‚¹å‡»é”€æ¯æ­¤æ¶ˆæ¯ï¼‰", callback_data=f'close {yh_id}')]]
+                keyboard = [[InlineKeyboardButton("✅已读（点击销毁此消息）", callback_data=f'close {yh_id}')]]
                 try:
                     context.bot.send_message(chat_id=i['user_id'], text=fstext,
                                              reply_markup=InlineKeyboardMarkup(keyboard))
                 except:
                     pass
                 time.sleep(3)
-            context.bot.send_message(chat_id=user_id, text='å¹¿å‘Šå‘é€å®Œæˆ')
+            context.bot.send_message(chat_id=user_id, text='广告发送完成')
 
 
 def adm(update: Update, context: CallbackContext):
@@ -6234,12 +6234,12 @@ def adm(update: Update, context: CallbackContext):
                 df_id = int(text1[1])
                 money = text1[2]
                 if user.find_one({'user_id': df_id}) is None:
-                    context.bot.send_message(chat_id=chat_id, text='ç”¨æˆ·ä¸å­˜åœ¨')
+                    context.bot.send_message(chat_id=chat_id, text='用户不存在')
                     return
                 if '+' in money:
                     money = money.replace('+', '')
                     if not is_number(money):
-                        context.bot.send_message(chat_id=chat_id, text='éžæ•°å­—ï¼Œæ“ä½œå¤±è´¥')
+                        context.bot.send_message(chat_id=chat_id, text='非数字，操作失败')
                         return
                     hyh_list = user.find_one({'user_id': df_id})
                     hyh_money = hyh_list['USDT']
@@ -6247,28 +6247,28 @@ def adm(update: Update, context: CallbackContext):
                     now_money = float(now_money) if str((now_money)).count('.') > 0 else int(standard_num(now_money))
 
                     order_id = generate_24bit_uid()
-                    user_logging(order_id, 'å……å€¼', df_id, money, timer)
+                    user_logging(order_id, '充值', df_id, money, timer)
                     user.update_one({'user_id': df_id}, {'$set': {'USDT': now_money}})
                     hyh_list = user.find_one({"user_id": df_id})
                     fullname = hyh_list['fullname']
                     USDT = hyh_list['USDT']
                     fstext = f'''
 ID: {df_id}
-æ˜µç§°: {fullname}
-ä½™é¢: {USDT}
+昵称: {fullname}
+余额: {USDT}
                     '''
                     context.bot.send_message(chat_id=chat_id, text=fstext)
 
                     fstext = f'''
-<b>âœ…Â  Â Â é€šè¿‡ç®¡ç†å‘˜å……å€¼ï¼š{money} USDT
+<b>✅    通过管理员充值：{money} USDT
 
-ðŸ’³Â  Â Â æ‚¨çš„ä½™é¢ï¼š{USDT}  USDT</b>
+💳    您的余额：{USDT}  USDT</b>
                     '''
                     context.bot.send_message(chat_id=df_id, text=fstext, parse_mode='HTML')
                 else:
                     money = money.replace('-', '')
                     if not is_number(money):
-                        context.bot.send_message(chat_id=chat_id, text='éžæ•°å­—ï¼Œæ“ä½œå¤±è´¥')
+                        context.bot.send_message(chat_id=chat_id, text='非数字，操作失败')
                         return
                     hyh_list = user.find_one({'user_id': df_id})
                     hyh_money = hyh_list['USDT']
@@ -6276,26 +6276,26 @@ ID: {df_id}
                     now_money = float(now_money) if str((now_money)).count('.') > 0 else int(standard_num(now_money))
 
                     order_id = generate_24bit_uid()
-                    user_logging(order_id, 'æ‰£æ¬¾', df_id, money, timer)
+                    user_logging(order_id, '扣款', df_id, money, timer)
                     user.update_one({'user_id': df_id}, {'$set': {'USDT': now_money}})
                     hyh_list = user.find_one({"user_id": df_id})
                     fullname = hyh_list['fullname']
                     USDT = hyh_list['USDT']
                     fstext = f'''
 ID: {df_id}
-æ˜µç§°: {fullname}
-ä½™é¢: {USDT}
+昵称: {fullname}
+余额: {USDT}
                     '''
                     context.bot.send_message(chat_id=chat_id, text=fstext)
 
                     fstext = f'''
-<b>âœ…Â  Â Â é€šè¿‡ç®¡ç†å‘˜æ‰£æ¬¾ï¼š{money} USDT
+<b>✅    通过管理员扣款：{money} USDT
 
-ðŸ’³Â  Â Â æ‚¨çš„ä½™é¢ï¼š{USDT}  USDT</b>
+💳    您的余额：{USDT}  USDT</b>
                     '''
                     context.bot.send_message(chat_id=df_id, text=fstext, parse_mode='HTML')
             else:
-                context.bot.send_message(chat_id=chat_id, text='æ ¼å¼ä¸º: /add id +-æ•°å€¼ï¼Œæœ‰ä¸¤ä¸ªç©ºæ ¼')
+                context.bot.send_message(chat_id=chat_id, text='格式为: /add id +-数值，有两个空格')
 
 
 def cha(update: Update, context: CallbackContext):
@@ -6321,12 +6321,12 @@ def cha(update: Update, context: CallbackContext):
                     df_id = int(jieguo)
                     df_list = user.find_one({'user_id': df_id})
                     if df_list is None:
-                        context.bot.send_message(chat_id=chat_id, text='ç”¨æˆ·ä¸å­˜åœ¨')
+                        context.bot.send_message(chat_id=chat_id, text='用户不存在')
                         return
                 else:
                     df_list = user.find_one({'username': jieguo.replace('@', '')})
                     if df_list is None:
-                        context.bot.send_message(chat_id=chat_id, text='ç”¨æˆ·ä¸å­˜åœ¨')
+                        context.bot.send_message(chat_id=chat_id, text='用户不存在')
                         return
                     df_id = df_list['user_id']
                 df_fullname = df_list['fullname']
@@ -6340,25 +6340,25 @@ def cha(update: Update, context: CallbackContext):
                 zgje = df_list['zgje']
                 USDT = df_list['USDT']
                 fstext = f'''
-<b>[emoji:6321041414067068140:ðŸ‘¤] ç”¨æˆ·ID:</b>  <code>{df_id}</code>
-<b>[emoji:5287684458881756303:ðŸ¤–] ç”¨æˆ·å:</b>  {df_username}
-<b>[emoji:5217818964612108191:âœ¨] æ³¨å†Œæ—¥æœŸ:</b>  {creation_time}
+<b>[emoji:6321041414067068140:👤] 用户ID:</b>  <code>{df_id}</code>
+<b>[emoji:6323075330189826977:😃] 用户名:</b>  {df_username}
+<b>[emoji:5217818964612108191:✨] 注册日期:</b>  {creation_time}
 
-<b>[emoji:5220064167356025824:â­ï¸] æ€»è´­æ•°é‡:</b>  {zgsl}
+<b>[emoji:5220064167356025824:⭐️] 总购数量:</b>  {zgsl}
 
-<b>[emoji:5028746137645876535:ðŸ“ˆ] æ€»è´­é‡‘é¢:</b>  {standard_num(zgje)} USDT
+<b>[emoji:5028746137645876535:📈] 总购金额:</b>  {standard_num(zgje)} USDT
 
-<b>[emoji:4972482444025398275:ðŸ‘›] æ‚¨çš„ä½™é¢:</b>  {USDT} USDT
+<b>[emoji:4972482444025398275:👛] 您的余额:</b>  {USDT} USDT
                 '''
-                keyboard = [[InlineKeyboardButton('ðŸ›’è´­ä¹°è®°å½•', callback_data=f'gmaijilu {df_id}')],
-                            [InlineKeyboardButton('å…³é—­', callback_data=f'close {df_id}')]]
+                keyboard = [[InlineKeyboardButton('🛒购买记录', callback_data=f'gmaijilu {df_id}')],
+                            [InlineKeyboardButton('关闭', callback_data=f'close {df_id}')]]
                 context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
                                          reply_markup=InlineKeyboardMarkup(keyboard), disable_web_page_preview=True)
 
 
 
             else:
-                context.bot.send_message(chat_id=chat_id, text='æ ¼å¼ä¸º: /cha idæˆ–ç”¨æˆ·åï¼Œæœ‰ä¸€ä¸ªç©ºæ ¼')
+                context.bot.send_message(chat_id=chat_id, text='格式为: /cha id或用户名，有一个空格')
 
 
 def create_folder_if_not_exists(folder_path):
@@ -6373,7 +6373,7 @@ def create_folder_if_not_exists(folder_path):
 def parse_url(content):
     args = content.split('&')
     if len(args) < 2:
-        (title, url) = ("æ ¼å¼é”™è¯¯ï¼Œç‚¹å‡»è”ç³»ç®¡ç†å‘˜", "www.baidu.com")
+        (title, url) = ("格式错误，点击联系管理员", "www.baidu.com")
     else:
         (title, url) = (args[0].strip(), (None if len(args) < 1 else args[1].strip()))
     return create_keyboard(title, url)
@@ -6408,7 +6408,7 @@ def parse_urls(content, maxurl=99):
 def main():
     bot_token = os.getenv('BOT_TOKEN')
     if not bot_token:
-        raise RuntimeError('ç¼ºå°‘ BOT_TOKENï¼Œè¯·å…ˆåœ¨ .env é‡Œé…ç½® Telegram Bot Token')
+        raise RuntimeError('缺少 BOT_TOKEN，请先在 .env 里配置 Telegram Bot Token')
 
     application = ApplicationBuilder().token(bot_token).post_init(on_post_init).build()
 
@@ -6461,6 +6461,6 @@ def main():
 
 if __name__ == '__main__':
 
-    for i in ['å‘è´§', 'åè®®å·å‘è´§', 'æ‰‹æœºæŽ¥ç å‘è´§', 'ä¸´æ—¶æ–‡ä»¶å¤¹', 'è°·æ­Œå‘è´§', 'åè®®å·', 'å·åŒ…']:
+    for i in ['发货', '协议号发货', '手机接码发货', '临时文件夹', '谷歌发货', '协议号', '号包']:
         create_folder_if_not_exists(i)
     main()
