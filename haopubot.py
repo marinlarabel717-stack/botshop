@@ -81,6 +81,11 @@ def sanitize_service_name(value):
     return value or 'bot'
 
 
+def sanitize_db_name(value):
+    value = re.sub(r'[^a-zA-Z0-9_]+', '_', str(value or '').strip()).strip('_').lower()
+    return value or 'botshop_clone'
+
+
 def run_system_command(args, cwd=None):
     result = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
     if result.returncode != 0:
@@ -151,16 +156,19 @@ def write_clone_env(clone_dir, bot_token, admin_user_id, bot_info):
 
     bot_id = str(bot_info.get('id'))
     bot_username = str(bot_info.get('username') or f'bot{bot_id}').strip()
-    db_name = f'botshop_{bot_id}'
+    db_name = sanitize_db_name(bot_username)
 
     env_map['BOT_TOKEN'] = bot_token
     env_map['ADMIN_USER_IDS'] = str(admin_user_id)
     env_map['MONGO_DB_NAME'] = db_name
     env_map['MONGO_CHAIN_DB_NAME'] = db_name
-    env_map['OKPAY_BOT_USERNAME'] = bot_username
+    env_map['OKPAY_NAME'] = ''
+    env_map['OKPAY_BOT_USERNAME'] = ''
     env_map['OKPAY_SHOP_ID'] = ''
     env_map['OKPAY_SHOP_TOKEN'] = ''
     env_map['OKPAY_CALLBACK_URL'] = ''
+    env_map['TRONGRID_MONITOR_ADDRESSES'] = ''
+    env_map['SHOW_OKPAY_RECHARGE_ENTRY'] = 'false'
     env_map['BOT_CLONE_ROOT'] = BOT_CLONE_ROOT
     env_map['BOT_CLONE_REPO_URL'] = get_clone_repo_url()
 
@@ -1548,11 +1556,12 @@ def start(update: Update, context: CallbackContext):
         row = i['Row']
         first = i['first']
         keyboard[i["Row"] - 1].append(KeyboardButton(projectname))
+    keyboard = [row for row in keyboard if row]
     if ALLOW_PUBLIC_BOT_CLONE:
         keyboard.append([KeyboardButton('🤖一键克隆Bot')])
     entities = safe_pickle_loads(hyyys)
-    context.bot.send_message(chat_id=user_id, text=hyy, reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True,
-                                                                                         one_time_keyboard=False),
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False) if keyboard else None
+    context.bot.send_message(chat_id=user_id, text=hyy, reply_markup=reply_markup,
                              entities=entities)
     if state == '4':
         keyboard = [
