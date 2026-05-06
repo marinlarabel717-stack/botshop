@@ -104,8 +104,8 @@ def sanitize_db_name(value):
     return value or 'botshop_clone'
 
 
-def run_system_command(args, cwd=None):
-    result = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
+def run_system_command(args, cwd=None, timeout=None):
+    result = subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=timeout)
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip() or '命令执行失败')
     return result.stdout.strip()
@@ -3183,7 +3183,7 @@ Bot服务：<code>{row.get('service_name', '')}.service</code>
 def clonedelete(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
-    query.answer()
+    query.answer('正在删除，请稍候...')
     if not BOT_CLONE_ENABLED:
         context.bot.send_message(chat_id=user_id, text='当前机器人未开放克隆管理')
         return
@@ -3192,6 +3192,11 @@ def clonedelete(update: Update, context: CallbackContext):
         context.bot.send_message(chat_id=user_id, text='只有源机器人管理员可以删除克隆实例')
         return
     bot_id = str(query.data.replace('clonedelete ', '', 1)).strip()
+    waiting_text = f'[emoji:5220195537520711716:⚡️] 正在删除克隆实例，请稍候…\n\n机器人ID：<code>{bot_id}</code>'
+    try:
+        query.edit_message_text(text=waiting_text, parse_mode='HTML')
+    except Exception:
+        pass
     try:
         record = remove_clone_instance(bot_id, deleted_by=user_id)
     except Exception as exc:
@@ -3199,7 +3204,7 @@ def clonedelete(update: Update, context: CallbackContext):
         return
 
     requester_user_id = record.get('requester_user_id')
-    text = f'✅ 已删除克隆实例\n\n机器人ID：{record.get("bot_id")}\n管理员：{requester_user_id}'
+    text = f'[emoji:5312028599803460968:🆗] 已删除克隆实例\n\n机器人ID：{record.get("bot_id")}\n管理员：{requester_user_id}'
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}返回克隆列表', callback_data='clonelist 0')]])
     try:
         query.edit_message_text(text=text, reply_markup=keyboard)
@@ -3933,10 +3938,10 @@ def remove_clone_instance(bot_id, deleted_by=None):
             continue
         service_unit = f'{service_name}.service'
         try:
-            run_system_command(['systemctl', 'disable', '--now', service_unit])
+            run_system_command(['systemctl', 'disable', '--now', service_unit], timeout=25)
         except Exception:
             try:
-                run_system_command(['systemctl', 'stop', service_unit])
+                run_system_command(['systemctl', 'stop', service_unit], timeout=20)
             except Exception:
                 pass
         service_path = Path('/etc/systemd/system') / service_unit
@@ -3947,7 +3952,7 @@ def remove_clone_instance(bot_id, deleted_by=None):
             pass
 
     try:
-        run_system_command(['systemctl', 'daemon-reload'])
+        run_system_command(['systemctl', 'daemon-reload'], timeout=20)
     except Exception:
         pass
 
