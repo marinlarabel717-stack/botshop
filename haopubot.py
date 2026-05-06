@@ -1581,16 +1581,16 @@ def start(update: Update, context: CallbackContext):
                              entities=entities)
     if state == '4':
         keyboard = [
-            [InlineKeyboardButton('用户列表', callback_data='yhlist'),InlineKeyboardButton('对话用户私发', callback_data='sifa')],
-            [InlineKeyboardButton('充值地址设置', callback_data='settrc20'),
-             InlineKeyboardButton('OKPay配置', callback_data='okpaycfg')],
-            [InlineKeyboardButton('商品管理', callback_data='spgli'),
-             InlineKeyboardButton('欢迎语修改', callback_data='startupdate')],
-            [InlineKeyboardButton('菜单按钮', callback_data='addzdykey')],
+            [InlineKeyboardButton('[emoji:6321041414067068140:👤]用户列表', callback_data='yhlist'),InlineKeyboardButton('[emoji:5456535802429330837:💬]对话用户私发', callback_data='sifa')],
+            [InlineKeyboardButton('[emoji:5443127283898405358:📥]充值地址设置', callback_data='settrc20'),
+             InlineKeyboardButton('[emoji:5445353829304387411:💳]OKPay配置', callback_data='okpaycfg')],
+            [InlineKeyboardButton('[emoji:5312361253610475399:🛒]商品管理', callback_data='spgli'),
+             InlineKeyboardButton('[emoji:5458382591121964689:✍️]欢迎语修改', callback_data='startupdate')],
+            [InlineKeyboardButton('[emoji:5341715473882955310:⚙️]菜单按钮', callback_data='addzdykey')],
         ]
         if BOT_CLONE_ENABLED:
             keyboard[-1].append(InlineKeyboardButton('#g [emoji:5287684458881756303:🤖]一键克隆同款', callback_data='clonebot'))
-        keyboard.append([InlineKeyboardButton('关闭', callback_data=f'close {user_id}')])
+        keyboard.append([InlineKeyboardButton('[emoji:5210952531676504517:❌]关闭', callback_data=f'close {user_id}')])
         jqrsyrs = len(list(user.find({})))
         numu = 0
         for i in list(user.find({"USDT": {"$gt": 0}})):
@@ -1836,16 +1836,16 @@ def backstart(update: Update, context: CallbackContext):
     query.answer()
     user_id = query.from_user.id
     keyboard = [
-        [InlineKeyboardButton('用户列表', callback_data='yhlist'),InlineKeyboardButton('对话用户私发', callback_data='sifa')],
-        [InlineKeyboardButton('充值地址设置', callback_data='settrc20'),
-         InlineKeyboardButton('OKPay配置', callback_data='okpaycfg')],
-        [InlineKeyboardButton('商品管理', callback_data='spgli'),
-         InlineKeyboardButton('欢迎语修改', callback_data='startupdate')],
-        [InlineKeyboardButton('菜单按钮', callback_data='addzdykey')],
+        [InlineKeyboardButton('[emoji:6321041414067068140:👤]用户列表', callback_data='yhlist'),InlineKeyboardButton('[emoji:5456535802429330837:💬]对话用户私发', callback_data='sifa')],
+        [InlineKeyboardButton('[emoji:5443127283898405358:📥]充值地址设置', callback_data='settrc20'),
+         InlineKeyboardButton('[emoji:5445353829304387411:💳]OKPay配置', callback_data='okpaycfg')],
+        [InlineKeyboardButton('[emoji:5312361253610475399:🛒]商品管理', callback_data='spgli'),
+         InlineKeyboardButton('[emoji:5458382591121964689:✍️]欢迎语修改', callback_data='startupdate')],
+        [InlineKeyboardButton('[emoji:5341715473882955310:⚙️]菜单按钮', callback_data='addzdykey')],
     ]
     if BOT_CLONE_ENABLED:
         keyboard[-1].append(InlineKeyboardButton('#g [emoji:5287684458881756303:🤖]一键克隆同款', callback_data='clonebot'))
-    keyboard.append([InlineKeyboardButton('关闭', callback_data=f'close {user_id}')])
+    keyboard.append([InlineKeyboardButton('[emoji:5210952531676504517:❌]关闭', callback_data=f'close {user_id}')])
     jqrsyrs = len(list(user.find({})))
 
     numu = 0
