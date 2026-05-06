@@ -1039,10 +1039,7 @@ def inline_query(update: Update, context: CallbackContext):
 ⚠️操作失败，转账金额必须大于0
                 '''
 
-                hyy = shangtext.find_one({'projectname': '欢迎语'})['text']
-                hyyys = shangtext.find_one({'projectname': '欢迎语样式'})['text']
-            
-                entities = safe_pickle_loads(hyyys)
+                hyy, entities = get_welcome_content()
 
                 results = [
                     InlineQueryResultArticle(
@@ -1101,10 +1098,7 @@ def inline_query(update: Update, context: CallbackContext):
 ⚠️操作失败，余额不足，💰当前余额：{USDT}U
             '''
 
-            hyy = shangtext.find_one({'projectname': '欢迎语'})['text']
-            hyyys = shangtext.find_one({'projectname': '欢迎语样式'})['text']
-        
-            entities = safe_pickle_loads(hyyys)
+            hyy, entities = get_welcome_content()
 
             results = [
                 InlineQueryResultArticle(
@@ -1668,8 +1662,7 @@ def start(update: Update, context: CallbackContext):
                                  reply_markup=InlineKeyboardMarkup(keyboard), disable_web_page_preview=True)
         return
 
-    hyy = shangtext.find_one({'projectname': '欢迎语'})['text']
-    hyyys = shangtext.find_one({'projectname': '欢迎语样式'})['text']
+    hyy, entities = get_welcome_content()
     keylist = get_key.find({}, sort=[('Row', 1), ('first', 1)])
     yyzt = shangtext.find_one({'projectname': '营业状态'})['text']
     if yyzt == 0:
@@ -1687,7 +1680,6 @@ def start(update: Update, context: CallbackContext):
     keyboard = [row for row in keyboard if row]
     if BOT_CLONE_ENABLED and ALLOW_PUBLIC_BOT_CLONE:
         keyboard.append([KeyboardButton('#g [emoji:5287684458881756303:🤖]一键克隆同款')])
-    entities = safe_pickle_loads(hyyys)
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False) if keyboard else None
     context.bot.send_message(chat_id=user_id, text=hyy, reply_markup=reply_markup,
                              entities=entities)
@@ -3900,6 +3892,15 @@ def get_text_config(projectname, default=''):
 
 def set_text_config(projectname, value):
     shangtext.update_one({'projectname': projectname}, {'$set': {'text': value}}, upsert=True)
+
+
+def get_welcome_content(default_text='欢迎使用机器人'):
+    text = str(get_text_config('欢迎语', default_text) or '').strip()
+    if not text:
+        return default_text, []
+    entities_raw = get_text_config('欢迎语样式', b'\x80\x03]q\x00.')
+    entities = safe_pickle_loads(entities_raw)
+    return text, entities
 
 
 def get_clone_price_decimal():

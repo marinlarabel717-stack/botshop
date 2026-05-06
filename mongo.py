@@ -173,7 +173,7 @@ def user_data(key_id, user_id, username, fullname, lastname, state, creation_tim
 
 
 if shangtext.find_one({}) == None:
-    fstext = ''
+    fstext = '欢迎使用机器人'
     shang_text('欢迎语',fstext)
     shang_text('欢迎语样式',b'\x80\x03]q\x00.')
     shang_text('充值地址','')
