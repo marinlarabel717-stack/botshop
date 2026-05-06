@@ -4811,12 +4811,11 @@ def textkeyboard(update: Update, context: CallbackContext):
 
 
                 elif sign == 'startupdate':
-                    entities = update.message.entities
-                    shangtext.update_one({"projectname": '欢迎语'}, {"$set": {"text": text}})
-                    shangtext.update_one({"projectname": '欢迎语样式'}, {"$set": {"text": pickle.dumps(entities)}})
+                    welcome_text = stored_text or text
+                    shangtext.update_one({"projectname": '欢迎语'}, {"$set": {"text": welcome_text}})
+                    shangtext.update_one({"projectname": '欢迎语样式'}, {"$set": {"text": pickle.dumps([])}})
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
-                    context.bot.send_message(chat_id=user_id, text=f'当前欢迎语为: {text}', parse_mode='HTML',
-                                             entities=entities)
+                    context.bot.send_message(chat_id=user_id, text=f'当前欢迎语为:\n\n{welcome_text}')
                 elif 'okzdycz' in sign:
                     if is_number(text):
                         del_message(update.message)
