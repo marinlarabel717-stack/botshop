@@ -5078,8 +5078,8 @@ def textkeyboard(update: Update, context: CallbackContext):
                 del_message(update.message)
                 fstext = '请选择支付方式'
                 keyboard = [
-                    [InlineKeyboardButton('😄 USDT 直充 | 链上到账', callback_data='recharge_trc20')],
-                    [InlineKeyboardButton('😄 OKPay支付 | 秒速到账', callback_data='recharge_okpay')],
+                    [InlineKeyboardButton('😀 USDT 直充 | 链上到账', callback_data='recharge_trc20')],
+                    [InlineKeyboardButton('[emoji:6321111297479941978:😄] OKPay支付 | 秒速到账', callback_data='recharge_okpay')],
                     [InlineKeyboardButton('取消充值', callback_data=f'close {user_id}')]
                 ]
                 context.bot.send_message(chat_id=user_id, text=fstext,
