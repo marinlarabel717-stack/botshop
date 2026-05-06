@@ -124,6 +124,21 @@ KNOWN_DYNAMIC_EMOJI_IDS = OrderedDict([
 KNOWN_DYNAMIC_EMOJI_PATTERN = re.compile('|'.join(sorted((re.escape(k) for k in KNOWN_DYNAMIC_EMOJI_IDS.keys()), key=len, reverse=True)))
 PROTECTED_DYNAMIC_EMOJI_SEGMENT_RE = re.compile(r'(<tg-emoji\b[^>]*>.*?</tg-emoji>|\[(?:emoji|ce|custom_emoji):[0-9]+(?::[^:\]]+)?(?::(?:danger|success|primary))?\])', re.S)
 KNOWN_DYNAMIC_EMOJI_KEYS = sorted(KNOWN_DYNAMIC_EMOJI_IDS.keys(), key=len, reverse=True)
+BUTTON_STYLE_PREFIX_MAP = {
+    '#r': 'danger',
+    '#g': 'success',
+    '#b': 'primary',
+}
+
+
+def parse_button_style_prefix(text):
+    if not isinstance(text, str):
+        return None, text
+    stripped = text.strip()
+    for prefix, style in BUTTON_STYLE_PREFIX_MAP.items():
+        if stripped.lower().startswith(prefix):
+            return style, stripped[len(prefix):].strip()
+    return None, text
 
 
 def extract_known_button_icon(text):
@@ -276,6 +291,7 @@ def strip_custom_emoji_entities(source_text, entities):
 
 
 def get_button_match_text(text):
+    _, text = parse_button_style_prefix(text)
     emoji_id, _, _, clean_text = parse_dynamic_emoji_prefix(text)
     return clean_text if emoji_id else text
 
@@ -380,9 +396,10 @@ def InlineKeyboardButton(text, *args, **kwargs):
 
     Usage: InlineKeyboardButton('[emoji:5368324170671202286:📱]商品列表', callback_data='...')
     """
-    emoji_id, alt, style, clean_text = parse_dynamic_emoji_prefix(text)
+    _, styled_text = parse_button_style_prefix(text)
+    emoji_id, alt, style, clean_text = parse_dynamic_emoji_prefix(styled_text)
     if not emoji_id:
-        emoji_id, alt, clean_text = extract_known_button_icon(text)
+        emoji_id, alt, clean_text = extract_known_button_icon(styled_text)
     if emoji_id:
         try:
             api_kwargs = dict(kwargs.pop('api_kwargs', {}) or {})
@@ -392,23 +409,32 @@ def InlineKeyboardButton(text, *args, **kwargs):
             return TGInlineKeyboardButton(clean_text, *args, api_kwargs=api_kwargs, **kwargs)
         except TypeError:
             return TGInlineKeyboardButton(f'{alt}{clean_text}', *args, **kwargs)
-    return TGInlineKeyboardButton(text, *args, **kwargs)
+    return TGInlineKeyboardButton(styled_text, *args, **kwargs)
 
 
 def KeyboardButton(text, *args, **kwargs):
     """Backward-compatible reply keyboard button with optional dynamic emoji icon."""
-    emoji_id, alt, style, clean_text = parse_dynamic_emoji_prefix(text)
+    style_prefix, styled_text = parse_button_style_prefix(text)
+    emoji_id, alt, style, clean_text = parse_dynamic_emoji_prefix(styled_text)
     if not emoji_id:
-        emoji_id, alt, clean_text = extract_known_button_icon(text)
+        emoji_id, alt, clean_text = extract_known_button_icon(styled_text)
+    final_style = style or style_prefix
     if emoji_id:
         try:
             api_kwargs = dict(kwargs.pop('api_kwargs', {}) or {})
             api_kwargs['icon_custom_emoji_id'] = emoji_id
-            api_kwargs['style'] = style or 'primary'
+            api_kwargs['style'] = final_style or 'primary'
             return TGKeyboardButton(clean_text, *args, api_kwargs=api_kwargs, **kwargs)
         except TypeError:
             return TGKeyboardButton(f'{alt}{clean_text}', *args, **kwargs)
-    return TGKeyboardButton(text, *args, **kwargs)
+    if final_style:
+        try:
+            api_kwargs = dict(kwargs.pop('api_kwargs', {}) or {})
+            api_kwargs['style'] = final_style
+            return TGKeyboardButton(styled_text, *args, api_kwargs=api_kwargs, **kwargs)
+        except TypeError:
+            return TGKeyboardButton(styled_text, *args, **kwargs)
+    return TGKeyboardButton(styled_text, *args, **kwargs)
 
 
 def patch_bot_dynamic_emoji(bot):
@@ -2358,10 +2384,20 @@ def setkeyname(update: Update, context: CallbackContext):
     first = int(qudataall[1])
     text = f'''
 输入要修改的名字
+
+颜色前缀：
+#r = 红色
+#g = 绿色
+#b = 蓝色
+
+例如：
+#r 😃商品列表
+#g 👤个人中心
+#b 💸我要充值
     '''
     user.update_one({'user_id': user_id}, {"$set": {"sign": f'setkeyname {row}:{first}'}})
     keyboard = [[InlineKeyboardButton('❌关闭', callback_data=f'close {user_id}')]]
-        keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
+    keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
     query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
