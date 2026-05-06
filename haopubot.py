@@ -21,6 +21,7 @@ from telegram.error import BadRequest
 import time, json, pickle, re
 from threading import Timer
 from decimal import Decimal
+from datetime import timedelta
 import zipfile
 from pathlib import Path
 
@@ -2610,7 +2611,7 @@ def settrc20(update: Update, context: CallbackContext):
     query.answer()
     bot_id = context.bot.id
     text = f'''
-输入以T开头共34位的 trc20地址
+请输入以 T 开头、共 34 位的 TRC20-USDT 收款地址
 '''
     keyboard = [[InlineKeyboardButton('取消', callback_data=f'close {user_id}')]]
     user.update_one({'user_id': user_id}, {"$set": {"sign": 'settrc20'}})
@@ -2650,7 +2651,7 @@ def yuecz(update: Update, context: CallbackContext):
     query.answer()
     money = int(query.data.replace('yuecz ', ''))
     user_id = query.from_user.id
-    create_okpay_deposit_order(context, user_id, money)
+    create_trc20_deposit_order(context, user_id, money)
 
 def catejflsp(update: Update, context: CallbackContext):
     query = update.callback_query
@@ -3109,6 +3110,43 @@ def is_number(s):
     return False
 
 
+def get_trc20_address():
+    row = shangtext.find_one({'projectname': '充值地址'}) or {}
+    return str(row.get('text', '') or '').strip()
+
+
+def is_valid_trc20_address(address):
+    if not isinstance(address, str):
+        return False
+    return re.fullmatch(r'T[1-9A-HJ-NP-Za-km-z]{33}', address.strip()) is not None
+
+
+def format_usdt_amount(value, places='0.001'):
+    amount = Decimal(str(value)).quantize(Decimal(places))
+    text = format(amount, 'f')
+    if '.' in text:
+        text = text.rstrip('0').rstrip('.')
+    return text or '0'
+
+
+def allocate_trc20_pay_amount(base_amount, user_id):
+    base = Decimal(str(base_amount)).quantize(Decimal('0.001'))
+    pending_amounts = set()
+    for row in topup.find({'type': 'trc20', 'state': {'$ne': 1}}, {'pay_amount_text': 1}):
+        pay_amount_text = row.get('pay_amount_text')
+        if pay_amount_text:
+            pending_amounts.add(str(pay_amount_text))
+
+    start = (int(user_id) % 900) + 1
+    for offset in range(900):
+        suffix = ((start + offset - 1) % 900) + 1
+        pay_amount = (base + (Decimal(suffix) / Decimal('1000'))).quantize(Decimal('0.001'))
+        pay_amount_text = format_usdt_amount(pay_amount)
+        if pay_amount_text not in pending_amounts:
+            return pay_amount, pay_amount_text
+    raise RuntimeError('当前待支付TRC20订单过多，请稍后重试')
+
+
 def okpay_enabled():
     return bool(OKPAY_SHOP_ID and OKPAY_SHOP_TOKEN)
 
@@ -3311,6 +3349,65 @@ async def on_post_init(application):
     global APP_EVENT_LOOP
     APP_EVENT_LOOP = asyncio.get_running_loop()
     start_okpay_callback_server(SyncTelegramProxy(application.bot, lambda: APP_EVENT_LOOP))
+
+
+def create_trc20_deposit_order(context, user_id, amount):
+    trc20 = get_trc20_address()
+    if not is_valid_trc20_address(trc20):
+        context.bot.send_message(chat_id=user_id, text='TRC20充值地址未正确配置，请先联系管理员设置有效地址')
+        return
+
+    amount = Decimal(str(amount)).quantize(Decimal('0.001'))
+    if amount <= 0:
+        context.bot.send_message(chat_id=user_id, text='充值金额必须大于0')
+        return
+
+    try:
+        pay_amount, pay_amount_text = allocate_trc20_pay_amount(amount, user_id)
+    except Exception as exc:
+        context.bot.send_message(chat_id=user_id, text=f'创建TRC20充值订单失败：{exc}')
+        return
+
+    request_amount_text = format_usdt_amount(amount)
+    timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+    bianhao = 'TRC20' + time.strftime('%Y%m%d%H%M%S', time.localtime()) + str(user_id)
+    topup.delete_many({'user_id': user_id, 'state': {'$ne': 1}})
+
+    text = f'''
+<b>TRC20充值订单已创建</b>
+
+订单号：<code>{bianhao}</code>
+收款地址：<code>{trc20}</code>
+充值基准金额：<code>{request_amount_text} USDT</code>
+本单应付金额：<code>{pay_amount_text} USDT</code>
+
+请使用 <b>TRC20-USDT</b> 向上方地址转账，并严格按订单金额精确支付到小数点后三位。
+系统检测到账后会自动加余额，本订单 10 分钟内有效。
+    '''
+    keyboard = [
+        [InlineKeyboardButton('❌取消订单', callback_data=f'qxdingdan {user_id}')]
+    ]
+    message_id = context.bot.send_message(
+        chat_id=user_id,
+        text=text,
+        parse_mode='HTML',
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+    topup.insert_one({
+        'bianhao': bianhao,
+        'user_id': user_id,
+        'money': float(pay_amount),
+        'requested_amount': float(amount),
+        'pay_amount': float(pay_amount),
+        'pay_amount_text': pay_amount_text,
+        'timer': timer,
+        'message_id': message_id.message_id,
+        'type': 'trc20',
+        'state': 0,
+        'status': 0,
+        'to_address': trc20,
+        'coin': 'USDT'
+    })
 
 
 def create_okpay_deposit_order(context, user_id, amount):
@@ -4094,7 +4191,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                             pass
                         money = float(text)
                         user.update_one({'user_id': user_id}, {"$set": {"sign": 0}})
-                        create_okpay_deposit_order(context, user_id, money)
+                        create_trc20_deposit_order(context, user_id, money)
 
                     else:
                         keyboard = [[InlineKeyboardButton('❌取消输入', callback_data=f'close {user_id}')]]
@@ -4253,6 +4350,11 @@ def textkeyboard(update: Update, context: CallbackContext):
                     context.bot.send_message(chat_id=user_id, text='商品管理',
                                              reply_markup=InlineKeyboardMarkup(keyboard))
                 elif sign == 'settrc20':
+                    if not is_valid_trc20_address(text):
+                        keyboard = [[InlineKeyboardButton('❌取消输入', callback_data=f'close {user_id}')]]
+                        context.bot.send_message(chat_id=user_id, text='地址格式错误，请输入以 T 开头、长度 34 位的 TRC20 地址',
+                                                 reply_markup=InlineKeyboardMarkup(keyboard))
+                        return
                     shangtext.update_one({"projectname": '充值地址'}, {"$set": {"text": text}})
                     img = qrcode.make(data=text)
                     with open(f'{text}.png', 'wb') as f:
@@ -4810,9 +4912,9 @@ def textkeyboard(update: Update, context: CallbackContext):
             elif normalized_text == normalize_menu_text('💸我要充值'):
                 del_message(update.message)
                 fstext = f'''
-<b>💰请选择下面充值订单金额
+<b>💰请选择下面 TRC20-USDT 充值金额
 
-💹请严格按照小数点转账‼️</b>
+💹系统会生成唯一小数金额，请严格按订单金额转账‼️</b>
                 '''
                 keyboard = [
                     [InlineKeyboardButton('10USDT', callback_data='yuecz 10'),
@@ -4918,47 +5020,70 @@ def standard_num(num):
 
 
 def jiexi(context: CallbackContext):
-    trc20 = shangtext.find_one({'projectname': '充值地址'})['text']
+    trc20 = get_trc20_address()
+    if not is_valid_trc20_address(trc20):
+        return
+
     qukuai_list = qukuai.find({'state': 0, 'to_address': trc20})
     for i in qukuai_list:
         txid = i['txid']
         quant = i['quant']
         from_address = i['from_address']
-        quant123 = Decimal(quant) / Decimal('1000000')
-        quant = abs(float(quant123))
-        today_money = quant
-        dj_list = topup.find_one({"money": quant})
+        quant123 = Decimal(str(quant)) / Decimal('1000000')
+        today_money = abs(quant123.quantize(Decimal('0.001')))
+        pay_amount_text = format_usdt_amount(today_money)
+        dj_list = topup.find_one(
+            {'type': 'trc20', 'state': {'$ne': 1}, 'to_address': trc20, 'pay_amount_text': pay_amount_text},
+            sort=[('timer', 1)]
+        )
         if dj_list is not None:
             message_id = dj_list['message_id']
             user_id = dj_list['user_id']
             user_list = user.find_one({'user_id': user_id})
+            if user_list is None:
+                qukuai.update_one({'txid': txid}, {"$set": {"state": 2, 'reason': 'user_not_found'}})
+                continue
             user_id = user_list['user_id']
             USDT = user_list['USDT']
 
-            now_price = standard_num(float(USDT) + float(quant))
+            now_price = standard_num(float(USDT) + float(today_money))
             now_price = float(now_price) if str((now_price)).count('.') > 0 else int(standard_num(now_price))
             keyboard = [[InlineKeyboardButton("✅已读（点击销毁此消息）", callback_data=f'close {user_id}')]]
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            order_id = str(uuid.uuid4())
+            order_id = dj_list['bianhao']
 
-            user_logging(order_id, '充值', user_id, today_money, timer)
+            user_logging(order_id, 'TRC20充值', user_id, float(today_money), timer)
             us_list = user.find_one({"user_id": user_id})
             user.update_one({'user_id': user_id}, {"$set": {'USDT': now_price}})
+            topup.update_one({'_id': dj_list['_id']}, {'$set': {
+                'state': 1,
+                'status': 1,
+                'paid_timer': timer,
+                'paid_amount': float(today_money),
+                'txid': txid,
+                'from_address': from_address,
+                'quant_raw': str(quant)
+            }})
             text = f'''
-🎉恭喜您，成功充值💰{today_money}U，祝您一切顺利！ 🥳💫
+<b>✅ TRC20充值到账</b>
+
+订单号：<code>{dj_list['bianhao']}</code>
+到账金额：<code>{pay_amount_text} USDT</code>
+交易哈希：<code>{txid}</code>
+
+💳 当前余额：<code>{now_price} USDT</code>
             '''
             try:
-                context.bot.edit_message_media(chat_id=user_id, message_id=message_id, media=InputMediaPhoto(media='AgACAgQAAxkBAAI4N2agu_Lou_lrGYhuk6j7CBuht6C3AAJbvzEbAZYIUZZ1-07zz4JnAQADAgADeQADNQQ', caption=text),reply_markup=InlineKeyboardMarkup(keyboard))
-                # context.bot.edit_message_text(chat_id=user_id,message_id=message_id,text=text,reply_markup=InlineKeyboardMarkup(keyboard))
+                context.bot.edit_message_text(chat_id=user_id, message_id=message_id, text=text,
+                                              reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
             except:
-                pass 
-            # context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML')
+                pass
             us_firstname = us_list['fullname'].replace('<', '').replace('>', '')
             us_username = us_list['username']
             text = f'''
-用户: <a href="tg://user?id={user_id}">{us_firstname}</a> @{us_username} 充值成功
+用户: <a href="tg://user?id={user_id}">{us_firstname}</a> @{us_username} TRC20充值成功
 地址: <code>{from_address}</code>
-充值: {today_money} USDT
+充值: {pay_amount_text} USDT
 <a href="https://tronscan.org/#/transaction/{txid}">充值详细</a>
             '''
             for us in list(user.find({'state': '4'})):
@@ -4967,27 +5092,20 @@ def jiexi(context: CallbackContext):
                                              disable_web_page_preview=True)
                 except:
                     continue
-            topup.delete_one({'user_id': user_id})
-            qukuai.update_one({'txid': txid}, {"$set": {"state": 1}})
+            qukuai.update_one({'txid': txid}, {"$set": {"state": 1, 'match_order': dj_list['bianhao'], 'match_user_id': user_id}})
         else:
-            qukuai.update_one({'txid': txid}, {"$set": {"state": 2}})
+            qukuai.update_one({'txid': txid}, {"$set": {"state": 2, 'reason': 'order_not_found'}})
+
 
 def jianceguoqi(context: CallbackContext):
     while 1:
         for i in topup.find({'state': {'$ne': 1}}):
             timer = i['timer']
-            bianhao = i['bianhao']
             user_id = i['user_id']
             message_id = i['message_id']
             dt = datetime.datetime.strptime(timer, '%Y-%m-%d %H:%M:%S')
-            
-            # 加上5分钟
             new_dt = dt + timedelta(minutes=10)
-            
-            # 将新的 datetime 对象转换回时间字符串
             new_time_str = new_dt.strftime('%Y-%m-%d %H:%M:%S')
-            
-
 
             keyboard = [[InlineKeyboardButton("✅已读（点击销毁此消息）", callback_data=f'close {user_id}')]]
 
@@ -4995,12 +5113,18 @@ def jianceguoqi(context: CallbackContext):
             if timer >= new_time_str:
                 try:
                     if i.get('type') == 'okpay':
-                        context.bot.edit_message_text(chat_id=user_id, message_id=message_id, text='❌ OKPay充值订单已超时，请重新创建订单。', reply_markup=InlineKeyboardMarkup(keyboard))
+                        context.bot.edit_message_text(chat_id=user_id, message_id=message_id,
+                                                      text='❌ OKPay充值订单已超时，请重新创建订单。',
+                                                      reply_markup=InlineKeyboardMarkup(keyboard))
+                    elif i.get('type') == 'trc20':
+                        context.bot.edit_message_text(chat_id=user_id, message_id=message_id,
+                                                      text='❌ TRC20充值订单已超时，请重新创建订单。',
+                                                      reply_markup=InlineKeyboardMarkup(keyboard))
                     else:
                         context.bot.edit_message_media(chat_id=user_id, message_id=message_id, media=InputMediaPhoto(media='AgACAgQAAxkBAAI4Nmagu-8nD4AQrv6ftlzrLjLSxlOnAAJavzEbAZYIUch6ykGfk6CaAQADAgADeQADNQQ', caption='❌ 订单支付超时(或金额错误)'),reply_markup=InlineKeyboardMarkup(keyboard))
 
                 except:
-                    pass 
+                    pass
                 topup.delete_one({'user_id': user_id, 'state': {'$ne': 1}})
         time.sleep(3)
 
