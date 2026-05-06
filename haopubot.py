@@ -674,6 +674,14 @@ def has_custom_emoji_entities(entities):
     return False
 
 
+def send_key_save_success_notice(context, chat_id):
+    return context.bot.send_message(
+        chat_id=chat_id,
+        text='[emoji:5312028599803460968:🆗] 图文设置已保存\n\n[emoji:5217818964612108191:✨] 当前回复内容如下：',
+        parse_mode='HTML'
+    )
+
+
 def should_preserve_sign_on_menu_match(sign):
     if not sign:
         return False
@@ -5698,10 +5706,9 @@ def textkeyboard(update: Update, context: CallbackContext):
                     get_key.update_one({'Row': row, 'first': first}, {'$set': {'file_type': 'text'}})
                     get_key.update_one({'Row': row, 'first': first}, {'$set': {'entities': pickle.dumps(save_entities)}})
                     user.update_one({'user_id': user_id}, {"$set": {"sign": 0}})
-                    message_id = send_key_content_preview(context, user_id, text=save_text, file_type='text',
-                                                          entities=save_entities)
-                    timer11 = Timer(3, del_message, args=[message_id])
-                    timer11.start()
+                    send_key_save_success_notice(context, user_id)
+                    send_key_content_preview(context, user_id, text=save_text, file_type='text',
+                                             entities=save_entities)
                 elif 'setkeyboard' in sign:
                     qudata = sign.replace('setkeyboard ', '')
                     qudataall = qudata.split(':')
@@ -6064,10 +6071,9 @@ def textkeyboard(update: Update, context: CallbackContext):
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'file_type': 'photo'}})
                         user.update_one({'user_id': user_id}, {"$set": {"sign": 0}})
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'entities': pickle.dumps(save_entities)}})
-                        message_id = send_key_content_preview(context, user_id, text=stored_caption,
-                                                              file_type='photo', file_id=file, entities=save_entities)
-                        timer11 = Timer(3, del_message, args=[message_id])
-                        timer11.start()
+                        send_key_save_success_notice(context, user_id)
+                        send_key_content_preview(context, user_id, text=stored_caption,
+                                                 file_type='photo', file_id=file, entities=save_entities)
                     elif update.message.animation:
                         file = update.message.animation.file_id
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'text': stored_caption}})
@@ -6076,10 +6082,9 @@ def textkeyboard(update: Update, context: CallbackContext):
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'state': 1}})
                         user.update_one({'user_id': user_id}, {"$set": {"sign": 0}})
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'entities': pickle.dumps(save_entities)}})
-                        message_id = send_key_content_preview(context, user_id, text=stored_caption,
-                                                              file_type='animation', file_id=file, entities=save_entities)
-                        timer11 = Timer(3, del_message, args=[message_id])
-                        timer11.start()
+                        send_key_save_success_notice(context, user_id)
+                        send_key_content_preview(context, user_id, text=stored_caption,
+                                                 file_type='animation', file_id=file, entities=save_entities)
                     else:
                         file = update.message.video.file_id
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'text': stored_caption}})
@@ -6088,10 +6093,9 @@ def textkeyboard(update: Update, context: CallbackContext):
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'state': 1}})
                         user.update_one({'user_id': user_id}, {"$set": {"sign": 0}})
                         get_key.update_one({'Row': row, 'first': first}, {'$set': {'entities': pickle.dumps(save_entities)}})
-                        message_id = send_key_content_preview(context, user_id, text=stored_caption,
-                                                              file_type='video', file_id=file, entities=save_entities)
-                        timer11 = Timer(3, del_message, args=[message_id])
-                        timer11.start()
+                        send_key_save_success_notice(context, user_id)
+                        send_key_content_preview(context, user_id, text=stored_caption,
+                                                 file_type='video', file_id=file, entities=save_entities)
         else:
             if text == '开始营业':
                 if state == '4':
