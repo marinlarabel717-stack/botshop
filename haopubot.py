@@ -17,6 +17,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackContext, Me
 from telegram import InlineKeyboardMarkup,ForceReply, InlineKeyboardButton as TGInlineKeyboardButton, Update, ChatMemberRestricted, ChatPermissions, \
     ChatMemberRestricted, ChatMember, ChatMemberAdministrator, KeyboardButton as TGKeyboardButton, ReplyKeyboardMarkup, \
     InlineQueryResultArticle, InputTextMessageContent,InputMediaPhoto
+from telegram.error import BadRequest
 import time, json, pickle, re
 from threading import Timer
 from decimal import Decimal
@@ -1486,7 +1487,11 @@ def kaiqisifa(update: Update, context: CallbackContext):
              InlineKeyboardButton('查看图文', callback_data='cattu'),
              InlineKeyboardButton('开启私发', callback_data='kaiqisifa')],
             [InlineKeyboardButton('关闭❌', callback_data=f'close {user_id}')]]
-        query.edit_message_text(text='私发状态:已开启🟢', reply_markup=InlineKeyboardMarkup(keyboard))
+        try:
+            query.edit_message_text(text='私发状态:已开启🟢', reply_markup=InlineKeyboardMarkup(keyboard))
+        except BadRequest as exc:
+            if 'Message is not modified' not in str(exc):
+                raise
         context.job_queue.run_once(sync_job(usersifa), 1, data={"user_id": user_id}, name=f'sifa')
         message_id = context.bot.send_message(chat_id=user_id, text='开启私发')
         context.user_data['sifa'] = message_id
