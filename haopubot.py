@@ -3233,6 +3233,7 @@ Bot服务：<code>{row.get('service_name', '')}.service</code>
 监听服务：<code>{row.get('listener_service_name', '')}.service</code>
     '''
     keyboard = [
+        [InlineKeyboardButton(f'{MOOD_EMOJI_FAST}重启这个克隆', callback_data=f'clonerestart {bot_id}')],
         [InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除这个克隆', callback_data=f'clonedelete {bot_id}')],
         [InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}返回克隆列表', callback_data='clonelist 0')]
     ]
@@ -3282,6 +3283,70 @@ def clonedelete(update: Update, context: CallbackContext):
         args=(context, user_id, bot_id, context.bot.id, MONGO_DB_NAME),
         daemon=True
     ).start()
+
+
+def finish_clone_restart_in_background(context, user_id, bot_id):
+    row = clone_instances.find_one({'bot_id': str(bot_id), 'state': {'$ne': 'deleted'}}) or {}
+    if not row:
+        try:
+            context.bot.send_message(chat_id=user_id, text='未找到这个克隆实例，可能已经删除了')
+        except Exception:
+            pass
+        return
+
+    service_name = str(row.get('service_name') or '').strip()
+    listener_service_name = str(row.get('listener_service_name') or '').strip()
+    bot_username = str(row.get('bot_username') or '').strip()
+    display_bot = f'@{bot_username}' if bot_username else str(bot_id)
+    try:
+        if not service_name:
+            raise RuntimeError('未找到 Bot 服务名')
+        run_system_command(['systemctl', 'restart', f'{service_name}.service'], timeout=30)
+        ensure_systemd_unit_active(f'{service_name}.service', label='克隆 Bot 服务', wait_seconds=10)
+        if listener_service_name:
+            run_system_command(['systemctl', 'restart', f'{listener_service_name}.service'], timeout=30)
+            ensure_systemd_unit_active(f'{listener_service_name}.service', label='监听服务', wait_seconds=10)
+    except Exception as exc:
+        try:
+            context.bot.send_message(chat_id=user_id, text=f'重启克隆失败：{exc}')
+        except Exception:
+            pass
+        return
+
+    text = f'[emoji:5312028599803460968:🆗] 已重启克隆实例\n\n[emoji:5287684458881756303:🤖] 机器人：{display_bot}'
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}返回克隆详情', callback_data=f'cloneinfo {bot_id}')]])
+    try:
+        context.bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
+    except Exception:
+        pass
+
+
+def clonerestart(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    try:
+        query.answer('正在重启，请稍候...')
+    except Exception:
+        pass
+    if not BOT_CLONE_ENABLED:
+        context.bot.send_message(chat_id=user_id, text='当前机器人未开放克隆管理')
+        return
+    user_list = user.find_one({'user_id': user_id}) or {}
+    if str(user_list.get('state')) != '4' and user_id not in get_source_admin_user_ids():
+        context.bot.send_message(chat_id=user_id, text='只有源机器人管理员可以重启克隆实例')
+        return
+    bot_id = str(query.data.replace('clonerestart ', '', 1)).strip()
+    row = clone_instances.find_one({'bot_id': bot_id, 'state': {'$ne': 'deleted'}}) or {}
+    if not row:
+        context.bot.send_message(chat_id=user_id, text='未找到这个克隆实例，可能已经删除了')
+        return
+    bot_username = str(row.get('bot_username') or '').strip()
+    waiting_text = f'[emoji:5220195537520711716:⚡️] 正在重启克隆实例，请稍候…\n\n[emoji:5287684458881756303:🤖] 机器人：@{bot_username}' if bot_username else f'[emoji:5220195537520711716:⚡️] 正在重启克隆实例，请稍候…\n\n[emoji:5287684458881756303:🤖] 机器人：<code>{bot_id}</code>'
+    try:
+        query.edit_message_text(text=waiting_text, parse_mode='HTML')
+    except Exception:
+        pass
+    threading.Thread(target=finish_clone_restart_in_background, args=(context, user_id, bot_id), daemon=True).start()
 
 
 def setcloneprice(update: Update, context: CallbackContext):
@@ -6503,7 +6568,7 @@ def main():
         application.add_handler(CommandHandler(command_name, sync_handler(callback)))
 
     callback_handlers = [
-        ('startupdate', startupdate), ('clonebot', clonebot), ('clonepay', clonepay), ('clonelist', clonelist), ('cloneinfo ', cloneinfo), ('clonedelete ', clonedelete), ('setcloneprice', setcloneprice), ('okpaycfg', okpaycfg), ('setokpayid', setokpayid), ('setokpaytoken', setokpaytoken), ('setokpayname', setokpayname), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
+        ('startupdate', startupdate), ('clonebot', clonebot), ('clonepay', clonepay), ('clonelist', clonelist), ('cloneinfo ', cloneinfo), ('clonerestart ', clonerestart), ('clonedelete ', clonedelete), ('setcloneprice', setcloneprice), ('okpaycfg', okpaycfg), ('setokpayid', setokpayid), ('setokpaytoken', setokpaytoken), ('setokpayname', setokpayname), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
         ('backstart', backstart), ('paixurow', paixurow), ('addzdykey', addzdykey),
         ('qrscdelrow ', qrscdelrow), ('addhangkey ', addhangkey), ('delhangkey ', delhangkey),
         ('qrdelliekey ', qrdelliekey), ('keyxq ', keyxq), ('setkeyname ', setkeyname),
