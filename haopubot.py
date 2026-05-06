@@ -3667,8 +3667,7 @@ def gmsp(update: Update, context: CallbackContext):
     #         return
     # else:
     query.answer()
-    if hsl > 0:
-        fstext = f'''
+    fstext = f'''
 <b>✅您正在购买:  {projectname}
 
 💰 价格： {money} USDT
@@ -3676,16 +3675,6 @@ def gmsp(update: Update, context: CallbackContext):
 📊 库存： {hsl}
 
 ❗️ 未使用过的本店商品的，请先少量购买测试，以免造成不必要的争执！谢谢合作！</b>
-    '''
-    else:
-        fstext = f'''
-<b>✅您正在购买:  {projectname}
-
-💰 价格： {money} USDT
-
-📊 库存： 0
-
-❗️ 当前暂时无库存，你可以先开启补货通知。</b>
     '''
 
     keyboard = build_product_purchase_keyboard(nowuid, uid, user_id, hsl)
@@ -4213,20 +4202,11 @@ def is_restock_notice_subscribed(nowuid, user_id):
 
 
 def build_product_purchase_keyboard(nowuid, uid, user_id, stock_count=None):
-    stock_count = get_stock_count(nowuid) if stock_count is None else int(stock_count)
-    keyboard = []
-    if stock_count > 0:
-        keyboard.append([InlineKeyboardButton('✅购买', callback_data=f'gmqq {nowuid}')])
-    else:
-        notice_text = '🔔补货通知'
-        if is_restock_notice_subscribed(nowuid, user_id):
-            notice_text = '✅已开启补货通知'
-        keyboard.append([InlineKeyboardButton(notice_text, callback_data=f'restocknotice {nowuid}')])
-    keyboard.append([
-        InlineKeyboardButton('🏠主菜单', callback_data='backzcd'),
-        InlineKeyboardButton('⬅️返回', callback_data=f'catejflsp {uid}:1000')
-    ])
-    return keyboard
+    return [
+        [InlineKeyboardButton('✅购买', callback_data=f'gmqq {nowuid}')],
+        [InlineKeyboardButton('🏠主菜单', callback_data='backzcd'),
+         InlineKeyboardButton('⬅️返回', callback_data=f'catejflsp {uid}:1000')]
+    ]
 
 
 def notify_restock_subscribers(context, nowuid):
@@ -4264,13 +4244,6 @@ def notify_restock_subscribers(context, nowuid):
 
 def notify_restock_if_needed(context, nowuid, previous_stock, added_count=0):
     notify_restock_broadcast(context, nowuid, added_count)
-    if added_count <= 0:
-        return
-    if int(previous_stock or 0) > 0:
-        return
-    if get_stock_count(nowuid) <= 0:
-        return
-    notify_restock_subscribers(context, nowuid)
 
 
 def get_source_admin_user_ids():
@@ -6864,7 +6837,7 @@ def main():
         application.add_handler(CommandHandler(command_name, sync_handler(callback)))
 
     callback_handlers = [
-        ('startupdate', startupdate), ('clonebot', clonebot), ('clonepay', clonepay), ('clonelist', clonelist), ('cloneinfo ', cloneinfo), ('clonerestart ', clonerestart), ('clonedelete ', clonedelete), ('setcloneprice', setcloneprice), ('restocknotice ', restocknotice), ('restockpushcfg', restockpushcfg), ('setrestocktarget', setrestocktarget), ('okpaycfg', okpaycfg), ('setokpayid', setokpayid), ('setokpaytoken', setokpaytoken), ('setokpayname', setokpayname), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
+        ('startupdate', startupdate), ('clonebot', clonebot), ('clonepay', clonepay), ('clonelist', clonelist), ('cloneinfo ', cloneinfo), ('clonerestart ', clonerestart), ('clonedelete ', clonedelete), ('setcloneprice', setcloneprice), ('restockpushcfg', restockpushcfg), ('setrestocktarget', setrestocktarget), ('okpaycfg', okpaycfg), ('setokpayid', setokpayid), ('setokpaytoken', setokpaytoken), ('setokpayname', setokpayname), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
         ('backstart', backstart), ('paixurow', paixurow), ('addzdykey', addzdykey),
         ('qrscdelrow ', qrscdelrow), ('addhangkey ', addhangkey), ('delhangkey ', delhangkey),
         ('qrdelliekey ', qrdelliekey), ('keyxq ', keyxq), ('setkeyname ', setkeyname),
