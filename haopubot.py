@@ -19,7 +19,7 @@ from telegram import InlineKeyboardMarkup,ForceReply, InlineKeyboardButton as TG
     ChatMemberRestricted, ChatMember, ChatMemberAdministrator, KeyboardButton as TGKeyboardButton, ReplyKeyboardMarkup, \
     InlineQueryResultArticle, InputTextMessageContent,InputMediaPhoto
 from telegram.error import BadRequest, Forbidden
-import time, json, pickle, re, random
+import time, json, pickle, re
 from threading import Timer
 from decimal import Decimal
 from datetime import timedelta
@@ -71,16 +71,6 @@ def normalize_menu_text(text):
     text = re.sub(r'^[\W_]+', '', text)
     text = re.sub(r'\s+', '', text)
     return text
-
-
-PURCHASE_PREVIEW_EMOJIS = ['✅', '💠', '🛍️', '📦', '💎', '🌟', '✨', '🎯', '🔥', '💰', '🧾', '🪄']
-
-
-def get_purchase_preview_emojis():
-    try:
-        return random.sample(PURCHASE_PREVIEW_EMOJIS, 4)
-    except ValueError:
-        return ['✅', '📦', '💰', '👛']
 
 
 OKPAY_API_URL = os.getenv('OKPAY_API_URL', 'https://api.okaypay.me/shop/')
@@ -4523,15 +4513,14 @@ def textkeyboard(update: Update, context: CallbackContext):
 
                             return
 
-                        buy_emoji, quantity_emoji, price_emoji, balance_emoji = get_purchase_preview_emojis()
                         fstext = f'''
-<b>{buy_emoji} 您正在购买：{projectname}
+<b>🛍️ 您正在购买：{projectname}
 
-{quantity_emoji} 数量：{gmsl}
+📦 数量：{gmsl}
 
-{price_emoji} 价格：{zxymoney}
+💰 价格：{zxymoney}
 
-{balance_emoji} 您的余额：{USDT}</b>
+👛 您的余额：{USDT}</b>
                         '''
                         keyboard = [
                             [InlineKeyboardButton('❌取消交易', callback_data=f'close {user_id}'),
