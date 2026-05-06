@@ -135,6 +135,21 @@ def extract_custom_emoji_from_message(message):
     return None, None
 
 
+def utf16_index_to_py_index(text, utf16_index):
+    if not isinstance(text, str):
+        return utf16_index
+    if utf16_index <= 0:
+        return 0
+    current_utf16 = 0
+    for py_index, char in enumerate(text):
+        if current_utf16 >= utf16_index:
+            return py_index
+        current_utf16 += len(char.encode('utf-16-le')) // 2
+        if current_utf16 >= utf16_index:
+            return py_index + 1
+    return len(text)
+
+
 def strip_custom_emoji_entities(source_text, entities):
     if not isinstance(source_text, str) or not entities:
         return source_text
@@ -145,7 +160,9 @@ def strip_custom_emoji_entities(source_text, entities):
             start = getattr(entity, 'offset', None)
             length = getattr(entity, 'length', None)
             if isinstance(start, int) and isinstance(length, int):
-                cut_ranges.append((start, start + length))
+                py_start = utf16_index_to_py_index(source_text, start)
+                py_end = utf16_index_to_py_index(source_text, start + length)
+                cut_ranges.append((py_start, py_end))
     if not cut_ranges:
         return source_text
 
