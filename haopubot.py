@@ -119,6 +119,7 @@ KNOWN_DYNAMIC_EMOJI_IDS = OrderedDict([
     ('⚙', '5341715473882955310'),
     ('⬅️', '5253955286137338977'),
     ('⬅', '5253955286137338977'),
+    ('📝', '6321175945327680619'),
 ])
 KNOWN_DYNAMIC_EMOJI_PATTERN = re.compile('|'.join(sorted((re.escape(k) for k in KNOWN_DYNAMIC_EMOJI_IDS.keys()), key=len, reverse=True)))
 PROTECTED_DYNAMIC_EMOJI_SEGMENT_RE = re.compile(r'(<tg-emoji\b[^>]*>.*?</tg-emoji>|\[(?:emoji|ce|custom_emoji):[0-9]+(?::[^:\]]+)?(?::(?:danger|success|primary))?\])', re.S)
@@ -2664,7 +2665,7 @@ def gmsp(update: Update, context: CallbackContext):
 
     keyboard = [
         [InlineKeyboardButton('✅购买', callback_data=f'gmqq {nowuid}'),
-         InlineKeyboardButton('📚使用说明', callback_data=f'sysming {nowuid}')],
+         InlineKeyboardButton('📝使用说明', callback_data=f'sysming {nowuid}')],
         [InlineKeyboardButton('🏠主菜单', callback_data='backzcd'),
          InlineKeyboardButton('⬅️返回', callback_data=f'catejflsp {uid}:1000')]
 
