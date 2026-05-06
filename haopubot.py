@@ -86,6 +86,7 @@ KNOWN_DYNAMIC_EMOJI_IDS = OrderedDict([
     ('👛', '4972482444025398275'),
     ('❌', '5210952531676504517'),
     ('😃', '6323075330189826977'),
+    ('😀', '5080312910866024090'),
     ('😄', '6321339712430676611'),
     ('💰', '4965219701572503640'),
     ('✅', '5350486389806868244'),
@@ -2687,7 +2688,7 @@ def recharge_menu(update: Update, context: CallbackContext):
     query.answer()
     fstext = '请选择支付方式'
     keyboard = [
-        [InlineKeyboardButton('😀 USDT 直充 | 链上到账', callback_data='recharge_trc20')],
+        [InlineKeyboardButton('[emoji:5080312910866024090:😀] USDT 直充 | 链上到账', callback_data='recharge_trc20')],
         [InlineKeyboardButton('[emoji:6321339712430676611:😄] OKPay支付 | 秒速到账', callback_data='recharge_okpay')],
         [InlineKeyboardButton('取消充值', callback_data=f'close {user_id}')]
     ]
@@ -5078,7 +5079,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                 del_message(update.message)
                 fstext = '请选择支付方式'
                 keyboard = [
-                    [InlineKeyboardButton('😀 USDT 直充 | 链上到账', callback_data='recharge_trc20')],
+                    [InlineKeyboardButton('[emoji:5080312910866024090:😀] USDT 直充 | 链上到账', callback_data='recharge_trc20')],
                     [InlineKeyboardButton('[emoji:6321339712430676611:😄] OKPay支付 | 秒速到账', callback_data='recharge_okpay')],
                     [InlineKeyboardButton('取消充值', callback_data=f'close {user_id}')]
                 ]
