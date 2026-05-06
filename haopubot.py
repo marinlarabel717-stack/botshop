@@ -4516,7 +4516,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                         fstext = f'''
 <b>🛍️ 您正在购买：{projectname}
 
-📦 数量：{gmsl}
+📈 数量：{gmsl}
 
 💰 价格：{zxymoney}
 
