@@ -25,6 +25,7 @@ from decimal import Decimal
 from datetime import timedelta
 import zipfile
 from pathlib import Path
+from pymongo.errors import DuplicateKeyError
 
 load_dotenv()
 
@@ -87,6 +88,21 @@ TRC20_USDT_CONTRACT = os.getenv('TRC20_USDT_CONTRACT', 'TR7NHqjeKQxGTCi8q8ZY4pL8
 OKPAY_BOT = None
 OKPAY_HTTPD = None
 APP_EVENT_LOOP = None
+
+
+def ensure_topup_indexes():
+    try:
+        topup.create_index(
+            [('type', 1), ('to_address', 1), ('pay_amount_text', 1), ('state', 1)],
+            name='uniq_active_trc20_amount',
+            unique=True,
+            partialFilterExpression={'type': 'trc20', 'state': 0}
+        )
+    except Exception:
+        pass
+
+
+ensure_topup_indexes()
 
 
 DYNAMIC_EMOJI_RE = re.compile(r'\[(?:emoji|ce|custom_emoji):([0-9]+)(?::([^:\]]+))?(?::(danger|success|primary))?\]')
@@ -3558,16 +3574,46 @@ def create_trc20_deposit_order(context, user_id, amount):
         context.bot.send_message(chat_id=user_id, text='充值金额必须大于0')
         return
 
-    try:
-        pay_amount, pay_amount_text = allocate_trc20_pay_amount(amount, user_id)
-    except Exception as exc:
-        context.bot.send_message(chat_id=user_id, text=f'创建TRC20充值订单失败：{exc}')
-        return
-
     created_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
     deadline_time = (datetime.datetime.strptime(created_time, '%Y-%m-%d %H:%M:%S') + timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M:%S')
     bianhao = 'TRC20' + time.strftime('%Y%m%d%H%M%S', time.localtime()) + str(user_id)
     topup.delete_many({'user_id': user_id, 'state': {'$ne': 1}})
+
+    reserved_id = None
+    pay_amount = None
+    pay_amount_text = None
+    for _ in range(30):
+        try:
+            pay_amount, pay_amount_text = allocate_trc20_pay_amount(amount, user_id)
+        except Exception as exc:
+            context.bot.send_message(chat_id=user_id, text=f'创建TRC20充值订单失败：{exc}')
+            return
+
+        try:
+            result = topup.insert_one({
+                'bianhao': bianhao,
+                'user_id': user_id,
+                'money': float(pay_amount),
+                'requested_amount': float(amount),
+                'pay_amount': float(pay_amount),
+                'pay_amount_text': pay_amount_text,
+                'timer': created_time,
+                'message_id': 0,
+                'message_kind': 'photo',
+                'type': 'trc20',
+                'state': 0,
+                'status': 0,
+                'to_address': trc20,
+                'coin': 'USDT'
+            })
+            reserved_id = result.inserted_id
+            break
+        except DuplicateKeyError:
+            continue
+
+    if reserved_id is None:
+        context.bot.send_message(chat_id=user_id, text='当前TRC20订单创建人数较多，请稍后重试')
+        return
 
     caption = f'''
 <b>[emoji:6323075330189826977:😃] 充值详情</b>
@@ -3594,29 +3640,20 @@ def create_trc20_deposit_order(context, user_id, amount):
     qr_buffer.seek(0)
     qr_buffer.name = f'{bianhao}.png'
 
-    message_id = context.bot.send_photo(
-        chat_id=user_id,
-        photo=qr_buffer,
-        caption=caption,
-        parse_mode='HTML',
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-    topup.insert_one({
-        'bianhao': bianhao,
-        'user_id': user_id,
-        'money': float(pay_amount),
-        'requested_amount': float(amount),
-        'pay_amount': float(pay_amount),
-        'pay_amount_text': pay_amount_text,
-        'timer': created_time,
-        'message_id': message_id.message_id,
-        'message_kind': 'photo',
-        'type': 'trc20',
-        'state': 0,
-        'status': 0,
-        'to_address': trc20,
-        'coin': 'USDT'
-    })
+    try:
+        message_id = context.bot.send_photo(
+            chat_id=user_id,
+            photo=qr_buffer,
+            caption=caption,
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    except Exception as exc:
+        topup.delete_one({'_id': reserved_id})
+        context.bot.send_message(chat_id=user_id, text=f'创建TRC20充值订单失败：{exc}')
+        return
+
+    topup.update_one({'_id': reserved_id}, {'$set': {'message_id': message_id.message_id}})
 
 
 def create_okpay_deposit_order(context, user_id, amount):
