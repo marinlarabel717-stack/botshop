@@ -85,7 +85,7 @@ def parse_dynamic_emoji_prefix(text):
         return None, None, None, text
     emoji_id = m.group(1)
     alt = m.group(2) or '✨'
-    style = m.group(3) or 'primary'
+    style = m.group(3)
     rest = m.group(4) or ''
     return emoji_id, alt, style, rest
 
@@ -133,6 +133,45 @@ def extract_custom_emoji_from_message(message):
                     alt = ''
                 return custom_emoji_id, (alt or '✨')
     return None, None
+
+
+def strip_custom_emoji_entities(source_text, entities):
+    if not isinstance(source_text, str) or not entities:
+        return source_text
+    cut_ranges = []
+    for entity in entities:
+        custom_emoji_id = get_entity_custom_emoji_id(entity)
+        if getattr(entity, 'type', None) == 'custom_emoji' or custom_emoji_id:
+            start = getattr(entity, 'offset', None)
+            length = getattr(entity, 'length', None)
+            if isinstance(start, int) and isinstance(length, int):
+                cut_ranges.append((start, start + length))
+    if not cut_ranges:
+        return source_text
+
+    parts = []
+    last = 0
+    for start, end in sorted(cut_ranges):
+        if start > last:
+            parts.append(source_text[last:start])
+        last = max(last, end)
+    parts.append(source_text[last:])
+    return ''.join(parts)
+
+
+def get_button_match_text(text):
+    emoji_id, _, _, clean_text = parse_dynamic_emoji_prefix(text)
+    return clean_text if emoji_id else text
+
+
+def get_message_match_text(message):
+    if not message:
+        return ''
+    text = getattr(message, 'text', None) or ''
+    if not text:
+        return ''
+    text = strip_custom_emoji_entities(text, getattr(message, 'entities', None) or [])
+    return get_button_match_text(text).strip()
 
 
 def emojiid(update: Update, context: CallbackContext):
@@ -195,8 +234,7 @@ def KeyboardButton(text, *args, **kwargs):
         try:
             api_kwargs = dict(kwargs.pop('api_kwargs', {}) or {})
             api_kwargs['icon_custom_emoji_id'] = emoji_id
-            if style:
-                api_kwargs['style'] = style
+            api_kwargs['style'] = style or 'primary'
             return TGKeyboardButton(clean_text, *args, api_kwargs=api_kwargs, **kwargs)
         except TypeError:
             return TGKeyboardButton(f'{alt}{clean_text}', *args, **kwargs)
@@ -3690,7 +3728,8 @@ def textkeyboard(update: Update, context: CallbackContext):
         USDT = user_list['USDT']
         zgje = user_list['zgje']
         zgsl = user_list['zgsl']
-        text = update.message.text
+        raw_text = update.message.text or ''
+        text = get_message_match_text(update.message) or raw_text
         normalized_text = normalize_menu_text(text)
         zxh = update.message.text_html
         yyzt = shangtext.find_one({'projectname': '营业状态'})['text']
@@ -3703,10 +3742,14 @@ def textkeyboard(update: Update, context: CallbackContext):
         normalized_key_map = {}
         for i in get_key_list:
             projectname = i["projectname"]
+            button_match_text = get_button_match_text(projectname)
             get_prolist.append(projectname)
+            if button_match_text != projectname:
+                get_prolist.append(button_match_text)
             normalized_key_map.setdefault(normalize_menu_text(projectname), i)
+            normalized_key_map.setdefault(normalize_menu_text(button_match_text), i)
         if update.message.text:
-            if text in get_prolist or normalized_text in normalized_key_map:
+            if raw_text in get_prolist or text in get_prolist or normalized_text in normalized_key_map:
                 sign = 0
         if sign != 0:
             if update.message.text:
@@ -4477,7 +4520,9 @@ def textkeyboard(update: Update, context: CallbackContext):
                     shangtext.update_one({'projectname': '营业状态'}, {"$set": {"text": 0}})
                     context.bot.send_message(chat_id=user_id, text='停止营业')
 
-            key_list = get_key.find_one({"projectname": text})
+            key_list = get_key.find_one({"projectname": raw_text})
+            if key_list is None and text != raw_text:
+                key_list = get_key.find_one({"projectname": text})
             if key_list is None and normalized_text:
                 key_list = normalized_key_map.get(normalized_text)
             if normalized_text == normalize_menu_text('👤个人中心'):
