@@ -364,10 +364,28 @@ class SyncTelegramProxy:
     TEXT_METHOD_KEYS = {
         'send_message': 'text',
         'edit_message_text': 'text',
+        'reply_text': 'text',
+        'reply_html': 'text',
         'send_photo': 'caption',
+        'reply_photo': 'caption',
         'send_animation': 'caption',
+        'reply_animation': 'caption',
         'send_video': 'caption',
+        'reply_video': 'caption',
         'edit_message_caption': 'caption',
+    }
+    TEXT_METHOD_ARG_INDEX = {
+        'send_message': 1,
+        'edit_message_text': 0,
+        'reply_text': 0,
+        'reply_html': 0,
+        'send_photo': 1,
+        'reply_photo': 0,
+        'send_animation': 1,
+        'reply_animation': 0,
+        'send_video': 1,
+        'reply_video': 0,
+        'edit_message_caption': 0,
     }
 
     def __init__(self, obj, loop_ref):
@@ -392,7 +410,7 @@ class SyncTelegramProxy:
             return args, kwargs
 
         value = kwargs.get(text_key)
-        arg_index = 1 if method_name.startswith('send_') else None
+        arg_index = self.TEXT_METHOD_ARG_INDEX.get(method_name)
         if value is None and arg_index is not None and len(args) > arg_index:
             value = args[arg_index]
             if needs_dynamic_emoji_parse(value):
