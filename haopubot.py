@@ -14,6 +14,9 @@ from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from multiprocessing import Process
 from telegram import helpers
+
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'), override=True)
+
 from mongo import *
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackContext, MessageHandler, CallbackQueryHandler, \
     InlineQueryHandler, filters
@@ -28,8 +31,6 @@ from datetime import timedelta
 import zipfile
 from pathlib import Path
 from pymongo.errors import DuplicateKeyError
-
-load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent
 VERSION_FILE = BASE_DIR / 'VERSION'
