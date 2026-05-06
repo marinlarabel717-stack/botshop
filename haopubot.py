@@ -1560,7 +1560,7 @@ def start(update: Update, context: CallbackContext):
         keyboard[i["Row"] - 1].append(KeyboardButton(projectname))
     keyboard = [row for row in keyboard if row]
     if BOT_CLONE_ENABLED and ALLOW_PUBLIC_BOT_CLONE:
-        keyboard.append([KeyboardButton('#g 🤖一键克隆同款')])
+        keyboard.append([KeyboardButton('#g [emoji:5287684458881756303:🤖]一键克隆同款')])
     entities = safe_pickle_loads(hyyys)
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False) if keyboard else None
     context.bot.send_message(chat_id=user_id, text=hyy, reply_markup=reply_markup,
@@ -1575,7 +1575,7 @@ def start(update: Update, context: CallbackContext):
             [InlineKeyboardButton('菜单按钮', callback_data='addzdykey')],
         ]
         if BOT_CLONE_ENABLED:
-            keyboard[-1].append(InlineKeyboardButton('#g 🤖一键克隆同款', callback_data='clonebot'))
+            keyboard[-1].append(InlineKeyboardButton('#g [emoji:5287684458881756303:🤖]一键克隆同款', callback_data='clonebot'))
         keyboard.append([InlineKeyboardButton('关闭', callback_data=f'close {user_id}')])
         jqrsyrs = len(list(user.find({})))
         numu = 0
@@ -1830,7 +1830,7 @@ def backstart(update: Update, context: CallbackContext):
         [InlineKeyboardButton('菜单按钮', callback_data='addzdykey')],
     ]
     if BOT_CLONE_ENABLED:
-        keyboard[-1].append(InlineKeyboardButton('#g 🤖一键克隆同款', callback_data='clonebot'))
+        keyboard[-1].append(InlineKeyboardButton('#g [emoji:5287684458881756303:🤖]一键克隆同款', callback_data='clonebot'))
     keyboard.append([InlineKeyboardButton('关闭', callback_data=f'close {user_id}')])
     jqrsyrs = len(list(user.find({})))
 
