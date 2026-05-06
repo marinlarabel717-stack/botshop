@@ -257,12 +257,14 @@ WantedBy=multi-user.target
 '''
 
 
-def clone_bot_instance(bot_token, admin_user_id):
+def clone_bot_instance(bot_token, admin_user_id, source_bot_id=None):
     if hasattr(os, 'geteuid') and os.geteuid() != 0:
         raise RuntimeError('当前进程不是 root，无法自动安装 systemd 服务')
 
     bot_info = get_bot_profile(bot_token)
     bot_id = str(bot_info.get('id'))
+    if source_bot_id is not None and str(source_bot_id) == bot_id:
+        raise RuntimeError('不能克隆当前源机器人本体，请发送一个新的 Bot Token')
     bot_username = str(bot_info.get('username') or f'bot{bot_id}')
     slug = sanitize_service_name(f'{bot_username}-{bot_id}')
     clone_root = Path(BOT_CLONE_ROOT)
@@ -3271,7 +3273,7 @@ def clonedelete(update: Update, context: CallbackContext):
     except Exception:
         pass
     try:
-        record = remove_clone_instance(bot_id, deleted_by=user_id)
+        record = remove_clone_instance(bot_id, deleted_by=user_id, source_bot_id=context.bot.id, source_db_name=MONGO_DB_NAME)
     except Exception as exc:
         try:
             context.bot.send_message(chat_id=user_id, text=f'删除克隆失败：{exc}')
@@ -4008,10 +4010,17 @@ Bot服务：<code>{result['service_name']}.service</code>
     notify_source_admins(context, text, reply_markup=keyboard)
 
 
-def remove_clone_instance(bot_id, deleted_by=None):
+def remove_clone_instance(bot_id, deleted_by=None, source_bot_id=None, source_db_name=None):
     record = clone_instances.find_one({'bot_id': str(bot_id), 'state': {'$ne': 'deleted'}})
     if record is None:
         raise RuntimeError('未找到这个克隆实例')
+
+    if source_bot_id is not None and str(record.get('bot_id') or '') == str(source_bot_id):
+        raise RuntimeError('不能删除当前源机器人实例')
+
+    db_name = str(record.get('db_name') or '').strip()
+    if source_db_name and db_name == str(source_db_name):
+        raise RuntimeError('检测到当前源机器人的数据库名，已阻止删除。大概率是误用了源机器人的 Bot Token 去克隆。')
 
     for service_name in [record.get('service_name'), record.get('listener_service_name')]:
         if not service_name:
@@ -4040,7 +4049,6 @@ def remove_clone_instance(bot_id, deleted_by=None):
     if clone_dir:
         shutil.rmtree(clone_dir, ignore_errors=True)
 
-    db_name = str(record.get('db_name') or '').strip()
     if db_name:
         try:
             teleclient.drop_database(db_name)
@@ -5507,7 +5515,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                         parse_mode='HTML'
                     )
                     try:
-                        result = clone_bot_instance(text.strip(), user_id)
+                        result = clone_bot_instance(text.strip(), user_id, source_bot_id=context.bot.id)
                     except Exception as exc:
                         keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消输入', callback_data=f'close {user_id}')]]
                         context.bot.send_message(chat_id=user_id, text=f'一键克隆失败：{exc}',
