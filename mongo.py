@@ -154,7 +154,7 @@ def shang_text(projectname, text):
     })
     
     
-def user_data(key_id, user_id, username, fullname, lastname, state, creation_time, last_contact_time, lang='zh-CN'):
+def user_data(key_id, user_id, username, fullname, lastname, state, creation_time, last_contact_time):
     user.insert_one({
         'count_id': key_id,
         'user_id': user_id,
@@ -164,7 +164,6 @@ def user_data(key_id, user_id, username, fullname, lastname, state, creation_tim
         'state': state,
         'creation_time': creation_time,
         'last_contact_time': last_contact_time,
-        'lang': lang or 'zh-CN',
         'USDT': 0,
         'zgje': 0,
         'zgsl': 0,
