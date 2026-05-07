@@ -36,6 +36,8 @@ ejfl = mydb['ejfl']
 hb = mydb['hb']
 xyh = mydb['xyh']
 gmjlu = mydb['gmjlu']
+fyb = mydb['fyb']
+fyb_override = mydb['fyb_override']
 
 mydb1 = teleclient[MONGO_CHAIN_DB_NAME]
 qukuai = mydb1['qukuai']
@@ -154,7 +156,7 @@ def shang_text(projectname, text):
     })
     
     
-def user_data(key_id, user_id, username, fullname, lastname, state, creation_time, last_contact_time):
+def user_data(key_id, user_id, username, fullname, lastname, state, creation_time, last_contact_time, lang='zh'):
     user.insert_one({
         'count_id': key_id,
         'user_id': user_id,
@@ -167,7 +169,8 @@ def user_data(key_id, user_id, username, fullname, lastname, state, creation_tim
         'USDT': 0,
         'zgje': 0,
         'zgsl': 0,
-        'sign': 0
+        'sign': 0,
+        'lang': lang or 'zh'
 
     })
 

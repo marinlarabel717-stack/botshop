@@ -7,3 +7,4 @@ requests
 telethon
 tgcrypto
 opentele
+pygtrans
