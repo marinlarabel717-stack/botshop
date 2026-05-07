@@ -392,6 +392,7 @@ ensure_topup_indexes()
 
 clone_instances = mydb['clone_instances']
 restock_notices = mydb['restock_notices']
+restock_requests = mydb['restock_requests']
 
 
 def ensure_clone_indexes():
@@ -416,8 +417,24 @@ def ensure_restock_notice_indexes():
         pass
 
 
+def ensure_restock_request_indexes():
+    try:
+        restock_requests.create_index(
+            [('request_type', 1), ('keyword', 1), ('user_id', 1)],
+            name='uniq_restock_request',
+            unique=True
+        )
+    except Exception:
+        pass
+    try:
+        restock_requests.create_index([('created_at', -1)], name='restock_request_created')
+    except Exception:
+        pass
+
+
 ensure_clone_indexes()
 ensure_restock_notice_indexes()
+ensure_restock_request_indexes()
 
 
 DYNAMIC_EMOJI_RE = re.compile(r'\[(?:emoji|ce|custom_emoji):([0-9]+)(?::([^:\]]+))?(?::(danger|success|primary))?\]')
@@ -3778,16 +3795,26 @@ def search_products_by_area_code(area_code):
 
 def build_area_code_search_text(area_code, results):
     total = len(results)
+    in_stock_count = sum(1 for item in results if int(item.get('stock_count') or 0) > 0)
+    tail_text = '请从下面列表中选择要查看的商品。' if in_stock_count > 0 else '当前相关商品暂无库存，你可以点击底部按钮提醒补货。'
     return (
         f'<b>[emoji:5220064167356025824:⭐️] 区号搜索结果</b>\n\n'
         f'[emoji:5217818964612108191:✨] 搜索关键词：<code>{area_code}</code>\n'
         f'[emoji:5028746137645876535:📈] 匹配商品：<code>{total}</code> 个\n\n'
-        '请从下面列表中选择要查看的商品。'
+        tail_text
     )
+
+
+def build_area_code_restock_request_keyboard(area_code, user_id):
+    return [
+        [InlineKeyboardButton('[emoji:5397916757333654639:➕]提醒补货', callback_data=f'restockrequestarea {area_code}')],
+        [InlineKeyboardButton('🏠主菜单', callback_data='backzcd'), InlineKeyboardButton('❌关闭', callback_data=f'close {user_id}')]
+    ]
 
 
 def build_area_code_search_keyboard(results, user_id):
     keyboard = []
+    has_stock = any(int(item.get('stock_count') or 0) > 0 for item in results)
     for item in results[:40]:
         projectname = str(item.get('projectname') or '商品').strip()
         stock_count = int(item.get('stock_count') or 0)
@@ -3795,6 +3822,8 @@ def build_area_code_search_keyboard(results, user_id):
         if len(label) > 60:
             label = label[:57] + '...'
         keyboard.append([InlineKeyboardButton(label, callback_data=f'gmsp {item["nowuid"]}:{stock_count}')])
+    if not has_stock:
+        keyboard.append([InlineKeyboardButton('[emoji:5397916757333654639:➕]提醒补货', callback_data=f'restockrequestarea {results[0].get("search_keyword", "")}')])
     keyboard.append([InlineKeyboardButton('🏠主菜单', callback_data='backzcd'), InlineKeyboardButton('❌关闭', callback_data=f'close {user_id}')])
     return keyboard
 
@@ -3802,6 +3831,8 @@ def build_area_code_search_keyboard(results, user_id):
 def handle_area_code_search(context, user_id, fullname, username, area_code):
     results = search_products_by_area_code(area_code)
     if results:
+        for item in results:
+            item['search_keyword'] = area_code
         context.bot.send_message(
             chat_id=user_id,
             text=build_area_code_search_text(area_code, results),
@@ -3812,19 +3843,53 @@ def handle_area_code_search(context, user_id, fullname, username, area_code):
 
     tip_text = (
         f'[emoji:5301246586918024418:⚠️] 暂时没有找到 {area_code} 相关商品。\n\n'
-        '你可以联系客服补货，稍后再来看看。'
+        '你可以点击下方按钮提醒补货，或者稍后再来看看。'
     )
-    context.bot.send_message(chat_id=user_id, text=tip_text, parse_mode='HTML')
+    context.bot.send_message(
+        chat_id=user_id,
+        text=tip_text,
+        parse_mode='HTML',
+        reply_markup=InlineKeyboardMarkup(build_area_code_restock_request_keyboard(area_code, user_id))
+    )
+    return True
+
+
+def restockrequestarea(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    username = query.from_user.username
+    fullname = (query.from_user.full_name or '').replace('<', '').replace('>', '')
+    area_code = str(query.data.replace('restockrequestarea ', '', 1)).strip()
+    query.answer()
+    if not is_area_code_search_text(area_code):
+        context.bot.send_message(chat_id=user_id, text='提醒补货失败：区号格式无效')
+        return
+    created_at = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+    result = restock_requests.update_one(
+        {'request_type': 'area_code_search', 'keyword': area_code, 'user_id': user_id},
+        {'$setOnInsert': {
+            'request_type': 'area_code_search',
+            'keyword': area_code,
+            'user_id': user_id,
+            'username': username,
+            'fullname': fullname,
+            'created_at': created_at
+        }},
+        upsert=True
+    )
+    if result.upserted_id is None:
+        context.bot.send_message(chat_id=user_id, text='这个区号你已经提醒过补货啦，请等管理员上新 🌸')
+        return
     display_name = fullname or username or str(user_id)
     at_text = f'@{username}' if username else '无用户名'
     notify_text = (
-        f'[emoji:5301246586918024418:⚠️] 区号搜索无结果提醒\n\n'
+        f'[emoji:5301246586918024418:⚠️] 用户请求补货\n\n'
         f'[emoji:6321041414067068140:👤] 用户：<a href="tg://user?id={user_id}">{display_name}</a> {at_text}\n'
         f'[emoji:5217818964612108191:✨] 搜索区号：<code>{area_code}</code>\n\n'
-        '可留意是否需要补货相关商品。'
+        '用户点击了提醒补货按钮，可留意是否需要补货相关商品。'
     )
     notify_source_admins(context, notify_text, exclude_user_ids=[user_id])
-    return True
+    context.bot.send_message(chat_id=user_id, text='已帮你提醒管理员补货，请稍后留意上新消息 🌸')
 
 
 def send_product_purchase_page(context, chat_id, user_id, nowuid):
@@ -7048,7 +7113,7 @@ def main():
         application.add_handler(CommandHandler(command_name, sync_handler(callback)))
 
     callback_handlers = [
-        ('startupdate', startupdate), ('clonebot', clonebot), ('clonepay', clonepay), ('clonelist', clonelist), ('cloneinfo ', cloneinfo), ('clonerestart ', clonerestart), ('clonedelete ', clonedelete), ('setcloneprice', setcloneprice), ('restockpushcfg', restockpushcfg), ('setrestocktarget', setrestocktarget), ('okpaycfg', okpaycfg), ('setokpayid', setokpayid), ('setokpaytoken', setokpaytoken), ('setokpayname', setokpayname), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
+        ('startupdate', startupdate), ('clonebot', clonebot), ('clonepay', clonepay), ('clonelist', clonelist), ('cloneinfo ', cloneinfo), ('clonerestart ', clonerestart), ('clonedelete ', clonedelete), ('setcloneprice', setcloneprice), ('restockpushcfg', restockpushcfg), ('setrestocktarget', setrestocktarget), ('restockrequestarea ', restockrequestarea), ('okpaycfg', okpaycfg), ('setokpayid', setokpayid), ('setokpaytoken', setokpaytoken), ('setokpayname', setokpayname), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
         ('backstart', backstart), ('paixurow', paixurow), ('addzdykey', addzdykey),
         ('qrscdelrow ', qrscdelrow), ('addhangkey ', addhangkey), ('delhangkey ', delhangkey),
         ('qrdelliekey ', qrdelliekey), ('keyxq ', keyxq), ('setkeyname ', setkeyname),
