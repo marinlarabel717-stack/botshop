@@ -254,7 +254,7 @@ def render_env_lines(env_map):
         'OKPAY_CALLBACK_HOST', 'OKPAY_CALLBACK_PORT',
         'SHOW_TRC20_RECHARGE_ENTRY', 'SHOW_OKPAY_RECHARGE_ENTRY',
         'ACCOUNT_CHECK_ENABLED', 'ACCOUNT_CHECK_TIMEOUT_SECONDS', 'ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS',
-        'ACCOUNT_CHECK_PROGRESS_STEP', 'ACCOUNT_CHECK_MAX_CONCURRENCY', 'ACCOUNT_CHECK_API_ID', 'ACCOUNT_CHECK_API_HASH',
+        'ACCOUNT_CHECK_PROGRESS_STEP', 'ACCOUNT_CHECK_API_ID', 'ACCOUNT_CHECK_API_HASH',
         'TRONGRID_API_BASE', 'TRONGRID_API_KEY', 'TRONGRID_API_KEYS', 'TRC20_USDT_CONTRACT', 'TRONGRID_POLL_SECONDS',
         'TRONGRID_REQUEST_TIMEOUT', 'TRONGRID_MAX_PAGES', 'TRONGRID_LOOKBACK_MINUTES', 'TRONGRID_MONITOR_ADDRESSES',
         'BOT_CLONE_ROOT', 'BOT_CLONE_REPO_URL'
@@ -429,7 +429,6 @@ ACCOUNT_CHECK_ENABLED = parse_env_bool(os.getenv('ACCOUNT_CHECK_ENABLED', 'true'
 ACCOUNT_CHECK_TIMEOUT_SECONDS = max(5, int(os.getenv('ACCOUNT_CHECK_TIMEOUT_SECONDS', '25') or '25'))
 ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS = max(3, int(os.getenv('ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS', '10') or '10'))
 ACCOUNT_CHECK_PROGRESS_STEP = max(1, int(os.getenv('ACCOUNT_CHECK_PROGRESS_STEP', '3') or '3'))
-ACCOUNT_CHECK_MAX_CONCURRENCY = max(1, int(os.getenv('ACCOUNT_CHECK_MAX_CONCURRENCY', '6') or '6'))
 ACCOUNT_CHECK_SUPPORTED_TYPES = {'协议号', '直登号'}
 ACCOUNT_BAN_ROOT = BASE_DIR / 'ban'
 TRC20_USDT_CONTRACT = os.getenv('TRC20_USDT_CONTRACT', 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t').strip()
@@ -2032,6 +2031,19 @@ def run_single_account_check(leixing, nowuid, item, timeout_seconds):
     return item, projectname, check_result
 
 
+def get_account_check_concurrency(total_count):
+    total_count = max(0, int(total_count or 0))
+    if total_count > 500:
+        return 30
+    if total_count > 100:
+        return 10
+    if total_count > 10:
+        return 5
+    if total_count > 3:
+        return 2
+    return 1
+
+
 def deliver_accounts_with_check(context, user_id, fullname, username, nowuid, erjiprojectname, yijiprojectname, leixing, selected_items, notice_text, order_id, unit_price, total_amount, progress_message_id):
     bot = context.bot
     total_count = len(selected_items)
@@ -2042,7 +2054,7 @@ def deliver_accounts_with_check(context, user_id, fullname, username, nowuid, er
     checked_count = 0
     last_progress_ts = 0
 
-    max_workers = max(1, min(total_count, ACCOUNT_CHECK_MAX_CONCURRENCY))
+    max_workers = get_account_check_concurrency(total_count)
     with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix='acct-check') as executor:
         future_map = {
             executor.submit(run_single_account_check, leixing, nowuid, item, ACCOUNT_CHECK_TIMEOUT_SECONDS): item
