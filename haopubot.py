@@ -2527,22 +2527,13 @@ def deliver_accounts_with_check(context, user_id, fullname, username, nowuid, er
 
 def start(update: Update, context: CallbackContext):
     us = update.effective_user
-    chat_id = update.effective_chat.id
     user_id = us.id
     username = us.username
     fullname = us.full_name.replace('<', '').replace('>', '')
     lastname = us.last_name
-    botusername = context.bot.username
-    timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
     user_list = ensure_user_exists(user_id, username, fullname, lastname, getattr(us, 'language_code', None))
     state = user_list['state']
-    sign = user_list['sign']
-    USDT = user_list['USDT']
-    zgje = user_list['zgje']
-    zgsl = user_list['zgsl']
-    creation_time = user_list['creation_time']
     args = update.message.text.split(maxsplit=2)
-    content = args[2] if len(args) == 3 else ""
 
     if len(args) == 2:
         start_arg = str(args[1] or '').strip()
@@ -2550,25 +2541,6 @@ def start(update: Update, context: CallbackContext):
             nowuid = start_arg.replace('buy_', '', 1).strip()
             send_product_purchase_page(context, user_id, user_id, nowuid)
             return
-
-    if username is None:
-        username = fullname
-    else:
-        username = f'<a href="https://t.me/{username}">{username}</a>'
-    fstext = (
-        f"<b>[emoji:6321041414067068140:👤] {t(user_id, 'profile_id_label', default='您的ID:')}</b>  <code>{user_id}</code>\n"
-        f"<b>[emoji:6323075330189826977:😃] {t(user_id, 'profile_username_label', default='您的用户名:')}</b>  {username}\n"
-        f"<b>[emoji:5217818964612108191:✨] {t(user_id, 'profile_created_label', default='注册日期:')}</b>  {creation_time}\n\n"
-        f"<b>[emoji:5220064167356025824:⭐️] {t(user_id, 'profile_total_count_label', default='总购数量:')}</b>  {zgsl}\n\n"
-        f"<b>[emoji:5028746137645876535:📈] {t(user_id, 'profile_total_amount_label', default='总购金额:')}</b>  {standard_num(zgje)} USDT\n\n"
-        f"<b>[emoji:4972482444025398275:👛] {t(user_id, 'profile_balance_label', default='您的余额:')}</b>  {USDT} USDT"
-    )
-
-    keyboard = [[InlineKeyboardButton(t(user_id, 'purchase_history_button', default='🛒购买记录'), callback_data=f'gmaijilu {user_id}')],
-                [InlineKeyboardButton(t(user_id, 'close', default='关闭'), callback_data=f'close {user_id}')]]
-    context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
-                             reply_markup=InlineKeyboardMarkup(keyboard), disable_web_page_preview=True)
-    return
 
     send_user_home(context, user_id, state=state)
     # message_id = context.bot.send_photo(chat_id=user_id,  photo=open('辛迪充值图片.png', 'rb'))
