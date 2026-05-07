@@ -41,6 +41,18 @@ except Exception:
     APP_VERSION = '0.1.0'
 
 
+DEFAULT_CLONE_WELCOME_TEXT = (
+    '<b>🔥 欢迎使用号铺机器人\n\n'
+    '‼️请先由管理员在后台完成以下配置：\n\n'
+    '😃 欢迎语 / 联系方式\n'
+    '😄 菜单按钮\n'
+    '😃商品分类与商品内容\n'
+    '😄TRC20 充值地址\n'
+    '😃 其他支付配置\n\n'
+    '⚙️ /start ⬅️ 点击命令打开菜单</b>'
+)
+
+
 ADMIN_EMOJI_USERLIST = '[emoji:6321041414067068140:👤]'
 ADMIN_EMOJI_DM = '[emoji:5456535802429330837:💬]'
 ADMIN_EMOJI_TRC20 = '[emoji:5443127283898405358:📥]'
@@ -97,6 +109,10 @@ def build_admin_dashboard_keyboard(user_id):
     for index in range(0, len(buttons), 3):
         keyboard.append(buttons[index:index + 3])
     return keyboard
+
+
+def welcome_uses_html_parse(text, entities):
+    return not entities and isinstance(text, str) and '<' in text and '>' in text
 
 
 ADMIN_USER_IDS = parse_admin_user_ids(os.getenv('ADMIN_USER_IDS', ''))
@@ -1214,14 +1230,18 @@ def inline_query(update: Update, context: CallbackContext):
 
                 hyy, entities = get_welcome_content()
 
+                input_message_content = (
+                    InputTextMessageContent(hyy, parse_mode='HTML')
+                    if welcome_uses_html_parse(hyy, entities)
+                    else InputTextMessageContent(hyy, entities=entities)
+                )
+
                 results = [
                     InlineQueryResultArticle(
                         id=str(uuid.uuid4()),
                         reply_markup=InlineKeyboardMarkup(keyboard),
                         title=fstext,
-                        input_message_content=InputTextMessageContent(
-                            hyy,entities=entities
-                        )
+                        input_message_content=input_message_content
                     ),
                 ]
 
@@ -1273,14 +1293,18 @@ def inline_query(update: Update, context: CallbackContext):
 
             hyy, entities = get_welcome_content()
 
+            input_message_content = (
+                InputTextMessageContent(hyy, parse_mode='HTML')
+                if welcome_uses_html_parse(hyy, entities)
+                else InputTextMessageContent(hyy, entities=entities)
+            )
+
             results = [
                 InlineQueryResultArticle(
                     id=str(uuid.uuid4()),
                     reply_markup=InlineKeyboardMarkup(keyboard),
                     title=fstext,
-                    input_message_content=InputTextMessageContent(
-                        hyy, entities=entities
-                    )
+                    input_message_content=input_message_content
                 ),
             ]
 
@@ -1879,8 +1903,12 @@ def start(update: Update, context: CallbackContext):
     if BOT_CLONE_ENABLED and ALLOW_PUBLIC_BOT_CLONE:
         keyboard.append([KeyboardButton('#g [emoji:5287684458881756303:🤖]一键克隆同款')])
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False) if keyboard else None
-    context.bot.send_message(chat_id=user_id, text=hyy, reply_markup=reply_markup,
-                             entities=entities)
+    welcome_kwargs = {'chat_id': user_id, 'text': hyy, 'reply_markup': reply_markup}
+    if welcome_uses_html_parse(hyy, entities):
+        welcome_kwargs['parse_mode'] = 'HTML'
+    else:
+        welcome_kwargs['entities'] = entities
+    context.bot.send_message(**welcome_kwargs)
     if state == '4':
         keyboard = build_admin_dashboard_keyboard(user_id)
         jqrsyrs = len(list(user.find({})))
@@ -4540,9 +4568,9 @@ def notify_restock_broadcast(context, nowuid, added_count=0):
         logging.warning('restock broadcast failed for %s: %s', target, exc)
 
 
-def get_welcome_content(default_text='欢迎使用机器人'):
+def get_welcome_content(default_text=DEFAULT_CLONE_WELCOME_TEXT):
     text = str(get_text_config('欢迎语', default_text) or '').strip()
-    if not text:
+    if not text or text == '欢迎使用机器人':
         return default_text, []
     entities_raw = get_text_config('欢迎语样式', b'\x80\x03]q\x00.')
     entities = safe_pickle_loads(entities_raw)

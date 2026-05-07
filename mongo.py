@@ -173,7 +173,16 @@ def user_data(key_id, user_id, username, fullname, lastname, state, creation_tim
 
 
 if shangtext.find_one({}) == None:
-    fstext = '欢迎使用机器人'
+    fstext = (
+        '<b>🔥 欢迎使用号铺机器人\n\n'
+        '‼️请先由管理员在后台完成以下配置：\n\n'
+        '😃 欢迎语 / 联系方式\n'
+        '😄 菜单按钮\n'
+        '😃商品分类与商品内容\n'
+        '😄TRC20 充值地址\n'
+        '😃 其他支付配置\n\n'
+        '⚙️ /start ⬅️ 点击命令打开菜单</b>'
+    )
     shang_text('欢迎语',fstext)
     shang_text('欢迎语样式',b'\x80\x03]q\x00.')
     shang_text('充值地址','')
