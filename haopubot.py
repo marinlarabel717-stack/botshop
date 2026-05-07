@@ -2019,6 +2019,25 @@ def edit_html_message(bot, chat_id, message_id, text, **kwargs):
     return bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text, parse_mode='HTML', disable_web_page_preview=True, **kwargs)
 
 
+def finalize_account_check_message(bot, user_id, progress_message_id, final_text):
+    try:
+        edit_html_message(bot, user_id, progress_message_id, final_text)
+        return 'edited'
+    except Exception:
+        logging.exception('Failed to edit account-check progress message for user %s', user_id)
+
+    try:
+        send_html_message(bot, user_id, final_text)
+        try:
+            bot.delete_message(chat_id=user_id, message_id=progress_message_id)
+        except Exception:
+            logging.warning('Failed to delete stale account-check progress message for user %s', user_id, exc_info=True)
+        return 'sent'
+    except Exception:
+        logging.exception('Failed to send account-check completion message for user %s', user_id)
+        return 'failed'
+
+
 def build_delivery_zip(leixing, user_id, nowuid, entry_names):
     shijiancuo = int(time.time())
     if leixing == '协议号':
@@ -2135,7 +2154,7 @@ def deliver_accounts_with_check(context, user_id, fullname, username, nowuid, er
                         build_account_check_progress_text(total_count, checked_count, len(alive_items), len(invalid_items), len(frozen_items), len(timeout_items))
                     )
                 except Exception:
-                    pass
+                    logging.warning('Failed to update account-check progress for user %s at %s/%s', user_id, checked_count, total_count, exc_info=True)
                 last_progress_ts = time.time()
 
     invalid_count = len(invalid_items)
@@ -2176,13 +2195,7 @@ def deliver_accounts_with_check(context, user_id, fullname, username, nowuid, er
         refund_amount,
         remaining_amount,
     )
-    try:
-        edit_html_message(bot, user_id, progress_message_id, final_text)
-    except Exception:
-        try:
-            send_html_message(bot, user_id, final_text)
-        except Exception:
-            pass
+    finalize_account_check_message(bot, user_id, progress_message_id, final_text)
 
     delivery_names = [item['projectname'] for item in alive_items + timeout_items]
     timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
