@@ -38,6 +38,27 @@ from pymongo.errors import DuplicateKeyError
 
 BASE_DIR = Path(__file__).resolve().parent
 VERSION_FILE = BASE_DIR / 'VERSION'
+
+
+def candidate_storage_roots(folder_name):
+    roots = [BASE_DIR / folder_name, Path(folder_name)]
+    deduped = []
+    seen = set()
+    for root in roots:
+        key = str(root.resolve()) if root.exists() else str(root)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(root)
+    return deduped
+
+
+def find_existing_storage_path(folder_name, *parts):
+    for root in candidate_storage_roots(folder_name):
+        candidate = root.joinpath(*[str(part) for part in parts])
+        if candidate.exists():
+            return candidate
+    return candidate_storage_roots(folder_name)[0].joinpath(*[str(part) for part in parts])
 try:
     APP_VERSION = VERSION_FILE.read_text(encoding='utf-8').strip()
 except Exception:
@@ -1977,15 +1998,15 @@ def reserve_inventory_items(base_query, count, user_id, order_id, timer):
 
 def build_inventory_entry_file_path(leixing, nowuid, projectname):
     if leixing == '协议号':
-        return BASE_DIR / '协议号' / str(nowuid) / f'{projectname}.session'
-    return BASE_DIR / '号包' / str(nowuid) / str(projectname)
+        return find_existing_storage_path('协议号', nowuid, f'{projectname}.session')
+    return find_existing_storage_path('号包', nowuid, projectname)
 
 
 def resolve_inventory_check_target(leixing, nowuid, projectname):
     if leixing == '协议号':
         return leixing, build_inventory_entry_file_path(leixing, nowuid, projectname)
 
-    folder_path = BASE_DIR / '号包' / str(nowuid) / str(projectname)
+    folder_path = find_existing_storage_path('号包', nowuid, projectname)
     tdata_path = folder_path / 'tdata'
     if tdata_path.exists() and tdata_path.is_dir():
         return '直登号', tdata_path
@@ -2018,7 +2039,7 @@ def archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, item_
                 shutil.move(str(src_path), str(dst_path))
                 archived_files.append(str(dst_path))
     else:
-        src_path = BASE_DIR / '号包' / str(nowuid) / str(projectname)
+        src_path = find_existing_storage_path('号包', nowuid, projectname)
         if src_path.exists():
             dst_path = target_root / str(projectname)
             if dst_path.exists():
@@ -2084,19 +2105,21 @@ def finalize_account_check_message(bot, user_id, progress_message_id, final_text
 def build_delivery_zip(leixing, user_id, nowuid, entry_names):
     shijiancuo = int(time.time())
     if leixing == '协议号':
-        zip_filename = BASE_DIR / '协议号发货' / f'{user_id}_{shijiancuo}.zip'
+        zip_filename = find_existing_storage_path('协议号发货', f'{user_id}_{shijiancuo}.zip')
+        zip_filename.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for file_name in entry_names:
                 for suffix in ('.json', '.session'):
-                    source_path = BASE_DIR / '协议号' / str(nowuid) / f'{file_name}{suffix}'
+                    source_path = find_existing_storage_path('协议号', nowuid, f'{file_name}{suffix}')
                     if source_path.exists():
                         zipf.write(source_path, source_path.name)
         return zip_filename
 
-    zip_filename = BASE_DIR / '发货' / f'{user_id}_{shijiancuo}.zip'
+    zip_filename = find_existing_storage_path('发货', f'{user_id}_{shijiancuo}.zip')
+    zip_filename.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
         for folder_name in entry_names:
-            full_folder_path = BASE_DIR / '号包' / str(nowuid) / str(folder_name)
+            full_folder_path = find_existing_storage_path('号包', nowuid, folder_name)
             if not full_folder_path.exists():
                 continue
             for root, dirs, files in os.walk(full_folder_path):
