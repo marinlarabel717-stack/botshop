@@ -7063,9 +7063,16 @@ def jianceguoqi(context: CallbackContext):
                                                       text='❌ OKPay充值订单已超时失效，请重新创建订单。\n\n超过 10 分钟后再支付，将不会自动到账。',
                                                       reply_markup=InlineKeyboardMarkup(keyboard))
                     elif i.get('type') == 'trc20':
-                        context.bot.edit_message_caption(chat_id=user_id, message_id=message_id,
-                                                         caption='❌ TRC20充值订单已超时失效，请重新创建订单。\n\n超过 10 分钟后再转账，将不会自动到账。',
-                                                         reply_markup=InlineKeyboardMarkup(keyboard))
+                        if message_id:
+                            try:
+                                context.bot.delete_message(chat_id=user_id, message_id=message_id)
+                            except Exception:
+                                pass
+                        context.bot.send_message(
+                            chat_id=user_id,
+                            text='❌ TRC20充值订单已超时失效，请重新创建订单。\n\n超过 10 分钟后再转账，将不会自动到账。',
+                            reply_markup=InlineKeyboardMarkup(keyboard)
+                        )
                     else:
                         context.bot.edit_message_media(chat_id=user_id, message_id=message_id, media=InputMediaPhoto(media='AgACAgQAAxkBAAI4Nmagu-8nD4AQrv6ftlzrLjLSxlOnAAJavzEbAZYIUch6ykGfk6CaAQADAgADeQADNQQ', caption='❌ 订单支付超时(或金额错误)'),reply_markup=InlineKeyboardMarkup(keyboard))
 
