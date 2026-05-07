@@ -4378,7 +4378,18 @@ def set_text_config(projectname, value):
 
 
 def get_restock_push_target():
-    return str(get_text_config('补货通知群组', '') or '').strip()
+    target = str(get_text_config('补货通知群组', '') or '').strip()
+    if not target:
+        return ''
+    lowered = target.lower()
+    for prefix in ('https://t.me/', 'http://t.me/', 'https://telegram.me/', 'http://telegram.me/', 't.me/', 'telegram.me/'):
+        if lowered.startswith(prefix):
+            target = target[len(prefix):].strip()
+            target = target.split('?', 1)[0].split('/', 1)[0].strip()
+            break
+    if target and not target.startswith('@') and not re.fullmatch(r'-?\d+', target):
+        target = f'@{target}'
+    return target
 
 
 def build_restock_push_config_text():
@@ -4387,8 +4398,8 @@ def build_restock_push_config_text():
     return (
         f'{ADMIN_EMOJI_NOTICE}补货通知推送\n\n'
         f'{ADMIN_EMOJI_GOODS} 当前目标：<code>{target_text}</code>\n\n'
-        '支持填写群组/频道 @username 或 chat_id\n'
-        '例如：<code>@yourchannel</code> 或 <code>-1001234567890</code>'
+        '支持填写群组/频道 @username、chat_id、或 t.me 链接\n'
+        '例如：<code>@yourchannel</code>、<code>-1001234567890</code>、<code>https://t.me/yourchannel</code>'
     )
 
 
