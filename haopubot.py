@@ -5754,74 +5754,18 @@ def create_okpay_deposit_order(context, user_id, amount):
 
 
 def dabaohao(context, user_id, folder_names, leixing, nowuid, erjiprojectname, notice_text, yssj):
-    if leixing == '协议号':
-        shijiancuo = int(time.time())
-        zip_filename = f"./协议号发货/{user_id}_{shijiancuo}.zip"
-        with zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED) as zipf:
-            # 将每个文件及其内容添加到 zip 文件中
-            for file_name in folder_names:
-                # 检查是否存在以 .json 或 .session 结尾的文件
-                json_file_path = os.path.join(f"./协议号/{nowuid}", file_name + ".json")
-                session_file_path = os.path.join(f"./协议号/{nowuid}", file_name + ".session")
-                if os.path.exists(json_file_path):
-                    zipf.write(json_file_path, os.path.basename(json_file_path))
-                if os.path.exists(session_file_path):
-                    zipf.write(session_file_path, os.path.basename(session_file_path))
-        current_time = datetime.datetime.now()
+    zip_filename = build_delivery_zip(leixing, user_id, nowuid, folder_names)
+    current_time = datetime.datetime.now()
 
-        # 将当前时间格式化为字符串
-        formatted_time = current_time.strftime("%Y%m%d%H%M%S")
+    formatted_time = current_time.strftime("%Y%m%d%H%M%S")
+    timestamp = str(current_time.timestamp()).replace(".", "")
+    bianhao = formatted_time + timestamp
+    timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+    goumaijilua(leixing, bianhao, user_id, erjiprojectname, str(zip_filename), notice_text, timer)
 
-        # 添加时间戳
-        timestamp = str(current_time.timestamp()).replace(".", "")
-
-        # 组合编号
-        bianhao = formatted_time + timestamp
-        timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-        goumaijilua('协议号', bianhao, user_id, erjiprojectname, zip_filename, notice_text, timer)
-        # 发送 zip 文件给用户
-        context.bot.send_document(chat_id=user_id, document=open(zip_filename, "rb"))
-        if notice_text:
-            context.bot.send_message(chat_id=user_id, text=notice_text, parse_mode='HTML', disable_web_page_preview=True)
-    elif leixing == '直登号':
-        shijiancuo = int(time.time())
-        zip_filename = f"./发货/{user_id}_{shijiancuo}.zip"
-        with zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED) as zipf:
-            # 将每个文件夹及其内容添加到 zip 文件中
-            for folder_name in folder_names:
-                full_folder_path = os.path.join(f"./号包/{nowuid}", folder_name)
-                if os.path.exists(full_folder_path):
-                    # 添加文件夹及其内容
-                    for root, dirs, files in os.walk(full_folder_path):
-                        for file in files:
-                            file_path = os.path.join(root, file)
-                            # 使用相对路径在压缩包中添加文件，并设置压缩包内部的路径
-                            zipf.write(file_path,
-                                       os.path.join(folder_name, os.path.relpath(file_path, full_folder_path)))
-                else:
-                    # update.message.reply_text(f"文件夹 '{folder_name}' 不存在！")
-                    pass
-
-        # 发送 zip 文件给用户
-
-        folder_names = '\n'.join(folder_names)
-
-        current_time = datetime.datetime.now()
-
-        # 将当前时间格式化为字符串
-        formatted_time = current_time.strftime("%Y%m%d%H%M%S")
-
-        # 添加时间戳
-        timestamp = str(current_time.timestamp()).replace(".", "")
-
-        # 组合编号
-        bianhao = formatted_time + timestamp
-        timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-        goumaijilua('直登号', bianhao, user_id, erjiprojectname, zip_filename, notice_text, timer)
-
-        context.bot.send_document(chat_id=user_id, document=open(zip_filename, "rb"))
-        if notice_text:
-            context.bot.send_message(chat_id=user_id, text=notice_text, parse_mode='HTML', disable_web_page_preview=True)
+    context.bot.send_document(chat_id=user_id, document=open(zip_filename, "rb"))
+    if notice_text:
+        context.bot.send_message(chat_id=user_id, text=notice_text, parse_mode='HTML', disable_web_page_preview=True)
 
 
 def qrgaimai(update: Update, context: CallbackContext):
