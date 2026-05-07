@@ -33,6 +33,7 @@ from decimal import Decimal
 from datetime import timedelta
 import zipfile
 from pathlib import Path
+from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -1927,6 +1928,51 @@ def create_delivery_order_id():
     formatted_time = current_time.strftime('%Y%m%d%H%M%S')
     timestamp = str(current_time.timestamp()).replace('.', '')
     return formatted_time + timestamp
+
+
+def reserve_inventory_items(base_query, count, user_id, order_id, timer):
+    reserved_docs = []
+    query = dict(base_query or {})
+    query['state'] = 0
+    update_fields = {
+        'state': 1,
+        'yssj': timer,
+        'gmid': user_id,
+        'delivery_order_id': order_id,
+    }
+    for _ in range(max(0, int(count or 0))):
+        reserved = hb.find_one_and_update(
+            query,
+            {'$set': update_fields},
+            sort=[('_id', 1)],
+            return_document=ReturnDocument.AFTER,
+        )
+        if not reserved:
+            break
+        reserved_docs.append(reserved)
+
+    if len(reserved_docs) < count:
+        if reserved_docs:
+            hb.update_many(
+                {
+                    '_id': {'$in': [doc['_id'] for doc in reserved_docs]},
+                    'gmid': user_id,
+                    'delivery_order_id': order_id,
+                },
+                {
+                    '$set': {'state': 0},
+                    '$unset': {
+                        'yssj': '',
+                        'gmid': '',
+                        'delivery_order_id': '',
+                        'delivery_check_state': '',
+                        'delivery_check_reason': '',
+                        'delivery_check_timer': '',
+                    }
+                }
+            )
+        return []
+    return reserved_docs
 
 
 def build_inventory_entry_file_path(leixing, nowuid, projectname):
@@ -5823,28 +5869,21 @@ def qrgaimai(update: Update, context: CallbackContext):
                     except Exception:
                         pass
         if fhtype == '协议号':
+            order_id = create_delivery_order_id()
+            timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+            selected_docs = reserve_inventory_items({'nowuid': nowuid}, gmsl, user_id, order_id, timer)
+            if len(selected_docs) < gmsl:
+                context.bot.send_message(chat_id=user_id, text='当前库存不足')
+                user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                return
+
             zgje = user_list['zgje']
             zgsl = user_list['zgsl']
             user.update_one({'user_id': user_id},
                             {"$set": {'USDT': now_price, 'zgje': zgje + zxymoney, 'zgsl': zgsl + gmsl}})
             user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
             del_message(query.message)
-            # for j in list(hb.find({"nowuid": nowuid,'state': 0},limit=gmsl)):
-            #     projectname = j['projectname']
-            #     hbid = j['hbid']
-            #     timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-
-            #     hb.update_one({'hbid': hbid},{"$set":{'state': 1, 'yssj': timer, 'gmid': user_id}})
-            #     folder_names.append(projectname)
-
-            query_condition = {"nowuid": nowuid, "state": 0}
-            selected_docs = list(hb.find(query_condition).limit(gmsl))
-            document_ids = [doc['_id'] for doc in selected_docs]
             folder_names = [doc['projectname'] for doc in selected_docs]
-            order_id = create_delivery_order_id()
-            timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            update_data = {"$set": {'state': 1, 'yssj': timer, 'gmid': user_id, 'delivery_order_id': order_id}}
-            hb.update_many({"_id": {"$in": document_ids}}, update_data) 
 
             if use_account_check:
                 progress_message = send_html_message(
@@ -5908,6 +5947,14 @@ def qrgaimai(update: Update, context: CallbackContext):
 
 
         elif fhtype == '谷歌':
+            order_id = create_delivery_order_id()
+            timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+            selected_docs = reserve_inventory_items({'nowuid': nowuid, 'leixing': '谷歌'}, gmsl, user_id, order_id, timer)
+            if len(selected_docs) < gmsl:
+                context.bot.send_message(chat_id=user_id, text='当前库存不足')
+                user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                return
+
             zgje = user_list['zgje']
             zgsl = user_list['zgsl']
             user.update_one({'user_id': user_id},
@@ -5916,11 +5963,7 @@ def qrgaimai(update: Update, context: CallbackContext):
             del_message(query.message)
 
             folder_names = []
-            for j in list(hb.find({"nowuid": nowuid, 'state': 0, 'leixing': '谷歌'}, limit=gmsl)):
-                projectname = j['projectname']
-                hbid = j['hbid']
-                timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                hb.update_one({'hbid': hbid}, {"$set": {'state': 1, 'yssj': timer, 'gmid': user_id}})
+            for j in selected_docs:
                 data = j['data']
                 us1 = data['账户']
                 us2 = data['密码']
@@ -5966,6 +6009,14 @@ def qrgaimai(update: Update, context: CallbackContext):
 
 
         elif fhtype == 'API':
+            order_id = create_delivery_order_id()
+            timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+            selected_docs = reserve_inventory_items({'nowuid': nowuid}, gmsl, user_id, order_id, timer)
+            if len(selected_docs) < gmsl:
+                context.bot.send_message(chat_id=user_id, text='当前库存不足')
+                user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                return
+
             zgje = user_list['zgje']
             zgsl = user_list['zgsl']
             user.update_one({'user_id': user_id},
@@ -5973,13 +6024,7 @@ def qrgaimai(update: Update, context: CallbackContext):
             user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
             del_message(query.message)
 
-            folder_names = []
-            for j in list(hb.find({"nowuid": nowuid, 'state': 0}, limit=gmsl)):
-                projectname = j['projectname']
-                hbid = j['hbid']
-                timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                hb.update_one({'hbid': hbid}, {"$set": {'state': 1, 'yssj': timer, 'gmid': user_id}})
-                folder_names.append(projectname)
+            folder_names = [j['projectname'] for j in selected_docs]
 
             shijiancuo = int(time.time())
 
@@ -6018,19 +6063,21 @@ def qrgaimai(update: Update, context: CallbackContext):
                 except:
                     pass
         elif fhtype == '会员链接':
+            order_id = create_delivery_order_id()
+            timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+            selected_docs = reserve_inventory_items({'nowuid': nowuid}, gmsl, user_id, order_id, timer)
+            if len(selected_docs) < gmsl:
+                context.bot.send_message(chat_id=user_id, text='当前库存不足')
+                user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                return
+
             zgje = user_list['zgje']
             zgsl = user_list['zgsl']
             user.update_one({'user_id': user_id},
                             {"$set": {'USDT': now_price, 'zgje': zgje + zxymoney, 'zgsl': zgsl + gmsl}})
             user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
             del_message(query.message)
-            folder_names = []
-            for j in list(hb.find({"nowuid": nowuid, 'state': 0}, limit=gmsl)):
-                projectname = j['projectname']
-                hbid = j['hbid']
-                timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                hb.update_one({'hbid': hbid}, {"$set": {'state': 1, 'yssj': timer, 'gmid': user_id}})
-                folder_names.append(projectname)
+            folder_names = [j['projectname'] for j in selected_docs]
 
             folder_names = '\n'.join(folder_names)
 
@@ -6064,6 +6111,14 @@ def qrgaimai(update: Update, context: CallbackContext):
                 except:
                     pass
         else:
+            order_id = create_delivery_order_id()
+            timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+            selected_docs = reserve_inventory_items({'nowuid': nowuid}, gmsl, user_id, order_id, timer)
+            if len(selected_docs) < gmsl:
+                context.bot.send_message(chat_id=user_id, text='当前库存不足')
+                user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                return
+
             zgje = user_list['zgje']
             zgsl = user_list['zgsl']
             user.update_one({'user_id': user_id},
@@ -6071,22 +6126,7 @@ def qrgaimai(update: Update, context: CallbackContext):
             user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
             del_message(query.message)
 
-            # folder_names = []
-            # for j in list(hb.find({"nowuid": nowuid, 'state': 0}, limit=gmsl)):
-            #     projectname = j['projectname']
-            #     hbid = j['hbid']
-            #     timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            #     hb.update_one({'hbid': hbid}, {"$set": {'state': 1, 'yssj': timer, 'gmid': user_id}})
-            #     folder_names.append(projectname)
-
-            query_condition = {"nowuid": nowuid, "state": 0}
-            selected_docs = list(hb.find(query_condition).limit(gmsl))
-            document_ids = [doc['_id'] for doc in selected_docs]
             folder_names = [doc['projectname'] for doc in selected_docs]
-            order_id = create_delivery_order_id()
-            timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            update_data = {"$set": {'state': 1, 'yssj': timer, 'gmid': user_id, 'delivery_order_id': order_id}}
-            hb.update_many({"_id": {"$in": document_ids}}, update_data) 
 
             if use_account_check:
                 progress_message = send_html_message(
