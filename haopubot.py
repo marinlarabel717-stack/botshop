@@ -129,6 +129,112 @@ def toggle_user_lang(user_id):
     return set_user_lang(user_id, target)
 
 
+def get_locale_section(lang, section):
+    lang = normalize_lang_code(lang)
+    value = (LOCALE_MESSAGES.get(lang, {}) or {}).get(section)
+    if isinstance(value, dict):
+        return value
+    return {}
+
+
+def translate_catalog_text(text, lang):
+    text = str(text or '').strip()
+    lang = normalize_lang_code(lang)
+    if not text or lang == DEFAULT_LANG:
+        return text
+
+    direct_map = get_locale_section(lang, 'catalog_text_map')
+    if text in direct_map:
+        return str(direct_map[text] or text)
+
+    translated = text
+    for source, target in sorted(get_locale_section(lang, 'country_text_map').items(), key=lambda item: len(str(item[0])), reverse=True):
+        translated = translated.replace(str(source), str(target))
+    for source, target in sorted(get_locale_section(lang, 'catalog_term_map').items(), key=lambda item: len(str(item[0])), reverse=True):
+        translated = translated.replace(str(source), str(target))
+
+    translated = re.sub(r'\s{2,}', ' ', translated).strip(' -_/')
+    return translated or text
+
+
+def get_doc_localized_field(doc, lang, field_name='projectname', fallback=''):
+    doc = doc or {}
+    fallback_value = str(doc.get(field_name) or fallback or '')
+    lang = normalize_lang_code(lang)
+    if lang == DEFAULT_LANG:
+        return fallback_value
+
+    i18n = doc.get('i18n')
+    if isinstance(i18n, dict):
+        lang_i18n = i18n.get(lang)
+        if isinstance(lang_i18n, dict):
+            for key in (field_name, 'name', 'title', 'text', 'content'):
+                value = str(lang_i18n.get(key) or '').strip()
+                if value:
+                    return value
+
+    candidate_keys = []
+    if field_name == 'projectname':
+        candidate_keys.extend(['projectname_en', 'name_en', 'title_en'])
+    elif field_name == 'sysm':
+        candidate_keys.extend(['sysm_en', 'text_en', 'content_en'])
+    else:
+        candidate_keys.append(f'{field_name}_en')
+    for key in candidate_keys:
+        value = str(doc.get(key) or '').strip()
+        if value:
+            return value
+
+    if field_name == 'projectname':
+        return translate_catalog_text(fallback_value, lang)
+    return fallback_value
+
+
+def get_localized_name(user_id, value_or_doc, field_name='projectname'):
+    lang = get_user_lang(user_id)
+    if isinstance(value_or_doc, dict):
+        return get_doc_localized_field(value_or_doc, lang, field_name=field_name)
+    return translate_catalog_text(value_or_doc, lang)
+
+
+def build_user_category_list_text(user_id):
+    return t(
+        user_id,
+        'category_list_text',
+        default='<b>🛒这是商品列表  选择你需要的商品：\n\n❗️没使用过的本店商品的，请先少量购买测试，以免造成不必要的争执！谢谢合作！\n\n❗️账户放久难免会死，有差异，请联系客服售后！望理解！</b>'
+    )
+
+
+def build_user_category_list_keyboard(user_id):
+    keylist = list(fenlei.find({}, sort=[('row', 1)]))
+    keyboard = [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
+                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
+                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
+                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []]
+    for item in keylist:
+        uid = item['uid']
+        projectname = get_localized_name(user_id, item)
+        row = item['row']
+        hsl = 0
+        for product in list(ejfl.find({'uid': uid})):
+            nowuid = product['nowuid']
+            hsl += len(list(hb.find({'nowuid': nowuid, 'state': 0})))
+        keyboard[row - 1].append(InlineKeyboardButton(f'{projectname} [ {hsl} ]', callback_data=f'catejflsp {uid}:{hsl}'))
+    keyboard = [row for row in keyboard if row]
+    keyboard.append([InlineKeyboardButton(t(user_id, 'close', default='关闭'), callback_data=f'close {user_id}')])
+    return keyboard
+
+
+def matches_localized_label(user_id, text, locale_key, default_label):
+    normalized = normalize_menu_text(text)
+    if not normalized:
+        return False
+    candidates = {normalize_menu_text(default_label)}
+    for lang in SUPPORTED_LANGS:
+        candidates.add(normalize_menu_text(str(get_locale_message(lang, locale_key, default_label) or default_label)))
+    return normalized in candidates
+
+
 def candidate_storage_roots(folder_name):
     roots = [BASE_DIR / folder_name, Path(folder_name)]
     deduped = []
@@ -2425,30 +2531,27 @@ def start(update: Update, context: CallbackContext):
     creation_time = user_list['creation_time']
     args = update.message.text.split(maxsplit=2)
     content = args[2] if len(args) == 3 else ""
-    if len(args) == 2:
-        start_arg = str(args[1] or '').strip()
-        if start_arg.startswith('buy_'):
-            nowuid = start_arg.replace('buy_', '', 1).strip()
-            send_product_purchase_page(context, user_id, user_id, nowuid)
-            return
+        if len(args) == 2:
+            start_arg = str(args[1] or '').strip()
+            if start_arg.startswith('buy_'):
+                nowuid = start_arg.replace('buy_', '', 1).strip()
+                send_product_purchase_page(context, user_id, user_id, nowuid)
+                return
         if username is None:
             username = fullname
         else:
             username = f'<a href="https://t.me/{username}">{username}</a>'
-        fstext = f'''
-<b>[emoji:6321041414067068140:👤] 您的ID:</b>  <code>{user_id}</code>
-<b>[emoji:6323075330189826977:😃] 您的用户名:</b>  {username}
-<b>[emoji:5217818964612108191:✨] 注册日期:</b>  {creation_time}
+        fstext = (
+            f"<b>[emoji:6321041414067068140:👤] {t(user_id, 'profile_id_label', default='您的ID:')}</b>  <code>{user_id}</code>\n"
+            f"<b>[emoji:6323075330189826977:😃] {t(user_id, 'profile_username_label', default='您的用户名:')}</b>  {username}\n"
+            f"<b>[emoji:5217818964612108191:✨] {t(user_id, 'profile_created_label', default='注册日期:')}</b>  {creation_time}\n\n"
+            f"<b>[emoji:5220064167356025824:⭐️] {t(user_id, 'profile_total_count_label', default='总购数量:')}</b>  {zgsl}\n\n"
+            f"<b>[emoji:5028746137645876535:📈] {t(user_id, 'profile_total_amount_label', default='总购金额:')}</b>  {standard_num(zgje)} USDT\n\n"
+            f"<b>[emoji:4972482444025398275:👛] {t(user_id, 'profile_balance_label', default='您的余额:')}</b>  {USDT} USDT"
+        )
 
-<b>[emoji:5220064167356025824:⭐️] 总购数量:</b>  {zgsl}
-
-<b>[emoji:5028746137645876535:📈] 总购金额:</b>  {standard_num(zgje)} USDT
-
-<b>[emoji:4972482444025398275:👛] 您的余额:</b>  {USDT} USDT
-        '''
-
-        keyboard = [[InlineKeyboardButton('🛒购买记录', callback_data=f'gmaijilu {user_id}')],
-                    [InlineKeyboardButton('关闭', callback_data=f'close {user_id}')]]
+        keyboard = [[InlineKeyboardButton(t(user_id, 'purchase_history_button', default='🛒购买记录'), callback_data=f'gmaijilu {user_id}')],
+                    [InlineKeyboardButton(t(user_id, 'close', default='关闭'), callback_data=f'close {user_id}')]]
         context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
                                  reply_markup=InlineKeyboardMarkup(keyboard), disable_web_page_preview=True)
         return
@@ -4306,7 +4409,7 @@ def catejflsp(update: Update, context: CallbackContext):
     ej_list = list(ejfl.find({'uid': uid}, sort=[('row', 1)]))
     for i in ej_list:
         nowuid = i['nowuid']
-        projectname = i['projectname']
+        projectname = get_localized_name(user_id, i)
         row = i['row']
         money = i.get('money', 0)
         hsl = len(list(hb.find({'nowuid': nowuid, 'state': 0})))
@@ -4328,23 +4431,17 @@ def catejflsp(update: Update, context: CallbackContext):
         button_text = f"{item['projectname']} （{item['stock']}） - ${price_text}"
         keyboard.append([InlineKeyboardButton(button_text, callback_data=f"gmsp {item['nowuid']}:{item['stock']}")])
 
-    fstext = f'''
-<b>🛒这是商品列表  选择你需要的商品：
-
-❗️没使用过的本店商品的，请先少量购买测试，以免造成不必要的争执！谢谢合作！
-
-❗️账户放久难免会死，有差异，请联系客服售后！望理解！</b>
-    '''
+    fstext = build_user_category_list_text(user_id)
 
     if not keyboard:
-        fstext = '''
-<b>⚠️ 当前这个分类暂时没有库存
+        fstext = t(
+            user_id,
+            'product_list_empty_text',
+            default='<b>⚠️ 当前这个分类暂时没有库存\n\n你可以返回上一层看看其他商品，或者稍后再来。</b>'
+        )
 
-你可以返回上一层看看其他商品，或者稍后再来。</b>
-    '''
-
-    keyboard.append([InlineKeyboardButton('🏠主菜单', callback_data='backzcd'),
-                     InlineKeyboardButton('⬅️返回', callback_data=f'backzcd')])
+    keyboard.append([InlineKeyboardButton(t(user_id, 'main_menu', default='🏠主菜单'), callback_data='backzcd'),
+                     InlineKeyboardButton(t(user_id, 'back', default='⬅️返回'), callback_data=f'backzcd')])
     query.edit_message_text(fstext, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
@@ -4364,23 +4461,28 @@ def get_product_purchase_payload(nowuid):
     return {
         'nowuid': nowuid,
         'uid': uid,
+        'product_row': ejfl_list,
         'projectname': projectname,
         'money': money,
         'stock_count': stock_count,
+        'category_row': fl_list if uid else {},
         'category_name': category_name,
     }
 
 
-def build_product_purchase_text(projectname, money, stock_count):
-    return f'''
-<b>✅您正在购买:  {projectname}
-
-💰 价格： {money} USDT
-
-📊 库存： {stock_count}
-
-❗️ 未使用过的本店商品的，请先少量购买测试，以免造成不必要的争执！谢谢合作！</b>
-    '''
+def build_product_purchase_text(user_id, projectname, money, stock_count, category_name=''):
+    category_line = ''
+    if category_name:
+        category_line = f"\n{t(user_id, 'category_line', default='📂 分类： {category_name}', category_name=category_name)}\n"
+    return (
+        '<b>'
+        f"{t(user_id, 'buying_product_title', default='✅您正在购买:  {projectname}', projectname=projectname)}"
+        f"{category_line}\n"
+        f"{t(user_id, 'price_line', default='💰 价格： {money} USDT', money=money)}\n\n"
+        f"{t(user_id, 'stock_line', default='📊 库存： {stock_count}', stock_count=stock_count)}\n\n"
+        f"{t(user_id, 'product_purchase_notice', default='❗️ 未使用过的本店商品的，请先少量购买测试，以免造成不必要的争执！谢谢合作！')}"
+        '</b>'
+    )
 
 
 def is_area_code_search_text(text):
@@ -4543,12 +4645,14 @@ def restockrequestarea(update: Update, context: CallbackContext):
 def send_product_purchase_page(context, chat_id, user_id, nowuid):
     payload = get_product_purchase_payload(nowuid)
     if not payload:
-        context.bot.send_message(chat_id=chat_id, text='未找到这个商品')
+        context.bot.send_message(chat_id=chat_id, text=t(user_id, 'product_not_found', default='未找到这个商品'))
         return None
     keyboard = build_product_purchase_keyboard(payload['nowuid'], payload['uid'], user_id, payload['stock_count'])
+    projectname = get_localized_name(user_id, payload.get('product_row') or payload['projectname'])
+    category_name = get_localized_name(user_id, payload.get('category_row') or payload.get('category_name'))
     return context.bot.send_message(
         chat_id=chat_id,
-        text=build_product_purchase_text(payload['projectname'], payload['money'], payload['stock_count']),
+        text=build_product_purchase_text(user_id, projectname, payload['money'], payload['stock_count'], category_name=category_name),
         parse_mode='HTML',
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
@@ -4575,12 +4679,13 @@ def gmsp(update: Update, context: CallbackContext):
 
     payload = get_product_purchase_payload(nowuid)
     if not payload:
-        query.answer('未找到这个商品', show_alert=bool("true"))
+        query.answer(t(user_id, 'product_not_found', default='未找到这个商品'), show_alert=bool("true"))
         return
     hsl = payload['stock_count']
-    projectname = payload['projectname']
+    projectname = get_localized_name(user_id, payload.get('product_row') or payload['projectname'])
     money = payload['money']
     uid = payload['uid']
+    category_name = get_localized_name(user_id, payload.get('category_row') or payload.get('category_name'))
     #     if hsl == 0:
     #         fstext =f'''
     # 🚫暂无商品，联系客服上架
@@ -4590,7 +4695,7 @@ def gmsp(update: Update, context: CallbackContext):
     #         return
     # else:
     query.answer()
-    fstext = build_product_purchase_text(projectname, money, hsl)
+    fstext = build_product_purchase_text(user_id, projectname, money, hsl, category_name=category_name)
 
     keyboard = build_product_purchase_keyboard(nowuid, uid, user_id, hsl)
     query.edit_message_text(fstext, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
@@ -4603,22 +4708,17 @@ def restocknotice(update: Update, context: CallbackContext):
     nowuid = str(query.data.replace('restocknotice ', '', 1)).strip()
     ejfl_list = ejfl.find_one({'nowuid': nowuid}) or {}
     if not ejfl_list:
-        context.bot.send_message(chat_id=user_id, text='未找到这个商品')
+        context.bot.send_message(chat_id=user_id, text=t(user_id, 'product_not_found', default='未找到这个商品'))
         return
     uid = ejfl_list.get('uid')
-    projectname = str(ejfl_list.get('projectname') or '商品')
+    projectname = get_localized_name(user_id, ejfl_list)
     money = ejfl_list.get('money', 0)
     stock_count = get_stock_count(nowuid)
+    category_row = fenlei.find_one({'uid': uid}) or {}
+    category_name = get_localized_name(user_id, category_row)
     if stock_count > 0:
         keyboard = build_product_purchase_keyboard(nowuid, uid, user_id, stock_count)
-        text = f'''<b>✅您正在购买:  {projectname}
-
-💰 价格： {money} USDT
-
-📊 库存： {stock_count}
-
-❗️ 未使用过的本店商品的，请先少量购买测试，以免造成不必要的争执！谢谢合作！</b>
-    '''
+        text = build_product_purchase_text(user_id, projectname, money, stock_count, category_name=category_name)
         try:
             query.edit_message_text(text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
         except Exception:
@@ -4626,23 +4726,24 @@ def restocknotice(update: Update, context: CallbackContext):
         return
     if is_restock_notice_subscribed(nowuid, user_id):
         restock_notices.delete_one({'nowuid': nowuid, 'user_id': user_id})
-        notice_tip = '已取消这个商品的补货通知'
+        notice_tip = t(user_id, 'restock_notice_disabled', default='已取消这个商品的补货通知')
     else:
         restock_notices.update_one(
             {'nowuid': nowuid, 'user_id': user_id},
             {'$set': {'nowuid': nowuid, 'user_id': user_id, 'created_at': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}},
             upsert=True
         )
-        notice_tip = '已开启补货通知，商品补货后我会提醒你'
+        notice_tip = t(user_id, 'restock_notice_enabled', default='已开启补货通知，商品补货后我会提醒你')
     keyboard = build_product_purchase_keyboard(nowuid, uid, user_id, 0)
-    text = f'''<b>✅您正在购买:  {projectname}
-
-💰 价格： {money} USDT
-
-📊 库存： 0
-
-❗️ 当前暂时无库存，你可以先开启补货通知。</b>
-    '''
+    text = (
+        '<b>'
+        f"{t(user_id, 'buying_product_title', default='✅您正在购买:  {projectname}', projectname=projectname)}"
+        f"\n{t(user_id, 'category_line', default='📂 分类： {category_name}', category_name=category_name) if category_name else ''}\n\n"
+        f"{t(user_id, 'price_line', default='💰 价格： {money} USDT', money=money)}\n\n"
+        f"{t(user_id, 'stock_line', default='📊 库存： {stock_count}', stock_count=0)}\n\n"
+        f"{t(user_id, 'restock_notice_cta', default='❗️ 当前暂时无库存，你可以先开启补货通知。')}"
+        '</b>'
+    )
     try:
         query.edit_message_text(text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
     except Exception:
@@ -4657,7 +4758,7 @@ def gmqq(update: Update, context: CallbackContext):
     nowuid = query.data.replace('gmqq ', '')
 
     if get_stock_count(nowuid) <= 0:
-        query.answer('当前暂无库存', show_alert=bool("true"))
+        query.answer(t(user_id, 'stock_not_enough', default='当前暂无库存'), show_alert=bool("true"))
         return
 
     ejfl_list = ejfl.find_one({'nowuid': nowuid})
@@ -4668,18 +4769,13 @@ def gmqq(update: Update, context: CallbackContext):
     user_list = user.find_one({'user_id': user_id})
     USDT = user_list['USDT']
     if USDT < money:
-        fstext = f'''
-❌余额不足，请立即充值
-        '''
+        fstext = t(user_id, 'insufficient_balance', default='❌余额不足，请立即充值')
         query.answer(fstext, show_alert=bool("true"))
         return
     else:
         query.answer()
         # del_message(query.message)
-        fstext = f'''
-<b>请输入数量：
-格式：</b><code>10</code>
-        '''
+        fstext = t(user_id, 'enter_quantity_prompt', default='<b>请输入数量：\n格式：</b><code>10</code>')
 
         message_id = context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML')
         user.update_one({'user_id': user_id}, {"$set": {"sign": f"gmqq {nowuid}:{message_id.message_id}"}})
@@ -4969,29 +5065,8 @@ def backzcd(update: Update, context: CallbackContext):
     query.answer()
     bot_id = context.bot.id
     user_id = query.from_user.id
-    keylist = list(fenlei.find({}, sort=[('row', 1)]))
-    keyboard = [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []]
-    for i in keylist:
-        uid = i['uid']
-        projectname = i['projectname']
-
-        row = i['row']
-        hsl = 0
-        for j in list(ejfl.find({'uid': uid})):
-            nowuid = j['nowuid']
-            hsl += len(list(hb.find({'nowuid': nowuid, 'state': 0})))
-        keyboard[row - 1].append(InlineKeyboardButton(f'{projectname} [ {hsl} ]', callback_data=f'catejflsp {uid}:{hsl}'))
-    fstext = f'''
-<b>🛒这是商品列表  选择你需要的商品：
-
-❗️没使用过的本店商品的，请先少量购买测试，以免造成不必要的争执！谢谢合作！
-
-❗️账户放久难免会死，有差异，请联系客服售后！望理解！</b>
-    '''
-    keyboard.append([InlineKeyboardButton('❌关闭', callback_data=f'close {user_id}')])
+    keyboard = build_user_category_list_keyboard(user_id)
+    fstext = build_user_category_list_text(user_id)
     query.edit_message_text(fstext, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 
@@ -5131,7 +5206,7 @@ def build_user_home_reply_keyboard(user_id):
                 [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
                 [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []]
     for i in keylist:
-        projectname = i['projectname']
+        projectname = get_localized_name(user_id, i)
         keyboard[i['Row'] - 1].append(KeyboardButton(projectname))
     keyboard = [row for row in keyboard if row]
     if BOT_CLONE_ENABLED and ALLOW_PUBLIC_BOT_CLONE:
@@ -5197,17 +5272,17 @@ def is_restock_notice_subscribed(nowuid, user_id):
 
 def build_product_purchase_keyboard(nowuid, uid, user_id, stock_count=None):
     stock_count = get_stock_count(nowuid) if stock_count is None else int(stock_count)
-    buy_button = InlineKeyboardButton('✅购买', callback_data=f'gmqq {nowuid}') if stock_count > 0 else InlineKeyboardButton('⚠️暂无库存', callback_data=f'nostock {nowuid}')
+    buy_button = InlineKeyboardButton(t(user_id, 'buy_now', default='✅购买'), callback_data=f'gmqq {nowuid}') if stock_count > 0 else InlineKeyboardButton(t(user_id, 'out_of_stock_button', default='⚠️暂无库存'), callback_data=f'nostock {nowuid}')
     return [
         [buy_button],
-        [InlineKeyboardButton('🏠主菜单', callback_data='backzcd'),
-         InlineKeyboardButton('⬅️返回', callback_data=f'catejflsp {uid}:1000')]
+        [InlineKeyboardButton(t(user_id, 'main_menu', default='🏠主菜单'), callback_data='backzcd'),
+         InlineKeyboardButton(t(user_id, 'back', default='⬅️返回'), callback_data=f'catejflsp {uid}:1000')]
     ]
 
 
 def nostock(update: Update, context: CallbackContext):
     query = update.callback_query
-    query.answer('当前暂无库存', show_alert=bool("true"))
+    query.answer(t(query.from_user.id, 'stock_not_enough', default='当前暂无库存'), show_alert=bool("true"))
 
 
 def notify_restock_subscribers(context, nowuid):
@@ -6590,11 +6665,16 @@ def textkeyboard(update: Update, context: CallbackContext):
         for i in get_key_list:
             projectname = i["projectname"]
             button_match_text = get_button_match_text(projectname)
+            localized_projectname = get_localized_name(user_id, i)
             get_prolist.append(projectname)
             if button_match_text != projectname:
                 get_prolist.append(button_match_text)
+            if localized_projectname and localized_projectname not in get_prolist:
+                get_prolist.append(localized_projectname)
             normalized_key_map.setdefault(normalize_menu_text(projectname), i)
             normalized_key_map.setdefault(normalize_menu_text(button_match_text), i)
+            if localized_projectname:
+                normalized_key_map.setdefault(normalize_menu_text(localized_projectname), i)
         if update.message.text:
             if (raw_text in get_prolist or text in get_prolist or normalized_text in normalized_key_map) and not should_preserve_sign_on_menu_match(sign):
                 sign = 0
@@ -7436,20 +7516,17 @@ def textkeyboard(update: Update, context: CallbackContext):
                     username = fullname
                 else:
                     username = f'<a href="https://t.me/{username}">{username}</a>'
-                fstext = f'''
-<b>[emoji:6321041414067068140:👤] 您的ID:</b>  <code>{user_id}</code>
-<b>[emoji:6323075330189826977:😃] 您的用户名:</b>  {username}
-<b>[emoji:5217818964612108191:✨] 注册日期:</b>  {creation_time}
+                fstext = (
+                    f"<b>[emoji:6321041414067068140:👤] {t(user_id, 'profile_id_label', default='您的ID:')}</b>  <code>{user_id}</code>\n"
+                    f"<b>[emoji:6323075330189826977:😃] {t(user_id, 'profile_username_label', default='您的用户名:')}</b>  {username}\n"
+                    f"<b>[emoji:5217818964612108191:✨] {t(user_id, 'profile_created_label', default='注册日期:')}</b>  {creation_time}\n\n"
+                    f"<b>[emoji:5220064167356025824:⭐️] {t(user_id, 'profile_total_count_label', default='总购数量:')}</b>  {zgsl}\n\n"
+                    f"<b>[emoji:5028746137645876535:📈] {t(user_id, 'profile_total_amount_label', default='总购金额:')}</b>  {standard_num(zgje)} USDT\n\n"
+                    f"<b>[emoji:4972482444025398275:👛] {t(user_id, 'profile_balance_label', default='您的余额:')}</b>  {USDT} USDT"
+                )
 
-<b>[emoji:5220064167356025824:⭐️] 总购数量:</b>  {zgsl}
-
-<b>[emoji:5028746137645876535:📈] 总购金额:</b>  {standard_num(zgje)} USDT
-
-<b>[emoji:4972482444025398275:👛] 您的余额:</b>  {USDT} USDT
-                '''
-
-                keyboard = [[InlineKeyboardButton('🛒购买记录', callback_data=f'gmaijilu {user_id}')],
-                            [InlineKeyboardButton('关闭', callback_data=f'close {user_id}')]]
+                keyboard = [[InlineKeyboardButton(t(user_id, 'purchase_history_button', default='🛒购买记录'), callback_data=f'gmaijilu {user_id}')],
+                            [InlineKeyboardButton(t(user_id, 'close', default='关闭'), callback_data=f'close {user_id}')]]
                 context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
                                          reply_markup=InlineKeyboardMarkup(keyboard), disable_web_page_preview=True)
             elif is_language_switch_text(text):
@@ -7474,33 +7551,10 @@ def textkeyboard(update: Update, context: CallbackContext):
                 ]
                 context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
-            elif normalized_text == normalize_menu_text('🛒商品列表'):
+            elif matches_localized_label(user_id, text, 'menu_goods_list', '🛒商品列表'):
                 del_message(update.message)
-                keylist = list(fenlei.find({}, sort=[('row', 1)]))
-                keyboard = [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                            [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                            [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                            [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                            [], [], [], [], []]
-                for i in keylist:
-                    uid = i['uid']
-                    projectname = i['projectname']
-
-                    row = i['row']
-                    hsl = 0
-                    for j in list(ejfl.find({'uid': uid})):
-                        nowuid = j['nowuid']
-                        hsl += len(list(hb.find({'nowuid': nowuid, 'state': 0})))
-                    keyboard[row - 1].append(
-                        InlineKeyboardButton(f'{projectname} [ {hsl} ]', callback_data=f'catejflsp {uid}:{hsl}'))
-                fstext = f'''
-<b>🛒这是商品列表  选择你需要的商品：
-
-❗️没使用过的本店商品的，请先少量购买测试，以免造成不必要的争执！谢谢合作！
-
-❗️账户放久难免会死，有差异，请联系客服售后！望理解！</b>
-                '''
-                keyboard.append([InlineKeyboardButton('❌关闭', callback_data=f'close {user_id}')])
+                keyboard = build_user_category_list_keyboard(user_id)
+                fstext = build_user_category_list_text(user_id)
                 context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
                                          reply_markup=InlineKeyboardMarkup(keyboard))
 
