@@ -3789,12 +3789,9 @@ def build_area_code_search_text(area_code, results):
 def build_area_code_search_keyboard(results, user_id):
     keyboard = []
     for item in results[:40]:
-        category_name = str(item.get('category_name') or '').strip()
         projectname = str(item.get('projectname') or '商品').strip()
         stock_count = int(item.get('stock_count') or 0)
         label = f'{projectname} ({stock_count})'
-        if category_name:
-            label = f'{category_name}/{label}'
         if len(label) > 60:
             label = label[:57] + '...'
         keyboard.append([InlineKeyboardButton(label, callback_data=f'gmsp {item["nowuid"]}:{stock_count}')])
