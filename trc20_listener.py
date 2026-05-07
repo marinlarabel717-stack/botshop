@@ -27,6 +27,7 @@ TRONGRID_API_KEY = os.getenv('TRONGRID_API_KEY', '').strip()
 TRONGRID_REQUEST_TIMEOUT = int(os.getenv('TRONGRID_REQUEST_TIMEOUT', '20'))
 TRONGRID_POLL_SECONDS = int(os.getenv('TRONGRID_POLL_SECONDS', '3'))
 TRONGRID_PAGE_LIMIT = max(1, min(int(os.getenv('TRONGRID_PAGE_LIMIT', '100')), 200))
+TRONGRID_MAX_PAGES = max(1, int(os.getenv('TRONGRID_MAX_PAGES', '20')))
 TRONGRID_LOOKBACK_MINUTES = max(1, int(os.getenv('TRONGRID_LOOKBACK_MINUTES', '30')))
 TRONGRID_MONITOR_ADDRESSES = os.getenv('TRONGRID_MONITOR_ADDRESSES', '')
 TRC20_USDT_CONTRACT = os.getenv('TRC20_USDT_CONTRACT', 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t').strip()
@@ -127,7 +128,18 @@ def fetch_trc20_transactions(address, min_timestamp):
 
     items = []
     fingerprint = None
+    seen_fingerprints = set()
+    page_count = 0
     while True:
+        if fingerprint:
+            if fingerprint in seen_fingerprints:
+                print(f'监听地址 {address} 遇到重复 fingerprint，提前结束本轮翻页，避免卡死')
+                break
+            seen_fingerprints.add(fingerprint)
+        page_count += 1
+        if page_count > TRONGRID_MAX_PAGES:
+            print(f'监听地址 {address} 本轮已拉取 {TRONGRID_MAX_PAGES} 页，提前结束，避免长时间卡住')
+            break
         req_params = dict(params)
         if fingerprint:
             req_params['fingerprint'] = fingerprint
