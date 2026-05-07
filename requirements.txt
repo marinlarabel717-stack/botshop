@@ -4,3 +4,6 @@ qrcode[pil]
 Pillow
 python-dotenv
 requests
+telethon
+tgcrypto
+opentele

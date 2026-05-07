@@ -19,6 +19,7 @@ from telegram import helpers
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'), override=True)
 
 from mongo import *
+from account_health_check import check_account_inventory_item
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackContext, MessageHandler, CallbackQueryHandler, \
     InlineQueryHandler, filters
 from telegram import InlineKeyboardMarkup,ForceReply, InlineKeyboardButton as TGInlineKeyboardButton, Update, ChatMemberRestricted, ChatPermissions, \
@@ -244,6 +245,8 @@ def render_env_lines(env_map):
         'OKPAY_API_URL', 'OKPAY_SHOP_ID', 'OKPAY_SHOP_TOKEN', 'OKPAY_NAME', 'OKPAY_BOT_USERNAME', 'OKPAY_CALLBACK_URL',
         'OKPAY_CALLBACK_HOST', 'OKPAY_CALLBACK_PORT',
         'SHOW_TRC20_RECHARGE_ENTRY', 'SHOW_OKPAY_RECHARGE_ENTRY',
+        'ACCOUNT_CHECK_ENABLED', 'ACCOUNT_CHECK_TIMEOUT_SECONDS', 'ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS',
+        'ACCOUNT_CHECK_PROGRESS_STEP', 'ACCOUNT_CHECK_API_ID', 'ACCOUNT_CHECK_API_HASH',
         'TRONGRID_API_BASE', 'TRONGRID_API_KEY', 'TRONGRID_API_KEYS', 'TRC20_USDT_CONTRACT', 'TRONGRID_POLL_SECONDS',
         'TRONGRID_REQUEST_TIMEOUT', 'TRONGRID_MAX_PAGES', 'TRONGRID_LOOKBACK_MINUTES', 'TRONGRID_MONITOR_ADDRESSES',
         'BOT_CLONE_ROOT', 'BOT_CLONE_REPO_URL'
@@ -414,6 +417,12 @@ BOT_CLONE_ENABLED = parse_env_bool(os.getenv('BOT_CLONE_ENABLED', 'true'))
 ALLOW_PUBLIC_BOT_CLONE = parse_env_bool(os.getenv('ALLOW_PUBLIC_BOT_CLONE', 'true'))
 BOT_CLONE_ROOT = os.getenv('BOT_CLONE_ROOT', '/www/wwwroot/botshop-clones').strip() or '/www/wwwroot/botshop-clones'
 BOT_CLONE_REPO_URL = os.getenv('BOT_CLONE_REPO_URL', '').strip()
+ACCOUNT_CHECK_ENABLED = parse_env_bool(os.getenv('ACCOUNT_CHECK_ENABLED', 'true'))
+ACCOUNT_CHECK_TIMEOUT_SECONDS = max(5, int(os.getenv('ACCOUNT_CHECK_TIMEOUT_SECONDS', '25') or '25'))
+ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS = max(3, int(os.getenv('ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS', '10') or '10'))
+ACCOUNT_CHECK_PROGRESS_STEP = max(1, int(os.getenv('ACCOUNT_CHECK_PROGRESS_STEP', '3') or '3'))
+ACCOUNT_CHECK_SUPPORTED_TYPES = {'协议号', '直登号'}
+ACCOUNT_BAN_ROOT = BASE_DIR / 'ban'
 TRC20_USDT_CONTRACT = os.getenv('TRC20_USDT_CONTRACT', 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t').strip()
 OKPAY_BOT = None
 OKPAY_HTTPD = None
@@ -1846,6 +1855,296 @@ def build_purchase_success_header(deducted_amount, remaining_amount):
         f'<b>[emoji:4965219701572503640:💰] 从余额中扣除：</b> {deducted_text} USDT\n'
         f'<b>[emoji:4972482444025398275:👛] 您的剩余金额：</b> {remaining_text} USDT'
     )
+
+
+def build_account_check_progress_text(total_count, checked_count, alive_count=0, invalid_count=0, timeout_count=0):
+    return (
+        '<b>🕜 正在检查账号状态，请稍等！</b>\n\n'
+        f'<b>已检测：</b> {checked_count} / {total_count}\n'
+        f'<b>✅ 存活账号：</b> {alive_count}\n'
+        f'<b>❌ 无效账号：</b> {invalid_count}\n'
+        f'<b>⏱ 超时账号：</b> {timeout_count}'
+    )
+
+
+def build_account_check_result_text(total_count, alive_count, invalid_count, timeout_count, deducted_amount, refund_amount, remaining_amount):
+    deducted_text = standard_num(deducted_amount)
+    refund_text = standard_num(refund_amount)
+    remaining_text = standard_num(remaining_amount)
+    lines = []
+    if alive_count == 0 and timeout_count == 0:
+        lines.append('<b>❌ 本次账号检测全部失效，已退款</b>')
+    else:
+        lines.append('<b>[emoji:5193209274452425995:🎉] 购买成功</b>')
+    lines.extend([
+        '',
+        f'<b>🎚️ 账号数量：</b> {total_count}',
+        f'<b>✅ 存活账号：</b> {alive_count}',
+        f'<b>❌ 无效账号：</b> {invalid_count}',
+    ])
+    if timeout_count:
+        lines.append(f'<b>⏱ 超时账号：</b> {timeout_count}')
+    lines.append(f'<b>[emoji:4965219701572503640:💰] 从余额中扣除：</b> {deducted_text} USDT')
+    if refund_amount:
+        lines.append(f'<b>[emoji:5235511932064129087:🎁] 已退回余额：</b> {refund_text} USDT')
+    lines.append(f'<b>[emoji:4972482444025398275:👛] 您的剩余金额：</b> {remaining_text} USDT')
+    if timeout_count:
+        lines.extend([
+            '',
+            '<b>⚠️ 超时账号已随文件一起发给你，请联系客服处理。</b>'
+        ])
+    return '\n'.join(lines)
+
+
+def build_account_check_admin_notice(fullname, username, user_id, yijiprojectname, erjiprojectname, total_count, alive_count, invalid_count, timeout_count, order_id, deducted_amount, refund_amount):
+    username_text = f'@{username}' if username else '未设置'
+    lines = [
+        f'用户: <a href="tg://user?id={user_id}">{fullname}</a> {username_text}',
+        f'用户ID: <code>{user_id}</code>',
+        f'购买商品: {yijiprojectname}/{erjiprojectname}',
+        f'订单号: <code>{order_id}</code>',
+        f'购买数量: {total_count}',
+        f'存活账号: {alive_count}',
+        f'无效账号: {invalid_count}',
+    ]
+    if timeout_count:
+        lines.append(f'超时账号: {timeout_count}')
+    lines.append(f'扣除金额: {standard_num(deducted_amount)}')
+    if refund_amount:
+        lines.append(f'退款金额: {standard_num(refund_amount)}')
+    return '\n'.join(lines)
+
+
+def create_delivery_order_id():
+    current_time = datetime.datetime.now()
+    formatted_time = current_time.strftime('%Y%m%d%H%M%S')
+    timestamp = str(current_time.timestamp()).replace('.', '')
+    return formatted_time + timestamp
+
+
+def build_inventory_entry_file_path(leixing, nowuid, projectname):
+    if leixing == '协议号':
+        session_path = BASE_DIR / '协议号' / str(nowuid) / f'{projectname}.session'
+        if session_path.exists():
+            return session_path
+        return BASE_DIR / '协议号' / str(nowuid) / f'{projectname}.json'
+    return BASE_DIR / '号包' / str(nowuid) / str(projectname)
+
+
+def archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, item_meta):
+    date_text = time.strftime('%Y-%m-%d', time.localtime())
+    bucket_name = 'session' if leixing == '协议号' else 'tdata'
+    target_root = ACCOUNT_BAN_ROOT / date_text / str(order_id) / bucket_name
+    target_root.mkdir(parents=True, exist_ok=True)
+
+    archived_files = []
+    if leixing == '协议号':
+        for suffix in ('.session', '.json'):
+            src_path = BASE_DIR / '协议号' / str(nowuid) / f'{projectname}{suffix}'
+            if src_path.exists():
+                dst_path = target_root / src_path.name
+                if dst_path.exists():
+                    dst_path.unlink()
+                shutil.move(str(src_path), str(dst_path))
+                archived_files.append(str(dst_path))
+    else:
+        src_path = BASE_DIR / '号包' / str(nowuid) / str(projectname)
+        if src_path.exists():
+            dst_path = target_root / str(projectname)
+            if dst_path.exists():
+                shutil.rmtree(dst_path, ignore_errors=True)
+            shutil.move(str(src_path), str(dst_path))
+            archived_files.append(str(dst_path))
+
+    if archived_files:
+        item_meta['archived_files'] = archived_files
+    return item_meta
+
+
+def write_invalid_archive_meta(order_id, payload):
+    date_text = time.strftime('%Y-%m-%d', time.localtime())
+    meta_path = ACCOUNT_BAN_ROOT / date_text / str(order_id) / 'meta.json'
+    meta_path.parent.mkdir(parents=True, exist_ok=True)
+    meta_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+    return meta_path
+
+
+def refund_invalid_accounts(user_id, refund_amount, order_id):
+    refund_amount = float(standard_num(refund_amount))
+    if refund_amount <= 0:
+        current_user = user.find_one({'user_id': user_id}) or {}
+        return float(current_user.get('USDT', 0))
+    current_user = user.find_one({'user_id': user_id}) or {}
+    current_balance = float(current_user.get('USDT', 0))
+    new_balance = standard_num(current_balance + refund_amount)
+    new_balance = float(new_balance) if str(new_balance).count('.') > 0 else int(new_balance)
+    user.update_one({'user_id': user_id}, {'$set': {'USDT': new_balance}})
+    timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+    user_logging(order_id, '账号检测退款', user_id, refund_amount, timer)
+    return float(new_balance)
+
+
+def send_html_message(bot, chat_id, text, **kwargs):
+    return bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML', disable_web_page_preview=True, **kwargs)
+
+
+def edit_html_message(bot, chat_id, message_id, text, **kwargs):
+    return bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text, parse_mode='HTML', disable_web_page_preview=True, **kwargs)
+
+
+def build_delivery_zip(leixing, user_id, nowuid, entry_names):
+    shijiancuo = int(time.time())
+    if leixing == '协议号':
+        zip_filename = BASE_DIR / '协议号发货' / f'{user_id}_{shijiancuo}.zip'
+        with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for file_name in entry_names:
+                for suffix in ('.json', '.session'):
+                    source_path = BASE_DIR / '协议号' / str(nowuid) / f'{file_name}{suffix}'
+                    if source_path.exists():
+                        zipf.write(source_path, source_path.name)
+        return zip_filename
+
+    zip_filename = BASE_DIR / '发货' / f'{user_id}_{shijiancuo}.zip'
+    with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for folder_name in entry_names:
+            full_folder_path = BASE_DIR / '号包' / str(nowuid) / str(folder_name)
+            if not full_folder_path.exists():
+                continue
+            for root, dirs, files in os.walk(full_folder_path):
+                for file in files:
+                    file_path = Path(root) / file
+                    zipf.write(file_path, os.path.join(str(folder_name), os.path.relpath(file_path, full_folder_path)))
+    return zip_filename
+
+
+def deliver_accounts_with_check(context, user_id, fullname, username, nowuid, erjiprojectname, yijiprojectname, leixing, selected_items, notice_text, order_id, unit_price, total_amount, progress_message_id):
+    bot = context.bot
+    total_count = len(selected_items)
+    alive_items = []
+    invalid_items = []
+    timeout_items = []
+    checked_count = 0
+    last_progress_ts = 0
+
+    for item in selected_items:
+        projectname = item['projectname']
+        target_path = build_inventory_entry_file_path(leixing, nowuid, projectname)
+        check_result = check_account_inventory_item(leixing, str(target_path), ACCOUNT_CHECK_TIMEOUT_SECONDS)
+        checked_count += 1
+
+        hb.update_one(
+            {'hbid': item['hbid']},
+            {'$set': {
+                'delivery_order_id': order_id,
+                'delivery_check_state': check_result.get('status', 'timeout'),
+                'delivery_check_reason': str(check_result.get('reason', ''))[:500],
+                'delivery_check_timer': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+            }}
+        )
+
+        item_meta = {
+            'hbid': item['hbid'],
+            'projectname': projectname,
+            'status': check_result.get('status', 'timeout'),
+            'reason': check_result.get('reason', ''),
+        }
+        if check_result.get('status') == 'alive':
+            alive_items.append(item_meta)
+        elif check_result.get('status') == 'invalid':
+            invalid_items.append(archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, item_meta))
+        else:
+            timeout_items.append(item_meta)
+
+        should_push_progress = (
+            checked_count == total_count
+            or checked_count % ACCOUNT_CHECK_PROGRESS_STEP == 0
+            or time.time() - last_progress_ts >= ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS
+        )
+        if should_push_progress:
+            try:
+                edit_html_message(
+                    bot,
+                    user_id,
+                    progress_message_id,
+                    build_account_check_progress_text(total_count, checked_count, len(alive_items), len(invalid_items), len(timeout_items))
+                )
+            except Exception:
+                pass
+            last_progress_ts = time.time()
+
+    invalid_count = len(invalid_items)
+    timeout_count = len(timeout_items)
+    refund_amount = standard_num(unit_price * invalid_count)
+    refund_amount = float(refund_amount) if str(refund_amount).count('.') > 0 else int(refund_amount)
+    remaining_amount = refund_invalid_accounts(user_id, refund_amount, order_id)
+    charged_amount = standard_num(float(total_amount) - float(refund_amount))
+    charged_amount = float(charged_amount) if str(charged_amount).count('.') > 0 else int(charged_amount)
+
+    archive_payload = {
+        'order_id': order_id,
+        'user_id': user_id,
+        'product_nowuid': nowuid,
+        'product_name': erjiprojectname,
+        'delivery_type': leixing,
+        'total_count': total_count,
+        'alive_count': len(alive_items),
+        'invalid_count': invalid_count,
+        'timeout_count': timeout_count,
+        'refund_amount': refund_amount,
+        'created_at': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()),
+        'invalid_items': invalid_items,
+    }
+    if invalid_items:
+        write_invalid_archive_meta(order_id, archive_payload)
+
+    final_text = build_account_check_result_text(
+        total_count,
+        len(alive_items),
+        invalid_count,
+        timeout_count,
+        charged_amount,
+        refund_amount,
+        remaining_amount,
+    )
+    try:
+        edit_html_message(bot, user_id, progress_message_id, final_text)
+    except Exception:
+        try:
+            send_html_message(bot, user_id, final_text)
+        except Exception:
+            pass
+
+    delivery_names = [item['projectname'] for item in alive_items + timeout_items]
+    timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+    delivery_record_text = final_text
+    if delivery_names:
+        zip_filename = build_delivery_zip(leixing, user_id, nowuid, delivery_names)
+        goumaijilua(leixing, order_id, user_id, erjiprojectname, str(zip_filename), delivery_record_text, timer)
+        bot.send_document(chat_id=user_id, document=open(zip_filename, 'rb'))
+        if notice_text:
+            send_html_message(bot, user_id, notice_text)
+    else:
+        goumaijilua(leixing, order_id, user_id, erjiprojectname, '', delivery_record_text, timer)
+
+    admin_notice = build_account_check_admin_notice(
+        fullname,
+        username,
+        user_id,
+        yijiprojectname,
+        erjiprojectname,
+        total_count,
+        len(alive_items),
+        invalid_count,
+        timeout_count,
+        order_id,
+        charged_amount,
+        refund_amount,
+    )
+    for admin_user in list(user.find({'state': '4'})):
+        try:
+            send_html_message(bot, admin_user['user_id'], admin_notice)
+        except Exception:
+            pass
 
 
 def start(update: Update, context: CallbackContext):
@@ -5471,7 +5770,9 @@ def qrgaimai(update: Update, context: CallbackContext):
         success_text = build_purchase_success_header(zxymoney, now_price)
         fstext = get_buy_notice_text(ejfl_list.get('text', ''))
         notice_text = str(fstext or '').strip()
-        context.bot.send_message(chat_id=user_id, text=success_text, parse_mode='HTML', disable_web_page_preview=True)
+        use_account_check = ACCOUNT_CHECK_ENABLED and fhtype in ACCOUNT_CHECK_SUPPORTED_TYPES
+        if not use_account_check:
+            context.bot.send_message(chat_id=user_id, text=success_text, parse_mode='HTML', disable_web_page_preview=True)
         if fhtype == '协议号':
             zgje = user_list['zgje']
             zgsl = user_list['zgsl']
@@ -5488,41 +5789,46 @@ def qrgaimai(update: Update, context: CallbackContext):
             #     folder_names.append(projectname)
 
             query_condition = {"nowuid": nowuid, "state": 0}
-
-            pipeline = [
-                {"$match": query_condition},
-                {"$limit": gmsl}
-            ]
-            cursor = hb.aggregate(pipeline)
-            document_ids = [doc['_id'] for doc in cursor]
-            cursor = hb.aggregate(pipeline)
-            folder_names = [doc['projectname'] for doc in cursor]
-            
+            selected_docs = list(hb.find(query_condition).limit(gmsl))
+            document_ids = [doc['_id'] for doc in selected_docs]
+            folder_names = [doc['projectname'] for doc in selected_docs]
+            order_id = create_delivery_order_id()
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            update_data = {"$set": {'state': 1, 'yssj': timer, 'gmid': user_id}}
+            update_data = {"$set": {'state': 1, 'yssj': timer, 'gmid': user_id, 'delivery_order_id': order_id}}
             hb.update_many({"_id": {"$in": document_ids}}, update_data) 
 
- 
-            # timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            # update_data = {"$set": {'state': 1, 'yssj': timer, 'gmid': user_id}}
-
-            # hb.update_many(query_condition, update_data, limit=gmsl)
-
-            fstext = f'''
+            if use_account_check:
+                progress_message = send_html_message(
+                    context.bot,
+                    user_id,
+                    build_account_check_progress_text(gmsl, 0, 0, 0, 0)
+                )
+                selected_items = [{'hbid': doc['hbid'], 'projectname': doc['projectname']} for doc in selected_docs]
+                threading.Thread(
+                    target=deliver_accounts_with_check,
+                    args=[
+                        context, user_id, fullname, username, nowuid, erjiprojectname, yijiprojectname, '协议号',
+                        selected_items, notice_text, order_id, float(zxymoney) / max(gmsl, 1), zxymoney,
+                        progress_message.message_id
+                    ],
+                    daemon=True,
+                ).start()
+            else:
+                fstext = f'''
 用户: <a href="tg://user?id={user_id}">{fullname}</a> @{username}
 用户ID: <code>{user_id}</code>
 购买商品: {yijiprojectname}/{erjiprojectname}
 购买数量: {gmsl}
 购买金额: {zxymoney}
-            '''
-            for i in list(user.find({"state": '4'})):
-                try:
-                    context.bot.send_message(chat_id=i['user_id'], text=fstext, parse_mode='HTML')
-                except:
-                    pass
+                '''
+                for i in list(user.find({"state": '4'})):
+                    try:
+                        context.bot.send_message(chat_id=i['user_id'], text=fstext, parse_mode='HTML')
+                    except:
+                        pass
 
-            Timer(1, dabaohao,
-                  args=[context, user_id, folder_names, '协议号', nowuid, erjiprojectname, notice_text, timer]).start()
+                Timer(1, dabaohao,
+                      args=[context, user_id, folder_names, '协议号', nowuid, erjiprojectname, notice_text, timer]).start()
             # shijiancuo = int(time.time())
             # zip_filename = f"./协议号发货/{user_id}_{shijiancuo}.zip"
             # with zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED) as zipf:
@@ -5725,38 +6031,46 @@ def qrgaimai(update: Update, context: CallbackContext):
             #     folder_names.append(projectname)
 
             query_condition = {"nowuid": nowuid, "state": 0}
-
-            pipeline = [
-                {"$match": query_condition},
-                {"$limit": gmsl}
-            ]
-            cursor = hb.aggregate(pipeline)
-            document_ids = [doc['_id'] for doc in cursor]
-            cursor = hb.aggregate(pipeline)
-            folder_names = [doc['projectname'] for doc in cursor]
-            
+            selected_docs = list(hb.find(query_condition).limit(gmsl))
+            document_ids = [doc['_id'] for doc in selected_docs]
+            folder_names = [doc['projectname'] for doc in selected_docs]
+            order_id = create_delivery_order_id()
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            update_data = {"$set": {'state': 1, 'yssj': timer, 'gmid': user_id}}
+            update_data = {"$set": {'state': 1, 'yssj': timer, 'gmid': user_id, 'delivery_order_id': order_id}}
             hb.update_many({"_id": {"$in": document_ids}}, update_data) 
 
- 
-
-
-            fstext = f'''
+            if use_account_check:
+                progress_message = send_html_message(
+                    context.bot,
+                    user_id,
+                    build_account_check_progress_text(gmsl, 0, 0, 0, 0)
+                )
+                selected_items = [{'hbid': doc['hbid'], 'projectname': doc['projectname']} for doc in selected_docs]
+                threading.Thread(
+                    target=deliver_accounts_with_check,
+                    args=[
+                        context, user_id, fullname, username, nowuid, erjiprojectname, yijiprojectname, '直登号',
+                        selected_items, notice_text, order_id, float(zxymoney) / max(gmsl, 1), zxymoney,
+                        progress_message.message_id
+                    ],
+                    daemon=True,
+                ).start()
+            else:
+                fstext = f'''
 用户: <a href="tg://user?id={user_id}">{fullname}</a> @{username}
 用户ID: <code>{user_id}</code>
 购买商品: {yijiprojectname}/{erjiprojectname}
 购买数量: {gmsl}
 购买金额: {zxymoney}
-            '''
-            for i in list(user.find({"state": '4'})):
-                try:
-                    context.bot.send_message(chat_id=i['user_id'], text=fstext, parse_mode='HTML')
-                except:
-                    pass
+                '''
+                for i in list(user.find({"state": '4'})):
+                    try:
+                        context.bot.send_message(chat_id=i['user_id'], text=fstext, parse_mode='HTML')
+                    except:
+                        pass
 
-            Timer(1, dabaohao,
-                  args=[context, user_id, folder_names, '直登号', nowuid, erjiprojectname, notice_text, timer]).start()
+                Timer(1, dabaohao,
+                      args=[context, user_id, folder_names, '直登号', nowuid, erjiprojectname, notice_text, timer]).start()
             # shijiancuo = int(time.time())
             # zip_filename = f"./发货/{user_id}_{shijiancuo}.zip"
             # with zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED) as zipf:
@@ -7410,6 +7724,6 @@ def main():
 
 if __name__ == '__main__':
 
-    for i in ['发货', '协议号发货', '手机接码发货', '临时文件夹', '谷歌发货', '协议号', '号包']:
+    for i in ['发货', '协议号发货', '手机接码发货', '临时文件夹', '谷歌发货', '协议号', '号包', 'ban']:
         create_folder_if_not_exists(i)
     main()
