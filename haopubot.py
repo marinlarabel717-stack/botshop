@@ -374,6 +374,7 @@ TRC20_USDT_CONTRACT = os.getenv('TRC20_USDT_CONTRACT', 'TR7NHqjeKQxGTCi8q8ZY4pL8
 OKPAY_BOT = None
 OKPAY_HTTPD = None
 APP_EVENT_LOOP = None
+TOPUP_LOOP_STARTED = False
 
 
 def ensure_topup_indexes():
@@ -6957,6 +6958,15 @@ def jiexi(context: CallbackContext):
             qukuai.update_one({'txid': txid}, {"$set": {"state": 2, 'reason': 'order_not_found'}})
 
 
+def topup_realtime_loop(context: CallbackContext):
+    while 1:
+        try:
+            jiexi(context)
+        except Exception as exc:
+            logging.exception('TRC20到账监听循环异常: %s', exc)
+        time.sleep(3)
+
+
 def jianceguoqi(context: CallbackContext):
     while 1:
         for i in topup.find({'state': {'$ne': 1}}):
@@ -6989,7 +6999,10 @@ def jianceguoqi(context: CallbackContext):
         time.sleep(3)
 
 def suoyouchengxu(context: CallbackContext):
-    # Timer(1, jiexi, args=[context]).start()
+    global TOPUP_LOOP_STARTED
+    if not TOPUP_LOOP_STARTED:
+        Timer(1, topup_realtime_loop, args=[context]).start()
+        TOPUP_LOOP_STARTED = True
     Timer(1, jianceguoqi, args=[context]).start()
     
     
@@ -7271,7 +7284,6 @@ def main():
     ))
 
     application.job_queue.run_repeating(sync_job(suoyouchengxu), interval=1, first=1, name='suoyouchengxu')
-    application.job_queue.run_repeating(sync_job(jiexi), interval=3, first=1, name='chongzhi')
     application.run_polling(timeout=600)
 
 
