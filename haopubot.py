@@ -3899,7 +3899,7 @@ def restockrequestarea(update: Update, context: CallbackContext):
         upsert=True
     )
     if result.upserted_id is None:
-        context.bot.send_message(chat_id=user_id, text='这个区号你已经提醒过补货啦，请等管理员上新 🌸')
+        context.bot.send_message(chat_id=user_id, text='这个区号你已经提醒过补货啦，请等管理员上新 [emoji:5222044641200720562:🌸]', parse_mode='HTML')
         return
     display_name = fullname or username or str(user_id)
     at_text = f'@{username}' if username else '无用户名'
