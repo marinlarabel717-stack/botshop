@@ -4856,11 +4856,25 @@ def format_usdt_amount(value, places='0.0001'):
     return text or '0'
 
 
+TOPUP_STATE_PENDING = 0
+TOPUP_STATE_PAID = 1
+TOPUP_STATE_EXPIRED = 2
+TOPUP_STATE_CANCELED = 3
+
+
+def current_ts_ms():
+    return int(time.time() * 1000)
+
+
+def build_topup_expire_ts_ms(created_ts_ms, minutes=10):
+    return int(created_ts_ms) + int(minutes * 60 * 1000)
+
+
 def allocate_trc20_pay_amount(base_amount, user_id):
     base = Decimal(str(base_amount)).quantize(Decimal('0.0001'))
     rng = random.SystemRandom()
     pending_amounts = set()
-    for row in topup.find({'type': 'trc20', 'state': {'$ne': 1}}, {'pay_amount_text': 1}):
+    for row in topup.find({'type': 'trc20', 'state': TOPUP_STATE_PENDING}, {'pay_amount_text': 1}):
         pay_amount_text = row.get('pay_amount_text')
         if pay_amount_text:
             pending_amounts.add(str(pay_amount_text))
@@ -5023,8 +5037,15 @@ def okpay_mark_deposit_paid(payload):
     order = topup.find_one({'bianhao': unique_id})
     if order is None:
         return False, 'order_not_found'
-    if order.get('state') == 1:
+    if order.get('state') == TOPUP_STATE_PAID:
         return True, 'already_paid'
+    if order.get('state') != TOPUP_STATE_PENDING:
+        return False, 'order_expired'
+
+    expire_ts_ms = int(order.get('expire_ts_ms') or 0)
+    if expire_ts_ms and current_ts_ms() > expire_ts_ms:
+        topup.update_one({'bianhao': unique_id, 'state': TOPUP_STATE_PENDING}, {'$set': {'state': TOPUP_STATE_EXPIRED, 'expired_timer': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()), 'status': -1}})
+        return False, 'order_expired'
 
     user_id = order['user_id']
     money = float(amount or order['money'])
@@ -5037,9 +5058,10 @@ def okpay_mark_deposit_paid(payload):
     timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
     user.update_one({'user_id': user_id}, {'$set': {'USDT': now_money}})
     topup.update_one({'bianhao': unique_id}, {'$set': {
-        'state': 1,
+        'state': TOPUP_STATE_PAID,
         'status': 1,
         'paid_timer': timer,
+        'paid_ts_ms': current_ts_ms(),
         'okpay_order_id': order_id,
         'pay_user_id': pay_user_id,
         'coin': coin,
@@ -5158,10 +5180,12 @@ def create_trc20_deposit_order(context, user_id, amount):
         context.bot.send_message(chat_id=user_id, text='充值金额必须大于0')
         return
 
-    created_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-    deadline_time = (datetime.datetime.strptime(created_time, '%Y-%m-%d %H:%M:%S') + timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M:%S')
+    created_ts_ms = current_ts_ms()
+    expire_ts_ms = build_topup_expire_ts_ms(created_ts_ms, minutes=10)
+    created_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(created_ts_ms / 1000))
+    deadline_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(expire_ts_ms / 1000))
     bianhao = 'TRC20' + time.strftime('%Y%m%d%H%M%S', time.localtime()) + str(user_id)
-    topup.delete_many({'user_id': user_id, 'state': {'$ne': 1}})
+    topup.update_many({'user_id': user_id, 'type': 'trc20', 'state': TOPUP_STATE_PENDING}, {'$set': {'state': TOPUP_STATE_CANCELED, 'canceled_timer': created_time, 'cancel_reason': 'recreated'}})
 
     reserved_id = None
     pay_amount = None
@@ -5182,10 +5206,12 @@ def create_trc20_deposit_order(context, user_id, amount):
                 'pay_amount': float(pay_amount),
                 'pay_amount_text': pay_amount_text,
                 'timer': created_time,
+                'created_ts_ms': created_ts_ms,
+                'expire_ts_ms': expire_ts_ms,
                 'message_id': 0,
                 'message_kind': 'photo',
                 'type': 'trc20',
-                'state': 0,
+                'state': TOPUP_STATE_PENDING,
                 'status': 0,
                 'to_address': trc20,
                 'coin': 'USDT'
@@ -5215,7 +5241,7 @@ def create_trc20_deposit_order(context, user_id, amount):
 ❗️付款前请再次核对地址与金额，避免转错
     '''
     keyboard = [
-        [InlineKeyboardButton('❌取消订单', callback_data=f'qxdingdan {user_id}')]
+        [InlineKeyboardButton('❌取消订单', callback_data=f'qxdingdan {bianhao}')]
     ]
 
     qr_image = qrcode.make(data=trc20)
@@ -5251,9 +5277,11 @@ def create_okpay_deposit_order(context, user_id, amount):
         context.bot.send_message(chat_id=user_id, text='充值金额必须大于0')
         return
 
-    topup.delete_many({'user_id': user_id, 'state': {'$ne': 1}})
-    bianhao = 'OKPAY' + time.strftime('%Y%m%d%H%M%S', time.localtime()) + str(user_id)
     timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+    created_ts_ms = current_ts_ms()
+    expire_ts_ms = build_topup_expire_ts_ms(created_ts_ms, minutes=10)
+    topup.update_many({'user_id': user_id, 'type': 'okpay', 'state': TOPUP_STATE_PENDING}, {'$set': {'state': TOPUP_STATE_CANCELED, 'canceled_timer': timer, 'cancel_reason': 'recreated'}})
+    bianhao = 'OKPAY' + time.strftime('%Y%m%d%H%M%S', time.localtime()) + str(user_id)
     try:
         result = okpay_pay_link(bianhao, amount, 'USDT', bot=context.bot)
     except Exception as exc:
@@ -5287,7 +5315,7 @@ def create_okpay_deposit_order(context, user_id, amount):
     keyboard = [
         [InlineKeyboardButton('💳 打开OKPay支付', url=pay_url)],
         [InlineKeyboardButton('✅ 我已支付', callback_data=f'okpay_paid {bianhao}')],
-        [InlineKeyboardButton('❌取消订单', callback_data=f'qxdingdan {user_id}')]
+        [InlineKeyboardButton('❌取消订单', callback_data=f'qxdingdan {bianhao}')]
     ]
     message_id = context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
     topup.insert_one({
@@ -5295,9 +5323,11 @@ def create_okpay_deposit_order(context, user_id, amount):
         'user_id': user_id,
         'money': float(amount),
         'timer': timer,
+        'created_ts_ms': created_ts_ms,
+        'expire_ts_ms': expire_ts_ms,
         'message_id': message_id.message_id,
         'type': 'okpay',
-        'state': 0,
+        'state': TOPUP_STATE_PENDING,
         'status': 0,
         'okpay_order_id': okpay_order_id,
         'pay_url': pay_url,
@@ -5883,8 +5913,12 @@ def qxdingdan(update: Update, context: CallbackContext):
     bot_id = context.bot.id
     chat_id = chat.id
     user_id = query.from_user.id
+    order_id = query.data.replace('qxdingdan ', '', 1).strip()
 
-    topup.delete_one({'user_id': user_id, 'state': {'$ne': 1}})
+    topup.update_one(
+        {'bianhao': order_id, 'user_id': user_id, 'state': TOPUP_STATE_PENDING},
+        {'$set': {'state': TOPUP_STATE_CANCELED, 'canceled_timer': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()), 'cancel_reason': 'user_canceled'}}
+    )
     context.bot.delete_message(chat_id=query.from_user.id, message_id=query.message.message_id)
 
 
@@ -5900,8 +5934,11 @@ def okpay_paid(update: Update, context: CallbackContext):
     if order.get('user_id') != user_id:
         context.bot.send_message(chat_id=user_id, text='这笔订单不属于你，无法主动查单')
         return
-    if order.get('state') == 1:
+    if order.get('state') == TOPUP_STATE_PAID:
         context.bot.send_message(chat_id=user_id, text='这笔OKPay订单已经到账，无需重复检查')
+        return
+    if order.get('state') != TOPUP_STATE_PENDING:
+        context.bot.send_message(chat_id=user_id, text='这笔OKPay订单已失效，请重新创建订单')
         return
 
     try:
@@ -5925,6 +5962,9 @@ def okpay_paid(update: Update, context: CallbackContext):
 
     if msg == 'already_paid':
         context.bot.send_message(chat_id=user_id, text='这笔OKPay订单已经到账，无需重复检查')
+        return
+    if msg == 'order_expired':
+        context.bot.send_message(chat_id=user_id, text='这笔OKPay订单已超时失效，请重新创建订单')
         return
 
     context.bot.send_message(
@@ -6920,12 +6960,20 @@ def jiexi(context: CallbackContext):
         txid = i['txid']
         quant = i['quant']
         from_address = i['from_address']
+        block_timestamp = int(i.get('block_timestamp') or 0)
         quant123 = Decimal(str(quant)) / Decimal('1000000')
         today_money = abs(quant123.quantize(Decimal('0.0001')))
         pay_amount_text = format_usdt_amount(today_money)
         dj_list = topup.find_one(
-            {'type': 'trc20', 'state': {'$ne': 1}, 'to_address': trc20, 'pay_amount_text': pay_amount_text},
-            sort=[('timer', 1)]
+            {
+                'type': 'trc20',
+                'state': TOPUP_STATE_PENDING,
+                'to_address': trc20,
+                'pay_amount_text': pay_amount_text,
+                'created_ts_ms': {'$lte': block_timestamp},
+                'expire_ts_ms': {'$gte': block_timestamp}
+            },
+            sort=[('created_ts_ms', 1)]
         )
         if dj_list is not None:
             message_id = dj_list['message_id']
@@ -6947,9 +6995,10 @@ def jiexi(context: CallbackContext):
             us_list = user.find_one({"user_id": user_id})
             user.update_one({'user_id': user_id}, {"$set": {'USDT': now_price}})
             topup.update_one({'_id': dj_list['_id']}, {'$set': {
-                'state': 1,
+                'state': TOPUP_STATE_PAID,
                 'status': 1,
                 'paid_timer': timer,
+                'paid_ts_ms': current_ts_ms(),
                 'paid_amount': float(today_money),
                 'txid': txid,
                 'from_address': from_address,
@@ -6989,7 +7038,7 @@ def jiexi(context: CallbackContext):
                     continue
             qukuai.update_one({'txid': txid}, {"$set": {"state": 1, 'match_order': dj_list['bianhao'], 'match_user_id': user_id}})
         else:
-            qukuai.update_one({'txid': txid}, {"$set": {"state": 2, 'reason': 'order_not_found'}})
+            qukuai.update_one({'txid': txid}, {"$set": {"state": 2, 'reason': 'order_not_found_or_expired'}})
 
 
 def topup_realtime_loop(context: CallbackContext):
@@ -7003,33 +7052,33 @@ def topup_realtime_loop(context: CallbackContext):
 
 def jianceguoqi(context: CallbackContext):
     while 1:
-        for i in topup.find({'state': {'$ne': 1}}):
+        for i in topup.find({'state': TOPUP_STATE_PENDING}):
             timer = i['timer']
             user_id = i['user_id']
             message_id = i['message_id']
-            dt = datetime.datetime.strptime(timer, '%Y-%m-%d %H:%M:%S')
-            new_dt = dt + timedelta(minutes=10)
-            new_time_str = new_dt.strftime('%Y-%m-%d %H:%M:%S')
+            expire_ts_ms = int(i.get('expire_ts_ms') or 0)
+            if expire_ts_ms <= 0:
+                dt = datetime.datetime.strptime(timer, '%Y-%m-%d %H:%M:%S')
+                expire_ts_ms = int((dt + timedelta(minutes=10)).timestamp() * 1000)
 
             keyboard = [[InlineKeyboardButton("✅已读（点击销毁此消息）", callback_data=f'close {user_id}')]]
 
-            timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            if timer >= new_time_str:
+            if current_ts_ms() >= expire_ts_ms:
                 try:
                     if i.get('type') == 'okpay':
                         context.bot.edit_message_text(chat_id=user_id, message_id=message_id,
-                                                      text='❌ OKPay充值订单已超时，请重新创建订单。',
+                                                      text='❌ OKPay充值订单已超时失效，请重新创建订单。\n\n超过 10 分钟后再支付，将不会自动到账。',
                                                       reply_markup=InlineKeyboardMarkup(keyboard))
                     elif i.get('type') == 'trc20':
                         context.bot.edit_message_caption(chat_id=user_id, message_id=message_id,
-                                                         caption='❌ TRC20充值订单已超时，请重新创建订单。',
+                                                         caption='❌ TRC20充值订单已超时失效，请重新创建订单。\n\n超过 10 分钟后再转账，将不会自动到账。',
                                                          reply_markup=InlineKeyboardMarkup(keyboard))
                     else:
                         context.bot.edit_message_media(chat_id=user_id, message_id=message_id, media=InputMediaPhoto(media='AgACAgQAAxkBAAI4Nmagu-8nD4AQrv6ftlzrLjLSxlOnAAJavzEbAZYIUch6ykGfk6CaAQADAgADeQADNQQ', caption='❌ 订单支付超时(或金额错误)'),reply_markup=InlineKeyboardMarkup(keyboard))
 
                 except:
                     pass
-                topup.delete_one({'user_id': user_id, 'state': {'$ne': 1}})
+                topup.update_one({'_id': i['_id'], 'state': TOPUP_STATE_PENDING}, {'$set': {'state': TOPUP_STATE_EXPIRED, 'expired_timer': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()), 'status': -1}})
         time.sleep(3)
 
 def suoyouchengxu(context: CallbackContext):
