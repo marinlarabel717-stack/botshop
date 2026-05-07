@@ -48,8 +48,10 @@ ADMIN_EMOJI_OKPAY = '[emoji:5445353829304387411:💳]'
 ADMIN_EMOJI_GOODS = '[emoji:5312361253610475399:🛒]'
 ADMIN_EMOJI_WELCOME = '[emoji:5458382591121964689:✍️]'
 ADMIN_EMOJI_MENU = '[emoji:5341715473882955310:⚙️]'
-ADMIN_EMOJI_NOTICE = '[emoji:5301246586918024418:⚠️]'
+ADMIN_EMOJI_BUY_NOTICE = '[emoji:5235511932064129087:🎁]'
+ADMIN_EMOJI_RESTOCK = '[emoji:5220214598585568818:🚨]'
 ADMIN_EMOJI_CLONE = '#g [emoji:5287684458881756303:🤖]'
+ADMIN_EMOJI_CLONE_LIST = '[emoji:5132131004097496494:🧩]'
 ADMIN_EMOJI_CLOSE = '[emoji:5210952531676504517:❌]'
 
 MOOD_EMOJI_SOFT = '[emoji:5222044641200720562:🌸]'
@@ -70,6 +72,31 @@ def parse_admin_user_ids(value):
         except ValueError:
             pass
     return admin_ids
+
+
+def build_admin_dashboard_keyboard(user_id):
+    buttons = [
+        InlineKeyboardButton(f'{ADMIN_EMOJI_USERLIST}用户列表', callback_data='yhlist'),
+        InlineKeyboardButton(f'{ADMIN_EMOJI_DM}对话用户私发', callback_data='sifa'),
+        InlineKeyboardButton(f'{ADMIN_EMOJI_TRC20}充值地址设置', callback_data='settrc20'),
+        InlineKeyboardButton(f'{ADMIN_EMOJI_OKPAY}OKPay配置', callback_data='okpaycfg'),
+        InlineKeyboardButton(f'{ADMIN_EMOJI_GOODS}商品管理', callback_data='spgli'),
+        InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}欢迎语修改', callback_data='startupdate'),
+        InlineKeyboardButton(f'{ADMIN_EMOJI_BUY_NOTICE}购买提醒', callback_data='buynoticecfg'),
+        InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}菜单按钮', callback_data='addzdykey'),
+        InlineKeyboardButton(f'{ADMIN_EMOJI_RESTOCK}补货通知', callback_data='restockpushcfg'),
+    ]
+    if BOT_CLONE_ENABLED:
+        buttons.extend([
+            InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}一键克隆同款', callback_data='clonebot'),
+            InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE_LIST}克隆列表', callback_data='clonelist 0'),
+        ])
+    buttons.append(InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}'))
+
+    keyboard = []
+    for index in range(0, len(buttons), 3):
+        keyboard.append(buttons[index:index + 3])
+    return keyboard
 
 
 ADMIN_USER_IDS = parse_admin_user_ids(os.getenv('ADMIN_USER_IDS', ''))
@@ -1855,24 +1882,7 @@ def start(update: Update, context: CallbackContext):
     context.bot.send_message(chat_id=user_id, text=hyy, reply_markup=reply_markup,
                              entities=entities)
     if state == '4':
-        keyboard = [
-            [InlineKeyboardButton(f'{ADMIN_EMOJI_USERLIST}用户列表', callback_data='yhlist'), InlineKeyboardButton(f'{ADMIN_EMOJI_DM}对话用户私发', callback_data='sifa')],
-            [InlineKeyboardButton(f'{ADMIN_EMOJI_TRC20}充值地址设置', callback_data='settrc20'),
-             InlineKeyboardButton(f'{ADMIN_EMOJI_OKPAY}OKPay配置', callback_data='okpaycfg')],
-            [InlineKeyboardButton(f'{ADMIN_EMOJI_GOODS}商品管理', callback_data='spgli'),
-             InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}欢迎语修改', callback_data='startupdate')],
-            [InlineKeyboardButton(f'{ADMIN_EMOJI_NOTICE}购买提醒', callback_data='buynoticecfg')],
-            [InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}菜单按钮', callback_data='addzdykey')],
-        ]
-        if BOT_CLONE_ENABLED:
-            keyboard.append([
-                InlineKeyboardButton(f'{ADMIN_EMOJI_NOTICE}补货通知', callback_data='restockpushcfg'),
-                InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}一键克隆同款', callback_data='clonebot')
-            ])
-            keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}克隆列表', callback_data='clonelist 0')])
-        else:
-            keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_NOTICE}补货通知', callback_data='restockpushcfg')])
-        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
+        keyboard = build_admin_dashboard_keyboard(user_id)
         jqrsyrs = len(list(user.find({})))
         numu = 0
         for i in list(user.find({"USDT": {"$gt": 0}})):
@@ -2122,24 +2132,7 @@ def backstart(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
     user_id = query.from_user.id
-    keyboard = [
-        [InlineKeyboardButton(f'{ADMIN_EMOJI_USERLIST}用户列表', callback_data='yhlist'), InlineKeyboardButton(f'{ADMIN_EMOJI_DM}对话用户私发', callback_data='sifa')],
-        [InlineKeyboardButton(f'{ADMIN_EMOJI_TRC20}充值地址设置', callback_data='settrc20'),
-         InlineKeyboardButton(f'{ADMIN_EMOJI_OKPAY}OKPay配置', callback_data='okpaycfg')],
-        [InlineKeyboardButton(f'{ADMIN_EMOJI_GOODS}商品管理', callback_data='spgli'),
-         InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}欢迎语修改', callback_data='startupdate')],
-        [InlineKeyboardButton(f'{ADMIN_EMOJI_NOTICE}购买提醒', callback_data='buynoticecfg')],
-        [InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}菜单按钮', callback_data='addzdykey')],
-    ]
-    if BOT_CLONE_ENABLED:
-        keyboard.append([
-            InlineKeyboardButton(f'{ADMIN_EMOJI_NOTICE}补货通知', callback_data='restockpushcfg'),
-            InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}一键克隆同款', callback_data='clonebot')
-        ])
-        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}克隆列表', callback_data='clonelist 0')])
-    else:
-        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_NOTICE}补货通知', callback_data='restockpushcfg')])
-    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
+    keyboard = build_admin_dashboard_keyboard(user_id)
     jqrsyrs = len(list(user.find({})))
 
     numu = 0
@@ -3192,7 +3185,7 @@ def restockpushcfg(update: Update, context: CallbackContext):
 def build_buy_notice_config_text():
     notice_text = get_buy_notice_text('')
     return (
-        f'{ADMIN_EMOJI_NOTICE}购买提醒配置\n\n'
+        f'{ADMIN_EMOJI_BUY_NOTICE}购买提醒配置\n\n'
         '[emoji:5217818964612108191:✨] 支持 HTML 和会员 emoji\n'
         '[emoji:5220064167356025824:⭐️] 当前文案预览如下：'
     ), notice_text
@@ -4493,7 +4486,7 @@ def build_restock_push_config_text():
     target = get_restock_push_target()
     target_text = target or '未配置'
     return (
-        f'{ADMIN_EMOJI_NOTICE}补货通知推送\n\n'
+        f'{ADMIN_EMOJI_RESTOCK}补货通知推送\n\n'
         f'{ADMIN_EMOJI_GOODS} 当前目标：<code>{target_text}</code>\n\n'
         '支持填写群组/频道 @username、chat_id、或 t.me 链接\n'
         '例如：<code>@yourchannel</code>、<code>-1001234567890</code>、<code>https://t.me/yourchannel</code>'
