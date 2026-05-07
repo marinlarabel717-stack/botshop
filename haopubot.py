@@ -1838,6 +1838,20 @@ def get_buy_notice_text(product_text=''):
     return product_text
 
 
+def build_purchase_success_notice(notice_text, deducted_amount, remaining_amount):
+    deducted_text = standard_num(deducted_amount)
+    remaining_text = standard_num(remaining_amount)
+    header_text = (
+        '<b>[emoji:5350486389806868244:✔️] 购买成功</b>\n\n'
+        f'<b>[emoji:5350486389806868244:✔️] 从余额中扣除：</b> {deducted_text} USDT\n'
+        f'<b>[emoji:5350486389806868244:✔️] 您的剩余金额：</b> {remaining_text} USDT'
+    )
+    body_text = str(notice_text or '').strip()
+    if not body_text:
+        return header_text
+    return f'{header_text}\n\n{body_text}'
+
+
 def start(update: Update, context: CallbackContext):
     us = update.effective_user
     chat_id = update.effective_chat.id
@@ -5455,7 +5469,11 @@ def qrgaimai(update: Update, context: CallbackContext):
         yijiid = ejfl_list['uid']
         yiji_list = fenlei.find_one({'uid': yijiid})
         yijiprojectname = yiji_list['projectname']
-        fstext = get_buy_notice_text(ejfl_list.get('text', ''))
+        fstext = build_purchase_success_notice(
+            get_buy_notice_text(ejfl_list.get('text', '')),
+            zxymoney,
+            now_price
+        )
         if fhtype == '协议号':
             zgje = user_list['zgje']
             zgsl = user_list['zgsl']
