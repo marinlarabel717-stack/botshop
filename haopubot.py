@@ -6926,13 +6926,13 @@ def jiexi(context: CallbackContext):
                 'quant_raw': str(quant)
             }})
             text = f'''
-<b>✅ TRC20充值到账</b>
+<b>[emoji:5193209274452425995:🎉] 恭喜您的充值到账啦！！</b>
 
-订单号：<code>{dj_list['bianhao']}</code>
-到账金额：<code>{pay_amount_text} USDT</code>
-交易哈希：<code>{txid}</code>
+[emoji:5954227490179255253:🔵] 订单号：<code>{dj_list['bianhao']}</code>
+[emoji:5954227490179255253:🔵] 到账金额：<code>{pay_amount_text} USDT</code>
+[emoji:5954227490179255253:🔵] 交易哈希：<code>{txid}</code>
 
-💳 当前余额：<code>{now_price} USDT</code>
+[emoji:5445353829304387411:💳] 当前余额：<code>{now_price} USDT</code>
             '''
             try:
                 context.bot.delete_message(chat_id=user_id, message_id=message_id)
