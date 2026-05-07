@@ -3793,6 +3793,7 @@ def search_products_by_area_code(area_code):
             'uid': uid,
             'projectname': str(ej_item.get('projectname') or '商品'),
             'category_name': category_name,
+            'money': ej_item.get('money', 0),
             'stock_count': get_stock_count(nowuid)
         })
 
@@ -3808,6 +3809,7 @@ def search_products_by_area_code(area_code):
                 'uid': uid,
                 'projectname': str(ej_item.get('projectname') or '商品'),
                 'category_name': matched_uid_map.get(uid, ''),
+                'money': ej_item.get('money', 0),
                 'stock_count': get_stock_count(nowuid)
             })
 
@@ -3838,8 +3840,9 @@ def build_area_code_search_keyboard(results, user_id):
     has_stock = any(int(item.get('stock_count') or 0) > 0 for item in results)
     for item in results[:40]:
         projectname = str(item.get('projectname') or '商品').strip()
+        money = standard_num(item.get('money', 0))
         stock_count = int(item.get('stock_count') or 0)
-        label = f'{projectname} ({stock_count})'
+        label = f'{projectname}    ${money}    [ {stock_count} ]'
         if len(label) > 60:
             label = label[:57] + '...'
         keyboard.append([InlineKeyboardButton(label, callback_data=f'gmsp {item["nowuid"]}:{stock_count}')])
