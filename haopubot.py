@@ -3721,6 +3721,115 @@ def build_product_purchase_text(projectname, money, stock_count):
     '''
 
 
+def is_area_code_search_text(text):
+    return isinstance(text, str) and re.fullmatch(r'\+\d{1,4}', text.strip()) is not None
+
+
+def search_products_by_area_code(area_code):
+    area_code = str(area_code or '').strip()
+    if not area_code:
+        return []
+    pattern = re.escape(area_code)
+    matched = []
+    seen_nowuids = set()
+    matched_uid_map = {}
+
+    for fl_item in fenlei.find({'projectname': {'$regex': pattern}}):
+        uid = fl_item.get('uid')
+        if uid:
+            matched_uid_map[str(uid)] = str(fl_item.get('projectname') or '')
+
+    query = {'projectname': {'$regex': pattern}}
+    for ej_item in ejfl.find(query, sort=[('uid', 1), ('row', 1)]):
+        nowuid = str(ej_item.get('nowuid') or '')
+        if not nowuid or nowuid in seen_nowuids:
+            continue
+        seen_nowuids.add(nowuid)
+        uid = str(ej_item.get('uid') or '')
+        category_name = matched_uid_map.get(uid)
+        if not category_name and uid:
+            fl_item = fenlei.find_one({'uid': uid}) or {}
+            category_name = str(fl_item.get('projectname') or '')
+        matched.append({
+            'nowuid': nowuid,
+            'uid': uid,
+            'projectname': str(ej_item.get('projectname') or '商品'),
+            'category_name': category_name,
+            'stock_count': get_stock_count(nowuid)
+        })
+
+    if matched_uid_map:
+        for ej_item in ejfl.find({'uid': {'$in': list(matched_uid_map.keys())}}, sort=[('uid', 1), ('row', 1)]):
+            nowuid = str(ej_item.get('nowuid') or '')
+            if not nowuid or nowuid in seen_nowuids:
+                continue
+            seen_nowuids.add(nowuid)
+            uid = str(ej_item.get('uid') or '')
+            matched.append({
+                'nowuid': nowuid,
+                'uid': uid,
+                'projectname': str(ej_item.get('projectname') or '商品'),
+                'category_name': matched_uid_map.get(uid, ''),
+                'stock_count': get_stock_count(nowuid)
+            })
+
+    return matched
+
+
+def build_area_code_search_text(area_code, results):
+    total = len(results)
+    return (
+        f'<b>[emoji:5220064167356025824:⭐️] 区号搜索结果</b>\n\n'
+        f'[emoji:5217818964612108191:✨] 搜索关键词：<code>{area_code}</code>\n'
+        f'[emoji:5028746137645876535:📈] 匹配商品：<code>{total}</code> 个\n\n'
+        '请从下面列表中选择要查看的商品。'
+    )
+
+
+def build_area_code_search_keyboard(results, user_id):
+    keyboard = []
+    for item in results[:40]:
+        category_name = str(item.get('category_name') or '').strip()
+        projectname = str(item.get('projectname') or '商品').strip()
+        stock_count = int(item.get('stock_count') or 0)
+        label = f'{projectname} ({stock_count})'
+        if category_name:
+            label = f'{category_name}/{label}'
+        if len(label) > 60:
+            label = label[:57] + '...'
+        keyboard.append([InlineKeyboardButton(label, callback_data=f'gmsp {item["nowuid"]}:{stock_count}')])
+    keyboard.append([InlineKeyboardButton('🏠主菜单', callback_data='backzcd'), InlineKeyboardButton('❌关闭', callback_data=f'close {user_id}')])
+    return keyboard
+
+
+def handle_area_code_search(context, user_id, fullname, username, area_code):
+    results = search_products_by_area_code(area_code)
+    if results:
+        context.bot.send_message(
+            chat_id=user_id,
+            text=build_area_code_search_text(area_code, results),
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup(build_area_code_search_keyboard(results, user_id))
+        )
+        return True
+
+    tip_text = (
+        f'[emoji:5301246586918024418:⚠️] 暂时没有找到 {area_code} 相关商品。\n\n'
+        '你可以联系客服补货，稍后再来看看。'
+    )
+    context.bot.send_message(chat_id=user_id, text=tip_text, parse_mode='HTML')
+    display_name = fullname or username or str(user_id)
+    at_text = f'@{username}' if username else '无用户名'
+    notify_text = (
+        f'[emoji:5301246586918024418:⚠️] 区号搜索无结果提醒\n\n'
+        f'[emoji:6321041414067068140:👤] 用户：<a href="tg://user?id={user_id}">{display_name}</a> {at_text}\n'
+        f'[emoji:5217818964612108191:✨] 搜索区号：<code>{area_code}</code>\n\n'
+        '可留意是否需要补货相关商品。'
+    )
+    notify_source_admins(context, notify_text, exclude_user_ids=[user_id])
+    return True
+
+
 def send_product_purchase_page(context, chat_id, user_id, nowuid):
     payload = get_product_purchase_payload(nowuid)
     if not payload:
@@ -6468,6 +6577,9 @@ def textkeyboard(update: Update, context: CallbackContext):
                 if state == '4':
                     shangtext.update_one({'projectname': '营业状态'}, {"$set": {"text": 0}})
                     context.bot.send_message(chat_id=user_id, text='停止营业')
+            elif is_area_code_search_text(raw_text):
+                handle_area_code_search(context, user_id, fullname, username, raw_text.strip())
+                return
 
             key_list = get_key.find_one({"projectname": raw_text})
             if key_list is None and text != raw_text:
