@@ -1838,18 +1838,14 @@ def get_buy_notice_text(product_text=''):
     return product_text
 
 
-def build_purchase_success_notice(notice_text, deducted_amount, remaining_amount):
+def build_purchase_success_header(deducted_amount, remaining_amount):
     deducted_text = standard_num(deducted_amount)
     remaining_text = standard_num(remaining_amount)
-    header_text = (
+    return (
         '<b>[emoji:5350486389806868244:✔️] 购买成功</b>\n\n'
         f'<b>[emoji:5350486389806868244:✔️] 从余额中扣除：</b> {deducted_text} USDT\n'
         f'<b>[emoji:5350486389806868244:✔️] 您的剩余金额：</b> {remaining_text} USDT'
     )
-    body_text = str(notice_text or '').strip()
-    if not body_text:
-        return header_text
-    return f'{header_text}\n\n{body_text}'
 
 
 def start(update: Update, context: CallbackContext):
@@ -5370,7 +5366,7 @@ def create_okpay_deposit_order(context, user_id, amount):
     })
 
 
-def dabaohao(context, user_id, folder_names, leixing, nowuid, erjiprojectname, fstext, yssj):
+def dabaohao(context, user_id, folder_names, leixing, nowuid, erjiprojectname, notice_text, yssj):
     if leixing == '协议号':
         shijiancuo = int(time.time())
         zip_filename = f"./协议号发货/{user_id}_{shijiancuo}.zip"
@@ -5395,9 +5391,13 @@ def dabaohao(context, user_id, folder_names, leixing, nowuid, erjiprojectname, f
         # 组合编号
         bianhao = formatted_time + timestamp
         timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-        goumaijilua('协议号', bianhao, user_id, erjiprojectname, zip_filename, fstext, timer)
+        goumaijilua('协议号', bianhao, user_id, erjiprojectname, zip_filename, notice_text, timer)
         # 发送 zip 文件给用户
-        context.bot.send_document(chat_id=user_id, document=open(zip_filename, "rb"))
+        send_kwargs = {'chat_id': user_id, 'document': open(zip_filename, "rb")}
+        if notice_text:
+            send_kwargs['caption'] = notice_text
+            send_kwargs['parse_mode'] = 'HTML'
+        context.bot.send_document(**send_kwargs)
     elif leixing == '直登号':
         shijiancuo = int(time.time())
         zip_filename = f"./发货/{user_id}_{shijiancuo}.zip"
@@ -5432,9 +5432,13 @@ def dabaohao(context, user_id, folder_names, leixing, nowuid, erjiprojectname, f
         # 组合编号
         bianhao = formatted_time + timestamp
         timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-        goumaijilua('直登号', bianhao, user_id, erjiprojectname, zip_filename, fstext, timer)
+        goumaijilua('直登号', bianhao, user_id, erjiprojectname, zip_filename, notice_text, timer)
 
-        context.bot.send_document(chat_id=user_id, document=open(zip_filename, "rb"))
+        send_kwargs = {'chat_id': user_id, 'document': open(zip_filename, "rb")}
+        if notice_text:
+            send_kwargs['caption'] = notice_text
+            send_kwargs['parse_mode'] = 'HTML'
+        context.bot.send_document(**send_kwargs)
 
 
 def qrgaimai(update: Update, context: CallbackContext):
@@ -5456,7 +5460,6 @@ def qrgaimai(update: Update, context: CallbackContext):
         return
     if zxymoney == 0:
         return
-    keyboard = [[InlineKeyboardButton('✅已读（点击销毁此消息）', callback_data=f'close {user_id}')]]
     if USDT >= zxymoney:
         now_price = standard_num(float(USDT) - float(zxymoney))
         now_price = float(now_price) if str((now_price)).count('.') > 0 else int(standard_num(now_price))
@@ -5469,11 +5472,10 @@ def qrgaimai(update: Update, context: CallbackContext):
         yijiid = ejfl_list['uid']
         yiji_list = fenlei.find_one({'uid': yijiid})
         yijiprojectname = yiji_list['projectname']
-        fstext = build_purchase_success_notice(
-            get_buy_notice_text(ejfl_list.get('text', '')),
-            zxymoney,
-            now_price
-        )
+        success_text = build_purchase_success_header(zxymoney, now_price)
+        fstext = get_buy_notice_text(ejfl_list.get('text', ''))
+        notice_text = str(fstext or '').strip()
+        context.bot.send_message(chat_id=user_id, text=success_text, parse_mode='HTML', disable_web_page_preview=True)
         if fhtype == '协议号':
             zgje = user_list['zgje']
             zgsl = user_list['zgsl']
@@ -5510,8 +5512,6 @@ def qrgaimai(update: Update, context: CallbackContext):
 
             # hb.update_many(query_condition, update_data, limit=gmsl)
 
-            context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML', disable_web_page_preview=True,
-                                     reply_markup=InlineKeyboardMarkup(keyboard))
             fstext = f'''
 用户: <a href="tg://user?id={user_id}">{fullname}</a> @{username}
 用户ID: <code>{user_id}</code>
@@ -5526,7 +5526,7 @@ def qrgaimai(update: Update, context: CallbackContext):
                     pass
 
             Timer(1, dabaohao,
-                  args=[context, user_id, folder_names, '协议号', nowuid, erjiprojectname, fstext, timer]).start()
+                  args=[context, user_id, folder_names, '协议号', nowuid, erjiprojectname, notice_text, timer]).start()
             # shijiancuo = int(time.time())
             # zip_filename = f"./协议号发货/{user_id}_{shijiancuo}.zip"
             # with zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED) as zipf:
@@ -5564,8 +5564,6 @@ def qrgaimai(update: Update, context: CallbackContext):
             user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
             del_message(query.message)
 
-            context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML', disable_web_page_preview=True,
-                                     reply_markup=InlineKeyboardMarkup(keyboard))
             folder_names = []
             for j in list(hb.find({"nowuid": nowuid, 'state': 0, 'leixing': '谷歌'}, limit=gmsl)):
                 projectname = j['projectname']
@@ -5598,7 +5596,11 @@ def qrgaimai(update: Update, context: CallbackContext):
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
             goumaijilua('谷歌', bianhao, user_id, erjiprojectname, zip_filename, fstext, timer)
 
-            query.message.reply_document(open(zip_filename, "rb"))
+            reply_kwargs = {'document': open(zip_filename, "rb")}
+            if notice_text:
+                reply_kwargs['caption'] = notice_text
+                reply_kwargs['parse_mode'] = 'HTML'
+            query.message.reply_document(**reply_kwargs)
 
             fstext = f'''
 用户: <a href="tg://user?id={user_id}">{fullname}</a> @{username}
@@ -5622,8 +5624,6 @@ def qrgaimai(update: Update, context: CallbackContext):
             user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
             del_message(query.message)
 
-            context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML', disable_web_page_preview=True,
-                                     reply_markup=InlineKeyboardMarkup(keyboard))
             folder_names = []
             for j in list(hb.find({"nowuid": nowuid, 'state': 0}, limit=gmsl)):
                 projectname = j['projectname']
@@ -5652,7 +5652,11 @@ def qrgaimai(update: Update, context: CallbackContext):
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
             goumaijilua('API链接', bianhao, user_id, erjiprojectname, zip_filename, fstext, timer)
 
-            query.message.reply_document(open(zip_filename, "rb"))
+            reply_kwargs = {'document': open(zip_filename, "rb")}
+            if notice_text:
+                reply_kwargs['caption'] = notice_text
+                reply_kwargs['parse_mode'] = 'HTML'
+            query.message.reply_document(**reply_kwargs)
 
             fstext = f'''
 用户: <a href="tg://user?id={user_id}">{fullname}</a> @{username}
@@ -5681,9 +5685,6 @@ def qrgaimai(update: Update, context: CallbackContext):
                 hb.update_one({'hbid': hbid}, {"$set": {'state': 1, 'yssj': timer, 'gmid': user_id}})
                 folder_names.append(projectname)
 
-            context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML', disable_web_page_preview=True,
-                                     reply_markup=InlineKeyboardMarkup(keyboard))
-
             folder_names = '\n'.join(folder_names)
 
             current_time = datetime.datetime.now()
@@ -5699,6 +5700,8 @@ def qrgaimai(update: Update, context: CallbackContext):
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
             goumaijilua('会员链接', bianhao, user_id, erjiprojectname, folder_names, fstext, timer)
 
+            if notice_text:
+                context.bot.send_message(chat_id=user_id, text=notice_text, parse_mode='HTML', disable_web_page_preview=True)
             context.bot.send_message(chat_id=user_id, text=folder_names, disable_web_page_preview=True)
 
             fstext = f'''
@@ -5747,9 +5750,6 @@ def qrgaimai(update: Update, context: CallbackContext):
  
 
 
-            context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML', disable_web_page_preview=True,
-                                     reply_markup=InlineKeyboardMarkup(keyboard))
-
             fstext = f'''
 用户: <a href="tg://user?id={user_id}">{fullname}</a> @{username}
 用户ID: <code>{user_id}</code>
@@ -5764,7 +5764,7 @@ def qrgaimai(update: Update, context: CallbackContext):
                     pass
 
             Timer(1, dabaohao,
-                  args=[context, user_id, folder_names, '直登号', nowuid, erjiprojectname, fstext, timer]).start()
+                  args=[context, user_id, folder_names, '直登号', nowuid, erjiprojectname, notice_text, timer]).start()
             # shijiancuo = int(time.time())
             # zip_filename = f"./发货/{user_id}_{shijiancuo}.zip"
             # with zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED) as zipf:
