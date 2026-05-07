@@ -148,6 +148,21 @@ async def _probe_client(client: Any, timeout_seconds: int) -> Dict[str, Any]:
         if me is None:
             return {'status': 'invalid', 'reason': 'account_not_found'}
         display_name = ' '.join(filter(None, [getattr(me, 'first_name', ''), getattr(me, 'last_name', '')])).strip()
+        freeze_metadata = await _fetch_freeze_metadata(client, timeout_seconds)
+        if freeze_metadata.get('freeze_since_date') or freeze_metadata.get('freeze_until_date'):
+            return {
+                'status': 'frozen',
+                'reason': 'FREEZE_STATE_IN_APP_CONFIG',
+                'user_id': getattr(me, 'id', None),
+                'display_name': display_name,
+                'username': getattr(me, 'username', None),
+                'phone': getattr(me, 'phone', None),
+                'freeze_since_date': freeze_metadata.get('freeze_since_date', 0),
+                'freeze_until_date': freeze_metadata.get('freeze_until_date', 0),
+                'freeze_since_text': freeze_metadata.get('freeze_since_text', ''),
+                'freeze_until_text': freeze_metadata.get('freeze_until_text', ''),
+                'freeze_appeal_url': freeze_metadata.get('freeze_appeal_url', ''),
+            }
         frozen_status = await _detect_frozen_status(client, timeout_seconds)
         if frozen_status.get('status') == 'frozen':
             return {
