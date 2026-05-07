@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 import tempfile
 import uuid
@@ -90,34 +89,6 @@ def _extract_rpc_error_name(exc: Exception) -> str:
 def _is_frozen_rpc_error(exc: Exception) -> bool:
     name = _extract_rpc_error_name(exc)
     return 'FROZEN_METHOD_INVALID' in name or 'FROZEN_PARTICIPANT_MISSING' in name
-
-
-def _read_freeze_metadata_from_json(session_path: Path) -> Dict[str, Any]:
-    json_path = session_path
-    if session_path.suffix.lower() == '.session':
-        json_path = session_path.with_suffix('.json')
-    if json_path.suffix.lower() != '.json' or not json_path.exists():
-        return {}
-    try:
-        data = json.loads(json_path.read_text(encoding='utf-8'))
-    except Exception:
-        return {}
-    if not isinstance(data, dict):
-        return {}
-
-    freeze_since_text = str(data.get('freeze_since') or '').strip()
-    freeze_until_text = str(data.get('freeze_until') or '').strip()
-    freeze_appeal_url = str(data.get('freeze_appeal_url') or '').strip()
-    if not (freeze_since_text or freeze_until_text or freeze_appeal_url):
-        return {}
-
-    return {
-        'freeze_since_date': 0,
-        'freeze_until_date': 0,
-        'freeze_since_text': freeze_since_text,
-        'freeze_until_text': freeze_until_text,
-        'freeze_appeal_url': freeze_appeal_url,
-    }
 
 
 async def _fetch_freeze_metadata(client: Any, timeout_seconds: int) -> Dict[str, Any]:
@@ -226,8 +197,6 @@ async def _check_session_async(session_path: Path, timeout_seconds: int) -> Dict
     if not session_path.exists():
         return {'status': 'invalid', 'reason': 'session_file_missing'}
 
-    json_freeze_metadata = _read_freeze_metadata_from_json(session_path)
-
     client = None
     if SESSION_CHECK_API_ID and SESSION_CHECK_API_HASH and TelethonClient is not None:
         try:
@@ -242,18 +211,7 @@ async def _check_session_async(session_path: Path, timeout_seconds: int) -> Dict
     else:
         raise DependencyUnavailable('missing_session_check_dependencies')
 
-    result = await _probe_client(client, timeout_seconds)
-    if result.get('status') == 'alive' and json_freeze_metadata:
-        result.update({
-            'status': 'frozen',
-            'reason': 'FREEZE_STATE_IN_SESSION_JSON',
-            'freeze_since_date': json_freeze_metadata.get('freeze_since_date', 0),
-            'freeze_until_date': json_freeze_metadata.get('freeze_until_date', 0),
-            'freeze_since_text': json_freeze_metadata.get('freeze_since_text', ''),
-            'freeze_until_text': json_freeze_metadata.get('freeze_until_text', ''),
-            'freeze_appeal_url': json_freeze_metadata.get('freeze_appeal_url', ''),
-        })
-    return result
+    return await _probe_client(client, timeout_seconds)
 
 
 async def _build_tdata_client(tdata_dir: Path, timeout_seconds: int):
