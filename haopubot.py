@@ -3801,7 +3801,7 @@ def build_area_code_search_text(area_code, results):
         f'<b>[emoji:5220064167356025824:⭐️] 区号搜索结果</b>\n\n'
         f'[emoji:5217818964612108191:✨] 搜索关键词：<code>{area_code}</code>\n'
         f'[emoji:5028746137645876535:📈] 匹配商品：<code>{total}</code> 个\n\n'
-        tail_text
+        f'{tail_text}'
     )
 
 
