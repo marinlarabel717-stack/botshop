@@ -1,6 +1,7 @@
 import asyncio
 import os
 import tempfile
+import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -277,18 +278,36 @@ def _classify_exception(exc: Exception) -> Dict[str, Any]:
     return {'status': 'invalid', 'reason': message}
 
 
+def _check_account_inventory_item_inner(entry_type: str, path: Path, timeout_seconds: int) -> Dict[str, Any]:
+    if entry_type == '协议号':
+        return _run_async(_check_session_async(path, timeout_seconds))
+    if entry_type == '直登号':
+        return _run_async(_check_tdata_async(path, timeout_seconds))
+    return {'status': 'timeout', 'reason': f'unsupported_entry_type:{entry_type}'}
+
+
 def check_account_inventory_item(entry_type: str, target_path: str, timeout_seconds: int | None = None) -> Dict[str, Any]:
     timeout_seconds = max(5, int(timeout_seconds or DEFAULT_TIMEOUT_SECONDS))
     path = Path(target_path)
-    try:
-        if entry_type == '协议号':
-            result = _run_async(_check_session_async(path, timeout_seconds))
-        elif entry_type == '直登号':
-            result = _run_async(_check_tdata_async(path, timeout_seconds))
-        else:
-            result = {'status': 'timeout', 'reason': f'unsupported_entry_type:{entry_type}'}
-    except Exception as exc:
-        result = _classify_exception(exc)
+    result_box: Dict[str, Any] = {}
+    error_box: Dict[str, Exception] = {}
+
+    def worker():
+        try:
+            result_box['result'] = _check_account_inventory_item_inner(entry_type, path, timeout_seconds)
+        except Exception as exc:
+            error_box['error'] = exc
+
+    thread = threading.Thread(target=worker, name=f'account-check-{entry_type}', daemon=True)
+    thread.start()
+    thread.join(timeout_seconds + 2)
+
+    if thread.is_alive():
+        result = {'status': 'timeout', 'reason': f'hard_timeout_after_{timeout_seconds}s'}
+    elif 'error' in error_box:
+        result = _classify_exception(error_box['error'])
+    else:
+        result = result_box.get('result', {'status': 'timeout', 'reason': 'empty_check_result'})
 
     result['path'] = str(path)
     result['entry_type'] = entry_type
