@@ -7474,7 +7474,7 @@ def textkeyboard(update: Update, context: CallbackContext):
             if normalized_text in (normalize_menu_text('🤖一键克隆同款'), normalize_menu_text('🤖一键克隆Bot')):
                 del_message(update.message)
                 send_clonebot_prompt(context, user_id)
-            elif normalized_text == normalize_menu_text('👤个人中心'):
+            elif matches_localized_label(user_id, text, 'menu_profile', '👤个人中心'):
                 del_message(update.message)
                 if username is None:
                     username = fullname
@@ -7498,7 +7498,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                 toggle_user_lang(user_id)
                 send_user_home(context, user_id, state=state)
 
-            elif normalized_text == normalize_menu_text('💸我要充值'):
+            elif matches_localized_label(user_id, text, 'menu_recharge', '💸我要充值'):
                 del_message(update.message)
                 send_recharge_method_menu(context, user_id)
 

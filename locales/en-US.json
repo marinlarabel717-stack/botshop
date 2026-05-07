@@ -2,6 +2,8 @@
   "language_name": "English",
   "language_switch_label": "中文",
   "menu_goods_list": "🛒 Product Catalog",
+  "menu_profile": "👤 Profile",
+  "menu_recharge": "💸 Recharge",
   "purchase_history_button": "🛒 Purchase History",
   "purchase_history_title": "🛒 Your Purchase History",
   "next_page": "Next Page",
@@ -115,6 +117,10 @@
   "profile_balance_label": "Your balance:",
   "catalog_text_map": {
     "商品列表": "Product Catalog",
+    "🛒商品列表": "🛒 Product Catalog",
+    "👤个人中心": "👤 Profile",
+    "💸我要充值": "💸 Recharge",
+    "🧧红包": "🧧 Red Packets",
     "国家地区": "Countries & Regions",
     "国家": "Countries",
     "地区": "Regions"
