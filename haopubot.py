@@ -1863,17 +1863,18 @@ def build_purchase_success_header(deducted_amount, remaining_amount):
     )
 
 
-def build_account_check_progress_text(total_count, checked_count, alive_count=0, invalid_count=0, timeout_count=0):
+def build_account_check_progress_text(total_count, checked_count, alive_count=0, invalid_count=0, frozen_count=0, timeout_count=0):
     return (
         f'<b>{ACCOUNT_CHECK_EMOJI_PROGRESS} 正在检查账号状态，请稍等！</b>\n\n'
         f'<b>{ACCOUNT_CHECK_EMOJI_TOTAL} 已检测：</b> {checked_count} / {total_count}\n'
         f'<b>{ACCOUNT_CHECK_EMOJI_ALIVE} 存活账号：</b> {alive_count}\n'
         f'<b>{ACCOUNT_CHECK_EMOJI_INVALID} 无效账号：</b> {invalid_count}\n'
+        f'<b>{ACCOUNT_CHECK_EMOJI_INVALID} 冻结账号：</b> {frozen_count}\n'
         f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 超时账号：</b> {timeout_count}'
     )
 
 
-def build_account_check_result_text(total_count, alive_count, invalid_count, timeout_count, deducted_amount, refund_amount, remaining_amount):
+def build_account_check_result_text(total_count, alive_count, invalid_count, frozen_count, timeout_count, deducted_amount, refund_amount, remaining_amount):
     deducted_text = standard_num(deducted_amount)
     refund_text = standard_num(refund_amount)
     remaining_text = standard_num(remaining_amount)
@@ -1887,6 +1888,7 @@ def build_account_check_result_text(total_count, alive_count, invalid_count, tim
         f'<b>{ACCOUNT_CHECK_EMOJI_TOTAL} 账号数量：</b> {total_count}',
         f'<b>{ACCOUNT_CHECK_EMOJI_ALIVE} 存活账号：</b> {alive_count}',
         f'<b>{ACCOUNT_CHECK_EMOJI_INVALID} 无效账号：</b> {invalid_count}',
+        f'<b>{ACCOUNT_CHECK_EMOJI_INVALID} 冻结账号：</b> {frozen_count}',
     ])
     if timeout_count:
         lines.append(f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 超时账号：</b> {timeout_count}')
@@ -1902,7 +1904,7 @@ def build_account_check_result_text(total_count, alive_count, invalid_count, tim
     return '\n'.join(lines)
 
 
-def build_account_check_admin_notice(fullname, username, user_id, yijiprojectname, erjiprojectname, total_count, alive_count, invalid_count, timeout_count, order_id, deducted_amount, refund_amount):
+def build_account_check_admin_notice(fullname, username, user_id, yijiprojectname, erjiprojectname, total_count, alive_count, invalid_count, frozen_count, timeout_count, order_id, deducted_amount, refund_amount):
     username_text = f'@{username}' if username else '未设置'
     lines = [
         f'用户: <a href="tg://user?id={user_id}">{fullname}</a> {username_text}',
@@ -1912,6 +1914,7 @@ def build_account_check_admin_notice(fullname, username, user_id, yijiprojectnam
         f'购买数量: {total_count}',
         f'存活账号: {alive_count}',
         f'无效账号: {invalid_count}',
+        f'冻结账号: {frozen_count}',
     ]
     if timeout_count:
         lines.append(f'超时账号: {timeout_count}')
@@ -2028,6 +2031,7 @@ def deliver_accounts_with_check(context, user_id, fullname, username, nowuid, er
     total_count = len(selected_items)
     alive_items = []
     invalid_items = []
+    frozen_items = []
     timeout_items = []
     checked_count = 0
     last_progress_ts = 0
@@ -2056,6 +2060,15 @@ def deliver_accounts_with_check(context, user_id, fullname, username, nowuid, er
         }
         if check_result.get('status') == 'alive':
             alive_items.append(item_meta)
+        elif check_result.get('status') == 'frozen':
+            item_meta.update({
+                'freeze_since_date': check_result.get('freeze_since_date', 0),
+                'freeze_until_date': check_result.get('freeze_until_date', 0),
+                'freeze_since_text': check_result.get('freeze_since_text', ''),
+                'freeze_until_text': check_result.get('freeze_until_text', ''),
+                'freeze_appeal_url': check_result.get('freeze_appeal_url', ''),
+            })
+            frozen_items.append(archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, item_meta))
         elif check_result.get('status') == 'invalid':
             invalid_items.append(archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, item_meta))
         else:
@@ -2072,15 +2085,16 @@ def deliver_accounts_with_check(context, user_id, fullname, username, nowuid, er
                     bot,
                     user_id,
                     progress_message_id,
-                    build_account_check_progress_text(total_count, checked_count, len(alive_items), len(invalid_items), len(timeout_items))
+                    build_account_check_progress_text(total_count, checked_count, len(alive_items), len(invalid_items), len(frozen_items), len(timeout_items))
                 )
             except Exception:
                 pass
             last_progress_ts = time.time()
 
     invalid_count = len(invalid_items)
+    frozen_count = len(frozen_items)
     timeout_count = len(timeout_items)
-    refund_amount = standard_num(unit_price * invalid_count)
+    refund_amount = standard_num(unit_price * (invalid_count + frozen_count))
     refund_amount = float(refund_amount) if str(refund_amount).count('.') > 0 else int(refund_amount)
     remaining_amount = refund_invalid_accounts(user_id, refund_amount, order_id)
     charged_amount = standard_num(float(total_amount) - float(refund_amount))
@@ -2095,18 +2109,21 @@ def deliver_accounts_with_check(context, user_id, fullname, username, nowuid, er
         'total_count': total_count,
         'alive_count': len(alive_items),
         'invalid_count': invalid_count,
+        'frozen_count': frozen_count,
         'timeout_count': timeout_count,
         'refund_amount': refund_amount,
         'created_at': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()),
         'invalid_items': invalid_items,
+        'frozen_items': frozen_items,
     }
-    if invalid_items:
+    if invalid_items or frozen_items:
         write_invalid_archive_meta(order_id, archive_payload)
 
     final_text = build_account_check_result_text(
         total_count,
         len(alive_items),
         invalid_count,
+        frozen_count,
         timeout_count,
         charged_amount,
         refund_amount,
@@ -2141,6 +2158,7 @@ def deliver_accounts_with_check(context, user_id, fullname, username, nowuid, er
         total_count,
         len(alive_items),
         invalid_count,
+        frozen_count,
         timeout_count,
         order_id,
         charged_amount,

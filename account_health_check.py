@@ -1,6 +1,8 @@
 import asyncio
 import os
 import tempfile
+import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 
@@ -16,8 +18,13 @@ except Exception:
 
 try:
     from telethon import TelegramClient as TelethonClient
+    from telethon import errors as telethon_errors
+    from telethon.tl import functions, types
 except Exception:
     TelethonClient = None
+    telethon_errors = None
+    functions = None
+    types = None
 
 
 SESSION_CHECK_API_ID = os.getenv('ACCOUNT_CHECK_API_ID', '').strip()
@@ -27,6 +34,108 @@ DEFAULT_TIMEOUT_SECONDS = max(5, int(os.getenv('ACCOUNT_CHECK_TIMEOUT_SECONDS', 
 
 class DependencyUnavailable(RuntimeError):
     pass
+
+
+def _json_value_to_python(value: Any):
+    if value is None:
+        return None
+    if types is not None:
+        if isinstance(value, types.JsonObject):
+            return {item.key: _json_value_to_python(item.value) for item in value.value}
+        if isinstance(value, types.JsonArray):
+            return [_json_value_to_python(item) for item in value.value]
+        if isinstance(value, types.JsonObjectValue):
+            return {value.key: _json_value_to_python(value.value)}
+        if isinstance(value, types.JsonString):
+            return value.value
+        if isinstance(value, types.JsonNumber):
+            return value.value
+        if isinstance(value, types.JsonBool):
+            return value.value
+        if isinstance(value, types.JsonNull):
+            return None
+    if isinstance(value, list):
+        return [_json_value_to_python(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _json_value_to_python(item) for key, item in value.items()}
+    return value
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except Exception:
+        return 0
+
+
+def _format_unix_ts(timestamp: Any) -> str:
+    ts = _safe_int(timestamp)
+    if ts <= 0:
+        return ''
+    try:
+        return datetime.utcfromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S UTC')
+    except Exception:
+        return ''
+
+
+def _extract_rpc_error_name(exc: Exception) -> str:
+    for attr in ('message', 'name'):
+        value = getattr(exc, attr, '')
+        if isinstance(value, str) and value:
+            return value.upper()
+    return str(exc).upper()
+
+
+def _is_frozen_rpc_error(exc: Exception) -> bool:
+    name = _extract_rpc_error_name(exc)
+    return 'FROZEN_METHOD_INVALID' in name or 'FROZEN_PARTICIPANT_MISSING' in name
+
+
+async def _fetch_freeze_metadata(client: Any, timeout_seconds: int) -> Dict[str, Any]:
+    if functions is None:
+        return {}
+    try:
+        result = await asyncio.wait_for(client(functions.help.GetAppConfigRequest(hash=0)), timeout=timeout_seconds)
+    except TypeError:
+        result = await asyncio.wait_for(client(functions.help.GetAppConfigRequest(0)), timeout=timeout_seconds)
+    except Exception:
+        return {}
+
+    config_obj = getattr(result, 'config', None)
+    config_map = _json_value_to_python(config_obj)
+    if not isinstance(config_map, dict):
+        return {}
+
+    freeze_since_date = _safe_int(config_map.get('freeze_since_date'))
+    freeze_until_date = _safe_int(config_map.get('freeze_until_date'))
+    freeze_appeal_url = str(config_map.get('freeze_appeal_url') or '').strip()
+    return {
+        'freeze_since_date': freeze_since_date,
+        'freeze_until_date': freeze_until_date,
+        'freeze_since_text': _format_unix_ts(freeze_since_date),
+        'freeze_until_text': _format_unix_ts(freeze_until_date),
+        'freeze_appeal_url': freeze_appeal_url,
+    }
+
+
+async def _detect_frozen_status(client: Any, timeout_seconds: int) -> Dict[str, Any]:
+    probe_text = f'health-check-{uuid.uuid4().hex[:8]}'
+    try:
+        message = await asyncio.wait_for(client.send_message('me', probe_text), timeout=timeout_seconds)
+        try:
+            await asyncio.wait_for(client.delete_messages('me', [message.id]), timeout=timeout_seconds)
+        except Exception:
+            pass
+        return {'status': 'alive'}
+    except Exception as exc:
+        if _is_frozen_rpc_error(exc):
+            metadata = await _fetch_freeze_metadata(client, timeout_seconds)
+            metadata.update({
+                'status': 'frozen',
+                'reason': _extract_rpc_error_name(exc),
+            })
+            return metadata
+        raise
 
 
 async def _probe_client(client: Any, timeout_seconds: int) -> Dict[str, Any]:
@@ -39,6 +148,21 @@ async def _probe_client(client: Any, timeout_seconds: int) -> Dict[str, Any]:
         if me is None:
             return {'status': 'invalid', 'reason': 'account_not_found'}
         display_name = ' '.join(filter(None, [getattr(me, 'first_name', ''), getattr(me, 'last_name', '')])).strip()
+        frozen_status = await _detect_frozen_status(client, timeout_seconds)
+        if frozen_status.get('status') == 'frozen':
+            return {
+                'status': 'frozen',
+                'reason': frozen_status.get('reason', 'FROZEN_METHOD_INVALID'),
+                'user_id': getattr(me, 'id', None),
+                'display_name': display_name,
+                'username': getattr(me, 'username', None),
+                'phone': getattr(me, 'phone', None),
+                'freeze_since_date': frozen_status.get('freeze_since_date', 0),
+                'freeze_until_date': frozen_status.get('freeze_until_date', 0),
+                'freeze_since_text': frozen_status.get('freeze_since_text', ''),
+                'freeze_until_text': frozen_status.get('freeze_until_text', ''),
+                'freeze_appeal_url': frozen_status.get('freeze_appeal_url', ''),
+            }
         return {
             'status': 'alive',
             'reason': 'ok',
