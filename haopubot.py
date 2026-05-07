@@ -1938,6 +1938,26 @@ def build_inventory_entry_file_path(leixing, nowuid, projectname):
     return BASE_DIR / '号包' / str(nowuid) / str(projectname)
 
 
+def resolve_inventory_check_target(leixing, nowuid, projectname):
+    if leixing == '协议号':
+        return leixing, build_inventory_entry_file_path(leixing, nowuid, projectname)
+
+    folder_path = BASE_DIR / '号包' / str(nowuid) / str(projectname)
+    tdata_path = folder_path / 'tdata'
+    if tdata_path.exists() and tdata_path.is_dir():
+        return '直登号', folder_path
+
+    session_files = sorted(folder_path.glob('*.session')) if folder_path.exists() else []
+    if session_files:
+        return '协议号', session_files[0]
+
+    json_files = sorted(folder_path.glob('*.json')) if folder_path.exists() else []
+    if json_files:
+        return '协议号', json_files[0]
+
+    return '直登号', folder_path
+
+
 def archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, item_meta):
     date_text = time.strftime('%Y-%m-%d', time.localtime())
     bucket_name = 'session' if leixing == '协议号' else 'tdata'
@@ -2026,8 +2046,8 @@ def build_delivery_zip(leixing, user_id, nowuid, entry_names):
 
 def run_single_account_check(leixing, nowuid, item, timeout_seconds):
     projectname = item['projectname']
-    target_path = build_inventory_entry_file_path(leixing, nowuid, projectname)
-    check_result = check_account_inventory_item(leixing, str(target_path), timeout_seconds)
+    check_entry_type, target_path = resolve_inventory_check_target(leixing, nowuid, projectname)
+    check_result = check_account_inventory_item(check_entry_type, str(target_path), timeout_seconds)
     return item, projectname, check_result
 
 
