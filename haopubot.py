@@ -3678,17 +3678,31 @@ def catejflsp(update: Update, context: CallbackContext):
     bot_id = context.bot.id
     user_id = query.from_user.id
 
-    keyboard = [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []]
-    ej_list = ejfl.find({'uid': uid})
+    product_rows = []
+    ej_list = list(ejfl.find({'uid': uid}, sort=[('row', 1)]))
     for i in ej_list:
         nowuid = i['nowuid']
         projectname = i['projectname']
         row = i['row']
+        money = i.get('money', 0)
         hsl = len(list(hb.find({'nowuid': nowuid, 'state': 0})))
-        keyboard[row - 1].append(InlineKeyboardButton(f'{projectname}  ({hsl})', callback_data=f'gmsp {nowuid}:{hsl}'))
+        if hsl <= 0:
+            continue
+        product_rows.append({
+            'nowuid': nowuid,
+            'projectname': projectname,
+            'row': row,
+            'money': money,
+            'stock': hsl
+        })
+
+    product_rows.sort(key=lambda item: (-int(item['stock']), int(item['row']), str(item['projectname'])))
+
+    keyboard = []
+    for item in product_rows:
+        price_text = standard_num(item['money'])
+        button_text = f"{item['projectname']} ${price_text} （{item['stock']}）"
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"gmsp {item['nowuid']}:{item['stock']}")])
 
     fstext = f'''
 <b>🛒这是商品列表  选择你需要的商品：
@@ -3696,6 +3710,13 @@ def catejflsp(update: Update, context: CallbackContext):
 ❗️没使用过的本店商品的，请先少量购买测试，以免造成不必要的争执！谢谢合作！
 
 ❗️账户放久难免会死，有差异，请联系客服售后！望理解！</b>
+    '''
+
+    if not keyboard:
+        fstext = '''
+<b>⚠️ 当前这个分类暂时没有库存
+
+你可以返回上一层看看其他商品，或者稍后再来。</b>
     '''
 
     keyboard.append([InlineKeyboardButton('🏠主菜单', callback_data='backzcd'),
