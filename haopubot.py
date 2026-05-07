@@ -73,6 +73,12 @@ MOOD_EMOJI_STAR = '[emoji:5220064167356025824:⭐️]'
 MOOD_EMOJI_FAST = '[emoji:5220195537520711716:⚡️]'
 MOOD_EMOJI_FIRE = '[emoji:5220166546491459639:🔥]'
 
+ACCOUNT_CHECK_EMOJI_PROGRESS = '[emoji:5296562641613897196:🕜]'
+ACCOUNT_CHECK_EMOJI_ALIVE = '[emoji:5260463209562776385:✅]'
+ACCOUNT_CHECK_EMOJI_INVALID = '[emoji:5273914604752216432:❌]'
+ACCOUNT_CHECK_EMOJI_TIMEOUT = '[emoji:5382194935057372936:⏱️]'
+ACCOUNT_CHECK_EMOJI_TOTAL = '[emoji:5352625743081775722:🎚️]'
+
 
 def parse_admin_user_ids(value):
     admin_ids = set()
@@ -1859,11 +1865,11 @@ def build_purchase_success_header(deducted_amount, remaining_amount):
 
 def build_account_check_progress_text(total_count, checked_count, alive_count=0, invalid_count=0, timeout_count=0):
     return (
-        '<b>🕜 正在检查账号状态，请稍等！</b>\n\n'
-        f'<b>已检测：</b> {checked_count} / {total_count}\n'
-        f'<b>✅ 存活账号：</b> {alive_count}\n'
-        f'<b>❌ 无效账号：</b> {invalid_count}\n'
-        f'<b>⏱ 超时账号：</b> {timeout_count}'
+        f'<b>{ACCOUNT_CHECK_EMOJI_PROGRESS} 正在检查账号状态，请稍等！</b>\n\n'
+        f'<b>{ACCOUNT_CHECK_EMOJI_TOTAL} 已检测：</b> {checked_count} / {total_count}\n'
+        f'<b>{ACCOUNT_CHECK_EMOJI_ALIVE} 存活账号：</b> {alive_count}\n'
+        f'<b>{ACCOUNT_CHECK_EMOJI_INVALID} 无效账号：</b> {invalid_count}\n'
+        f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 超时账号：</b> {timeout_count}'
     )
 
 
@@ -1873,17 +1879,17 @@ def build_account_check_result_text(total_count, alive_count, invalid_count, tim
     remaining_text = standard_num(remaining_amount)
     lines = []
     if alive_count == 0 and timeout_count == 0:
-        lines.append('<b>❌ 本次账号检测全部失效，已退款</b>')
+        lines.append(f'<b>{ACCOUNT_CHECK_EMOJI_INVALID} 本次账号检测全部失效，已退款</b>')
     else:
         lines.append('<b>[emoji:5193209274452425995:🎉] 购买成功</b>')
     lines.extend([
         '',
-        f'<b>🎚️ 账号数量：</b> {total_count}',
-        f'<b>✅ 存活账号：</b> {alive_count}',
-        f'<b>❌ 无效账号：</b> {invalid_count}',
+        f'<b>{ACCOUNT_CHECK_EMOJI_TOTAL} 账号数量：</b> {total_count}',
+        f'<b>{ACCOUNT_CHECK_EMOJI_ALIVE} 存活账号：</b> {alive_count}',
+        f'<b>{ACCOUNT_CHECK_EMOJI_INVALID} 无效账号：</b> {invalid_count}',
     ])
     if timeout_count:
-        lines.append(f'<b>⏱ 超时账号：</b> {timeout_count}')
+        lines.append(f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 超时账号：</b> {timeout_count}')
     lines.append(f'<b>[emoji:4965219701572503640:💰] 从余额中扣除：</b> {deducted_text} USDT')
     if refund_amount:
         lines.append(f'<b>[emoji:5235511932064129087:🎁] 已退回余额：</b> {refund_text} USDT')
@@ -1891,7 +1897,7 @@ def build_account_check_result_text(total_count, alive_count, invalid_count, tim
     if timeout_count:
         lines.extend([
             '',
-            '<b>⚠️ 超时账号已随文件一起发给你，请联系客服处理。</b>'
+            f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 超时账号已随文件一起发给你，请联系客服处理。</b>'
         ])
     return '\n'.join(lines)
 
