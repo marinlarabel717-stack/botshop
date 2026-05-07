@@ -28,6 +28,7 @@ MONGO_CHAIN_DB_NAME = os.getenv('MONGO_CHAIN_DB_NAME', MONGO_DB_NAME)
 
 TRONGRID_API_BASE = os.getenv('TRONGRID_API_BASE', 'https://api.trongrid.io/v1').rstrip('/')
 TRONGRID_API_KEY = os.getenv('TRONGRID_API_KEY', '').strip()
+TRONGRID_API_KEYS = os.getenv('TRONGRID_API_KEYS', '').strip()
 TRONGRID_REQUEST_TIMEOUT = int(os.getenv('TRONGRID_REQUEST_TIMEOUT', '20'))
 TRONGRID_POLL_SECONDS = int(os.getenv('TRONGRID_POLL_SECONDS', '3'))
 TRONGRID_PAGE_LIMIT = max(1, min(int(os.getenv('TRONGRID_PAGE_LIMIT', '100')), 200))
@@ -81,6 +82,38 @@ def setup_logging():
 
 
 logger = setup_logging()
+
+
+def parse_trongrid_api_keys():
+    keys = []
+    for raw in [TRONGRID_API_KEYS, TRONGRID_API_KEY]:
+        if not raw:
+            continue
+        for item in str(raw).replace('\n', ',').split(','):
+            key = item.strip()
+            if key and key not in keys:
+                keys.append(key)
+    return keys
+
+
+TRONGRID_API_KEY_POOL = parse_trongrid_api_keys()
+TRONGRID_API_KEY_INDEX = 0
+
+
+def mask_api_key(api_key):
+    api_key = str(api_key or '').strip()
+    if len(api_key) <= 8:
+        return api_key or '未配置'
+    return f'{api_key[:4]}***{api_key[-4:]}'
+
+
+def get_trongrid_api_key_candidates():
+    global TRONGRID_API_KEY_INDEX
+    if not TRONGRID_API_KEY_POOL:
+        return [None]
+    start = TRONGRID_API_KEY_INDEX % len(TRONGRID_API_KEY_POOL)
+    TRONGRID_API_KEY_INDEX = (start + 1) % len(TRONGRID_API_KEY_POOL)
+    return TRONGRID_API_KEY_POOL[start:] + TRONGRID_API_KEY_POOL[:start]
 
 
 def now_ts_ms():
@@ -142,11 +175,39 @@ def get_monitor_addresses():
     return sorted(addresses)
 
 
-def build_headers():
+def build_headers(api_key=None):
     headers = {'Accept': 'application/json'}
-    if TRONGRID_API_KEY:
-        headers['TRON-PRO-API-KEY'] = TRONGRID_API_KEY
+    if api_key:
+        headers['TRON-PRO-API-KEY'] = api_key
     return headers
+
+
+def trongrid_get(url, params):
+    last_exc = None
+    candidates = get_trongrid_api_key_candidates()
+    for idx, api_key in enumerate(candidates, start=1):
+        try:
+            response = requests.get(url, params=params, headers=build_headers(api_key), timeout=TRONGRID_REQUEST_TIMEOUT)
+            if response.status_code in (403, 429) and idx < len(candidates):
+                logger.warning('TronGrid key %s 请求受限(status=%s)，切换下一个 key 重试', mask_api_key(api_key), response.status_code)
+                continue
+            response.raise_for_status()
+            if api_key:
+                logger.info('本次 TronGrid 请求使用 key: %s', mask_api_key(api_key))
+            return response
+        except requests.RequestException as exc:
+            last_exc = exc
+            status_code = getattr(getattr(exc, 'response', None), 'status_code', None)
+            if api_key and status_code in (403, 429) and idx < len(candidates):
+                logger.warning('TronGrid key %s 异常受限(status=%s)，切换下一个 key 重试', mask_api_key(api_key), status_code)
+                continue
+            if idx < len(candidates):
+                logger.warning('TronGrid key %s 请求失败：%s，切换下一个 key 重试', mask_api_key(api_key), exc)
+                continue
+            raise
+    if last_exc:
+        raise last_exc
+    raise RuntimeError('TronGrid 请求失败')
 
 
 def fetch_trc20_transactions(address, min_timestamp):
@@ -178,7 +239,7 @@ def fetch_trc20_transactions(address, min_timestamp):
         req_params = dict(params)
         if fingerprint:
             req_params['fingerprint'] = fingerprint
-        response = requests.get(url, params=req_params, headers=build_headers(), timeout=TRONGRID_REQUEST_TIMEOUT)
+        response = trongrid_get(url, req_params)
         response.raise_for_status()
         payload = response.json()
         data = payload.get('data') or []
@@ -300,6 +361,7 @@ def run_once(state):
 def main():
     ensure_indexes()
     state = load_state()
+    logger.info('TronGrid API Key 数量：%s', len(TRONGRID_API_KEY_POOL))
     logger.info('TRC20监听器已启动，日志文件：%s', LOG_FILE)
     while True:
         try:
