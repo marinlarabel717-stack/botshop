@@ -4008,6 +4008,10 @@ def gmqq(update: Update, context: CallbackContext):
 
     nowuid = query.data.replace('gmqq ', '')
 
+    if get_stock_count(nowuid) <= 0:
+        query.answer('当前暂无库存', show_alert=bool("true"))
+        return
+
     ejfl_list = ejfl.find_one({'nowuid': nowuid})
     projectname = ejfl_list['projectname']
     money = ejfl_list['money']
@@ -4486,11 +4490,18 @@ def is_restock_notice_subscribed(nowuid, user_id):
 
 
 def build_product_purchase_keyboard(nowuid, uid, user_id, stock_count=None):
+    stock_count = get_stock_count(nowuid) if stock_count is None else int(stock_count)
+    buy_button = InlineKeyboardButton('✅购买', callback_data=f'gmqq {nowuid}') if stock_count > 0 else InlineKeyboardButton('⚠️暂无库存', callback_data=f'nostock {nowuid}')
     return [
-        [InlineKeyboardButton('✅购买', callback_data=f'gmqq {nowuid}')],
+        [buy_button],
         [InlineKeyboardButton('🏠主菜单', callback_data='backzcd'),
          InlineKeyboardButton('⬅️返回', callback_data=f'catejflsp {uid}:1000')]
     ]
+
+
+def nostock(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer('当前暂无库存', show_alert=bool("true"))
 
 
 def notify_restock_subscribers(context, nowuid):
@@ -7124,7 +7135,7 @@ def main():
         application.add_handler(CommandHandler(command_name, sync_handler(callback)))
 
     callback_handlers = [
-        ('startupdate', startupdate), ('clonebot', clonebot), ('clonepay', clonepay), ('clonelist', clonelist), ('cloneinfo ', cloneinfo), ('clonerestart ', clonerestart), ('clonedelete ', clonedelete), ('setcloneprice', setcloneprice), ('restockpushcfg', restockpushcfg), ('setrestocktarget', setrestocktarget), ('restockrequestarea ', restockrequestarea), ('okpaycfg', okpaycfg), ('setokpayid', setokpayid), ('setokpaytoken', setokpaytoken), ('setokpayname', setokpayname), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
+        ('startupdate', startupdate), ('clonebot', clonebot), ('clonepay', clonepay), ('clonelist', clonelist), ('cloneinfo ', cloneinfo), ('clonerestart ', clonerestart), ('clonedelete ', clonedelete), ('setcloneprice', setcloneprice), ('restockpushcfg', restockpushcfg), ('setrestocktarget', setrestocktarget), ('restockrequestarea ', restockrequestarea), ('nostock ', nostock), ('okpaycfg', okpaycfg), ('setokpayid', setokpayid), ('setokpaytoken', setokpaytoken), ('setokpayname', setokpayname), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
         ('backstart', backstart), ('paixurow', paixurow), ('addzdykey', addzdykey),
         ('qrscdelrow ', qrscdelrow), ('addhangkey ', addhangkey), ('delhangkey ', delhangkey),
         ('qrdelliekey ', qrdelliekey), ('keyxq ', keyxq), ('setkeyname ', setkeyname),
