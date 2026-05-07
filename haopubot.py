@@ -5393,11 +5393,9 @@ def dabaohao(context, user_id, folder_names, leixing, nowuid, erjiprojectname, n
         timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
         goumaijilua('协议号', bianhao, user_id, erjiprojectname, zip_filename, notice_text, timer)
         # 发送 zip 文件给用户
-        send_kwargs = {'chat_id': user_id, 'document': open(zip_filename, "rb")}
+        context.bot.send_document(chat_id=user_id, document=open(zip_filename, "rb"))
         if notice_text:
-            send_kwargs['caption'] = notice_text
-            send_kwargs['parse_mode'] = 'HTML'
-        context.bot.send_document(**send_kwargs)
+            context.bot.send_message(chat_id=user_id, text=notice_text, parse_mode='HTML', disable_web_page_preview=True)
     elif leixing == '直登号':
         shijiancuo = int(time.time())
         zip_filename = f"./发货/{user_id}_{shijiancuo}.zip"
@@ -5434,11 +5432,9 @@ def dabaohao(context, user_id, folder_names, leixing, nowuid, erjiprojectname, n
         timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
         goumaijilua('直登号', bianhao, user_id, erjiprojectname, zip_filename, notice_text, timer)
 
-        send_kwargs = {'chat_id': user_id, 'document': open(zip_filename, "rb")}
+        context.bot.send_document(chat_id=user_id, document=open(zip_filename, "rb"))
         if notice_text:
-            send_kwargs['caption'] = notice_text
-            send_kwargs['parse_mode'] = 'HTML'
-        context.bot.send_document(**send_kwargs)
+            context.bot.send_message(chat_id=user_id, text=notice_text, parse_mode='HTML', disable_web_page_preview=True)
 
 
 def qrgaimai(update: Update, context: CallbackContext):
@@ -5596,11 +5592,9 @@ def qrgaimai(update: Update, context: CallbackContext):
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
             goumaijilua('谷歌', bianhao, user_id, erjiprojectname, zip_filename, fstext, timer)
 
-            reply_kwargs = {'document': open(zip_filename, "rb")}
+            query.message.reply_document(open(zip_filename, "rb"))
             if notice_text:
-                reply_kwargs['caption'] = notice_text
-                reply_kwargs['parse_mode'] = 'HTML'
-            query.message.reply_document(**reply_kwargs)
+                context.bot.send_message(chat_id=user_id, text=notice_text, parse_mode='HTML', disable_web_page_preview=True)
 
             fstext = f'''
 用户: <a href="tg://user?id={user_id}">{fullname}</a> @{username}
@@ -5652,11 +5646,9 @@ def qrgaimai(update: Update, context: CallbackContext):
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
             goumaijilua('API链接', bianhao, user_id, erjiprojectname, zip_filename, fstext, timer)
 
-            reply_kwargs = {'document': open(zip_filename, "rb")}
+            query.message.reply_document(open(zip_filename, "rb"))
             if notice_text:
-                reply_kwargs['caption'] = notice_text
-                reply_kwargs['parse_mode'] = 'HTML'
-            query.message.reply_document(**reply_kwargs)
+                context.bot.send_message(chat_id=user_id, text=notice_text, parse_mode='HTML', disable_web_page_preview=True)
 
             fstext = f'''
 用户: <a href="tg://user?id={user_id}">{fullname}</a> @{username}
