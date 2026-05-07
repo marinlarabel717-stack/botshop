@@ -1842,9 +1842,9 @@ def build_purchase_success_header(deducted_amount, remaining_amount):
     deducted_text = standard_num(deducted_amount)
     remaining_text = standard_num(remaining_amount)
     return (
-        '<b>[emoji:5350486389806868244:✔️] 购买成功</b>\n\n'
-        f'<b>[emoji:5350486389806868244:✔️] 从余额中扣除：</b> {deducted_text} USDT\n'
-        f'<b>[emoji:5350486389806868244:✔️] 您的剩余金额：</b> {remaining_text} USDT'
+        '<b>[emoji:5193209274452425995:🎉] 购买成功</b>\n\n'
+        f'<b>[emoji:4965219701572503640:💰] 从余额中扣除：</b> {deducted_text} USDT\n'
+        f'<b>[emoji:4972482444025398275:👛] 您的剩余金额：</b> {remaining_text} USDT'
     )
 
 
