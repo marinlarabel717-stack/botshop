@@ -3701,7 +3701,7 @@ def catejflsp(update: Update, context: CallbackContext):
     keyboard = []
     for item in product_rows:
         price_text = standard_num(item['money'])
-        button_text = f"{item['projectname']} ${price_text} （{item['stock']}）"
+        button_text = f"{item['projectname']} ${price_text} [ {item['stock']} ]"
         keyboard.append([InlineKeyboardButton(button_text, callback_data=f"gmsp {item['nowuid']}:{item['stock']}")])
 
     fstext = f'''
