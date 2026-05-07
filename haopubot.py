@@ -4356,7 +4356,7 @@ def backzcd(update: Update, context: CallbackContext):
         for j in list(ejfl.find({'uid': uid})):
             nowuid = j['nowuid']
             hsl += len(list(hb.find({'nowuid': nowuid, 'state': 0})))
-        keyboard[row - 1].append(InlineKeyboardButton(f'{projectname}({hsl})', callback_data=f'catejflsp {uid}:{hsl}'))
+        keyboard[row - 1].append(InlineKeyboardButton(f'{projectname} [ {hsl} ]', callback_data=f'catejflsp {uid}:{hsl}'))
     fstext = f'''
 <b>🛒这是商品列表  选择你需要的商品：
 
@@ -6751,7 +6751,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                         nowuid = j['nowuid']
                         hsl += len(list(hb.find({'nowuid': nowuid, 'state': 0})))
                     keyboard[row - 1].append(
-                        InlineKeyboardButton(f'{projectname}({hsl})', callback_data=f'catejflsp {uid}:{hsl}'))
+                        InlineKeyboardButton(f'{projectname} [ {hsl} ]', callback_data=f'catejflsp {uid}:{hsl}'))
                 fstext = f'''
 <b>🛒这是商品列表  选择你需要的商品：
 
