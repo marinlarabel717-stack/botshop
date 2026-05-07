@@ -1,0 +1,12 @@
+{
+  "language_name": "中文",
+  "language_switch_label": "English",
+  "stock_not_enough": "当前库存不足",
+  "product_not_found": "未找到该商品",
+  "buy_success": "购买成功",
+  "insufficient_balance": "余额不足，请及时充值！",
+  "check_progress": "正在检查账号状态，请稍等！",
+  "purchase_history": "购买记录",
+  "back": "返回",
+  "close": "关闭"
+}

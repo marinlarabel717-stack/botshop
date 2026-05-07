@@ -1,0 +1,12 @@
+{
+  "language_name": "English",
+  "language_switch_label": "中文",
+  "stock_not_enough": "Insufficient stock.",
+  "product_not_found": "Product not found.",
+  "buy_success": "Purchase successful",
+  "insufficient_balance": "Insufficient balance. Please recharge first.",
+  "check_progress": "Checking account status, please wait...",
+  "purchase_history": "Purchase History",
+  "back": "Back",
+  "close": "Close"
+}

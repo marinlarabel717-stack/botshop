@@ -38,6 +38,95 @@ from pymongo.errors import DuplicateKeyError
 
 BASE_DIR = Path(__file__).resolve().parent
 VERSION_FILE = BASE_DIR / 'VERSION'
+LOCALES_DIR = BASE_DIR / 'locales'
+DEFAULT_LANG = 'zh-CN'
+SUPPORTED_LANGS = ('zh-CN', 'en-US')
+
+
+def load_locale_messages(lang):
+    locale_path = LOCALES_DIR / f'{lang}.json'
+    if not locale_path.exists():
+        return {}
+    try:
+        return json.loads(locale_path.read_text(encoding='utf-8'))
+    except Exception:
+        logging.exception('Failed to load locale file: %s', locale_path)
+        return {}
+
+
+LOCALE_MESSAGES = {lang: load_locale_messages(lang) for lang in SUPPORTED_LANGS}
+
+
+def normalize_lang_code(lang_code):
+    raw = str(lang_code or '').strip()
+    if not raw:
+        return DEFAULT_LANG
+    lowered = raw.lower()
+    if lowered.startswith('zh'):
+        return 'zh-CN'
+    if lowered.startswith('en'):
+        return 'en-US'
+    return DEFAULT_LANG
+
+
+def get_user_lang(user_id, fallback=None):
+    fallback = normalize_lang_code(fallback)
+    row = user.find_one({'user_id': user_id}) or {}
+    stored = normalize_lang_code(row.get('lang') or fallback)
+    if row and row.get('lang') != stored:
+        user.update_one({'user_id': user_id}, {'$set': {'lang': stored}})
+    return stored or DEFAULT_LANG
+
+
+def set_user_lang(user_id, lang_code):
+    lang = normalize_lang_code(lang_code)
+    user.update_one({'user_id': user_id}, {'$set': {'lang': lang}})
+    return lang
+
+
+def get_locale_message(lang, key, default=''):
+    lang = normalize_lang_code(lang)
+    lang_messages = LOCALE_MESSAGES.get(lang, {})
+    default_messages = LOCALE_MESSAGES.get(DEFAULT_LANG, {})
+    if key in lang_messages:
+        return lang_messages[key]
+    if key in default_messages:
+        return default_messages[key]
+    return default or key
+
+
+def t(user_id, key, default='', fallback_lang=None, **kwargs):
+    lang = get_user_lang(user_id, fallback=fallback_lang)
+    template = str(get_locale_message(lang, key, default=default) or default or key)
+    if kwargs:
+        try:
+            return template.format(**kwargs)
+        except Exception:
+            logging.warning('Failed to format locale key %s for user %s', key, user_id, exc_info=True)
+    return template
+
+
+def get_language_switch_button_text(user_id):
+    return f'🌐 {t(user_id, "language_switch_label", default="English")}'
+
+
+def is_language_switch_text(text):
+    normalized = normalize_menu_text(text)
+    if not normalized:
+        return False
+    candidates = {normalize_menu_text('🌐 English'), normalize_menu_text('🌐 中文')}
+    for lang in SUPPORTED_LANGS:
+        label = str(get_locale_message(lang, 'language_switch_label', '') or '').strip()
+        if label:
+            candidates.add(normalize_menu_text(label))
+            candidates.add(normalize_menu_text(f'🌐 {label}'))
+    return normalized in candidates
+
+
+def toggle_user_lang(user_id):
+    current = get_user_lang(user_id)
+    target = 'en-US' if current == 'zh-CN' else 'zh-CN'
+    return set_user_lang(user_id, target)
 
 
 def candidate_storage_roots(folder_name):
@@ -74,6 +163,17 @@ DEFAULT_CLONE_WELCOME_TEXT = (
     '😄TRC20 充值地址\n'
     '😃 其他支付配置\n\n'
     '⚙️ /start ⬅️ 点击命令打开菜单</b>'
+)
+
+DEFAULT_CLONE_WELCOME_TEXT_EN = (
+    '<b>🔥 Welcome to the BotShop bot\n\n'
+    '‼️Please let the admin finish the setup below first:\n\n'
+    '😃 Welcome message / contact info\n'
+    '😄 Menu buttons\n'
+    '😃 Product categories and product content\n'
+    '😄 TRC20 deposit address\n'
+    '😃 Other payment settings\n\n'
+    '⚙️ /start ⬅️ Tap the command to open the menu</b>'
 )
 
 
@@ -1793,8 +1893,9 @@ def addhb(update: Update, context: CallbackContext):
                              parse_mode='HTML')
 
 
-def ensure_user_exists(user_id, username, fullname, lastname):
+def ensure_user_exists(user_id, username, fullname, lastname, language_code=None):
     timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+    normalized_lang = normalize_lang_code(language_code)
     user_list = user.find_one({'user_id': user_id})
     if user_list is None:
         try:
@@ -1804,19 +1905,21 @@ def ensure_user_exists(user_id, username, fullname, lastname):
         try:
             key_id += 1
             user_data(key_id, user_id, username, fullname, lastname, str(1), creation_time=timer,
-                      last_contact_time=timer)
+                      last_contact_time=timer, lang=normalized_lang)
         except:
             for i in range(100):
                 try:
                     key_id += 1
                     user_data(key_id, user_id, username, fullname, lastname, str(1), creation_time=timer,
-                              last_contact_time=timer)
+                              last_contact_time=timer, lang=normalized_lang)
                     break
                 except:
                     continue
         user_list = user.find_one({'user_id': user_id})
     else:
         updates = {'last_contact_time': timer}
+        if normalize_lang_code(user_list.get('lang')) != normalized_lang:
+            updates['lang'] = normalized_lang
         if user_list.get('username') != username:
             updates['username'] = username
         if user_list.get('fullname') != fullname:
@@ -2313,7 +2416,7 @@ def start(update: Update, context: CallbackContext):
     lastname = us.last_name
     botusername = context.bot.username
     timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-    user_list = ensure_user_exists(user_id, username, fullname, lastname)
+    user_list = ensure_user_exists(user_id, username, fullname, lastname, getattr(us, 'language_code', None))
     state = user_list['state']
     sign = user_list['sign']
     USDT = user_list['USDT']
@@ -2350,44 +2453,9 @@ def start(update: Update, context: CallbackContext):
                                  reply_markup=InlineKeyboardMarkup(keyboard), disable_web_page_preview=True)
         return
 
-    hyy, entities = get_welcome_content()
-    keylist = get_key.find({}, sort=[('Row', 1), ('first', 1)])
-    yyzt = shangtext.find_one({'projectname': '营业状态'})['text']
-    if yyzt == 0:
-        if state != '4':
-            return
-    keyboard = [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []]
-    for i in keylist:
-        projectname = i['projectname']
-        row = i['Row']
-        first = i['first']
-        keyboard[i["Row"] - 1].append(KeyboardButton(projectname))
-    keyboard = [row for row in keyboard if row]
-    if BOT_CLONE_ENABLED and ALLOW_PUBLIC_BOT_CLONE:
-        keyboard.append([KeyboardButton('#g [emoji:5287684458881756303:🤖]一键克隆同款')])
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False) if keyboard else None
-    welcome_kwargs = {'chat_id': user_id, 'text': hyy, 'reply_markup': reply_markup}
-    if welcome_uses_html_parse(hyy, entities):
-        welcome_kwargs['parse_mode'] = 'HTML'
-    else:
-        welcome_kwargs['entities'] = entities
-    context.bot.send_message(**welcome_kwargs)
-    if state == '4':
-        keyboard = build_admin_dashboard_keyboard(user_id)
-        jqrsyrs = len(list(user.find({})))
-        numu = 0
-        for i in list(user.find({"USDT": {"$gt": 0}})):
-            USDT = i['USDT']
-
-            numu += USDT
-
-        fstext = build_admin_dashboard_text(jqrsyrs, numu)
-        context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
-        # message_id = context.bot.send_photo(chat_id=user_id,  photo=open('辛迪充值图片.png', 'rb'))
-        # print(message_id)
+    send_user_home(context, user_id, state=state)
+    # message_id = context.bot.send_photo(chat_id=user_id,  photo=open('辛迪充值图片.png', 'rb'))
+    # print(message_id)
 
 
 
@@ -5043,6 +5111,64 @@ def get_welcome_content(default_text=DEFAULT_CLONE_WELCOME_TEXT):
     return text, entities
 
 
+def get_localized_welcome_content(user_id):
+    lang = get_user_lang(user_id)
+    if lang != 'en-US':
+        return get_welcome_content()
+    english_text = str(get_text_config('欢迎语:en-US', '') or '').strip()
+    if english_text:
+        return english_text, []
+    zh_text, zh_entities = get_welcome_content()
+    if str(zh_text or '').strip() == DEFAULT_CLONE_WELCOME_TEXT.strip():
+        return DEFAULT_CLONE_WELCOME_TEXT_EN, []
+    return zh_text, zh_entities
+
+
+def build_user_home_reply_keyboard(user_id):
+    keylist = get_key.find({}, sort=[('Row', 1), ('first', 1)])
+    keyboard = [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
+                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
+                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
+                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []]
+    for i in keylist:
+        projectname = i['projectname']
+        keyboard[i['Row'] - 1].append(KeyboardButton(projectname))
+    keyboard = [row for row in keyboard if row]
+    if BOT_CLONE_ENABLED and ALLOW_PUBLIC_BOT_CLONE:
+        keyboard.append([KeyboardButton('#g [emoji:5287684458881756303:🤖]一键克隆同款')])
+    keyboard.append([KeyboardButton(get_language_switch_button_text(user_id))])
+    return keyboard
+
+
+def send_user_home(context, user_id, state=None):
+    if state is None:
+        state = (user.find_one({'user_id': user_id}) or {}).get('state')
+    yyzt = shangtext.find_one({'projectname': '营业状态'})['text']
+    if yyzt == 0 and state != '4':
+        return None
+
+    hyy, entities = get_localized_welcome_content(user_id)
+    keyboard = build_user_home_reply_keyboard(user_id)
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False) if keyboard else None
+    welcome_kwargs = {'chat_id': user_id, 'text': hyy, 'reply_markup': reply_markup}
+    if welcome_uses_html_parse(hyy, entities):
+        welcome_kwargs['parse_mode'] = 'HTML'
+    else:
+        welcome_kwargs['entities'] = entities
+    message = context.bot.send_message(**welcome_kwargs)
+
+    if state == '4':
+        keyboard = build_admin_dashboard_keyboard(user_id)
+        jqrsyrs = len(list(user.find({})))
+        numu = 0
+        for i in list(user.find({'USDT': {'$gt': 0}})):
+            numu += i['USDT']
+
+        fstext = build_admin_dashboard_text(jqrsyrs, numu)
+        context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
+    return message
+
+
 def get_clone_price_decimal():
     raw = str(get_text_config('一键克隆价格', '0') or '0').strip()
     try:
@@ -6441,7 +6567,7 @@ def textkeyboard(update: Update, context: CallbackContext):
         fullname = chat.full_name.replace('<', '').replace('>', '')
         reply_to_message_id = update.effective_message.message_id
         timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-        user_list = ensure_user_exists(user_id, username, fullname, lastname)
+        user_list = ensure_user_exists(user_id, username, fullname, lastname, getattr(update.effective_user, 'language_code', None))
         creation_time = user_list['creation_time']
         state = user_list['state']
         sign = user_list['sign']
@@ -7326,6 +7452,11 @@ def textkeyboard(update: Update, context: CallbackContext):
                             [InlineKeyboardButton('关闭', callback_data=f'close {user_id}')]]
                 context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
                                          reply_markup=InlineKeyboardMarkup(keyboard), disable_web_page_preview=True)
+            elif is_language_switch_text(text):
+                del_message(update.message)
+                toggle_user_lang(user_id)
+                send_user_home(context, user_id, state=state)
+
             elif normalized_text == normalize_menu_text('💸我要充值'):
                 del_message(update.message)
                 send_recharge_method_menu(context, user_id)
