@@ -6935,8 +6935,12 @@ def jiexi(context: CallbackContext):
 💳 当前余额：<code>{now_price} USDT</code>
             '''
             try:
-                context.bot.edit_message_caption(chat_id=user_id, message_id=message_id, caption=text,
-                                                 reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+                context.bot.delete_message(chat_id=user_id, message_id=message_id)
+            except:
+                pass
+            try:
+                context.bot.send_message(chat_id=user_id, text=text,
+                                         reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
             except:
                 pass
             us_firstname = us_list['fullname'].replace('<', '').replace('>', '')
