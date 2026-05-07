@@ -796,6 +796,7 @@ def should_preserve_sign_on_menu_match(sign):
         'settuwenset ',
         'setkeyboard ',
         'setrestocktarget',
+        'setbuynotice',
         'update_sysm ',
         'update_wbts ',
         'settrc20',
@@ -1764,6 +1765,26 @@ def build_admin_dashboard_text(user_count, total_balance):
         '''
 
 
+DEFAULT_BUY_NOTICE_TEXT = '<b>您购买的商品已打包完成，请查收！ 欢迎下次光临 ❣️</b>'
+
+
+def normalize_buy_notice_compare_text(text):
+    text = str(text or '')
+    text = text.replace('\xa0', ' ')
+    text = re.sub(r'\s+', '', text)
+    return text.strip()
+
+
+def get_buy_notice_text(product_text=''):
+    global_text = str(get_text_config('购买提醒', DEFAULT_BUY_NOTICE_TEXT) or '').strip() or DEFAULT_BUY_NOTICE_TEXT
+    product_text = str(product_text or '').strip()
+    if not product_text:
+        return global_text
+    if normalize_buy_notice_compare_text(product_text) == normalize_buy_notice_compare_text(DEFAULT_BUY_NOTICE_TEXT):
+        return global_text
+    return product_text
+
+
 def start(update: Update, context: CallbackContext):
     us = update.effective_user
     chat_id = update.effective_chat.id
@@ -1838,6 +1859,7 @@ def start(update: Update, context: CallbackContext):
              InlineKeyboardButton(f'{ADMIN_EMOJI_OKPAY}OKPay配置', callback_data='okpaycfg')],
             [InlineKeyboardButton(f'{ADMIN_EMOJI_GOODS}商品管理', callback_data='spgli'),
              InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}欢迎语修改', callback_data='startupdate')],
+            [InlineKeyboardButton(f'{ADMIN_EMOJI_NOTICE}购买提醒', callback_data='buynoticecfg')],
             [InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}菜单按钮', callback_data='addzdykey')],
         ]
         if BOT_CLONE_ENABLED:
@@ -2104,6 +2126,7 @@ def backstart(update: Update, context: CallbackContext):
          InlineKeyboardButton(f'{ADMIN_EMOJI_OKPAY}OKPay配置', callback_data='okpaycfg')],
         [InlineKeyboardButton(f'{ADMIN_EMOJI_GOODS}商品管理', callback_data='spgli'),
          InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}欢迎语修改', callback_data='startupdate')],
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_NOTICE}购买提醒', callback_data='buynoticecfg')],
         [InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}菜单按钮', callback_data='addzdykey')],
     ]
     if BOT_CLONE_ENABLED:
@@ -3161,6 +3184,50 @@ def restockpushcfg(update: Update, context: CallbackContext):
         text=build_restock_push_config_text(),
         parse_mode='HTML',
         reply_markup=InlineKeyboardMarkup(build_restock_push_config_keyboard(user_id))
+    )
+
+
+def build_buy_notice_config_text():
+    notice_text = get_buy_notice_text('')
+    return (
+        f'{ADMIN_EMOJI_NOTICE}购买提醒配置\n\n'
+        '[emoji:5217818964612108191:✨] 支持 HTML 和会员 emoji\n'
+        '[emoji:5220064167356025824:⭐️] 当前文案预览如下：'
+    ), notice_text
+
+
+def build_buy_notice_config_keyboard(user_id):
+    return [
+        [InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}修改购买提醒', callback_data='setbuynotice')],
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}'),
+         InlineKeyboardButton('返回后台', callback_data='backstart')]
+    ]
+
+
+def buynoticecfg(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
+    title_text, notice_text = build_buy_notice_config_text()
+    context.bot.send_message(chat_id=user_id, text=title_text, parse_mode='HTML')
+    context.bot.send_message(
+        chat_id=user_id,
+        text=notice_text,
+        parse_mode='HTML',
+        reply_markup=InlineKeyboardMarkup(build_buy_notice_config_keyboard(user_id))
+    )
+
+
+def setbuynotice(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
+    user.update_one({'user_id': user_id}, {'$set': {'sign': 'setbuynotice'}})
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')]]
+    context.bot.send_message(
+        chat_id=user_id,
+        text='请直接发送新的购买提醒文案\n\n支持 HTML，也支持会员 emoji。',
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
@@ -5306,7 +5373,7 @@ def qrgaimai(update: Update, context: CallbackContext):
         yijiid = ejfl_list['uid']
         yiji_list = fenlei.find_one({'uid': yijiid})
         yijiprojectname = yiji_list['projectname']
-        fstext = ejfl_list['text']
+        fstext = get_buy_notice_text(ejfl_list.get('text', ''))
         if fhtype == '协议号':
             zgje = user_list['zgje']
             zgsl = user_list['zgsl']
@@ -6140,6 +6207,18 @@ def textkeyboard(update: Update, context: CallbackContext):
                         img.save(f)
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                     context.bot.send_message(chat_id=user_id, text=f'当前充值地址为: {text}', parse_mode='HTML')
+                elif sign == 'setbuynotice':
+                    set_text_config('购买提醒', stored_text)
+                    user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                    title_text, notice_text = build_buy_notice_config_text()
+                    context.bot.send_message(chat_id=user_id, text='购买提醒文案已保存', parse_mode='HTML')
+                    context.bot.send_message(chat_id=user_id, text=title_text, parse_mode='HTML')
+                    context.bot.send_message(
+                        chat_id=user_id,
+                        text=notice_text,
+                        parse_mode='HTML',
+                        reply_markup=InlineKeyboardMarkup(build_buy_notice_config_keyboard(user_id))
+                    )
                 elif sign == 'setrestocktarget':
                     target = text.strip()
                     if not target:
@@ -6332,10 +6411,10 @@ def textkeyboard(update: Update, context: CallbackContext):
                 elif 'update_wbts' in sign:
                     nowuid = sign.replace('update_wbts ', '')
                     uid = ejfl.find_one({'nowuid': nowuid})['uid']
-                    ejfl.update_one({"nowuid": nowuid}, {"$set": {'text': zxh}})
+                    ejfl.update_one({"nowuid": nowuid}, {"$set": {'text': stored_text}})
                     fstext = f'''
 新的提示为:
-{zxh}
+{stored_text}
                     '''
                     context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML')
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
@@ -7159,7 +7238,7 @@ def main():
         application.add_handler(CommandHandler(command_name, sync_handler(callback)))
 
     callback_handlers = [
-        ('startupdate', startupdate), ('clonebot', clonebot), ('clonepay', clonepay), ('clonelist', clonelist), ('cloneinfo ', cloneinfo), ('clonerestart ', clonerestart), ('clonedelete ', clonedelete), ('setcloneprice', setcloneprice), ('restockpushcfg', restockpushcfg), ('setrestocktarget', setrestocktarget), ('restockrequestarea ', restockrequestarea), ('nostock ', nostock), ('okpaycfg', okpaycfg), ('setokpayid', setokpayid), ('setokpaytoken', setokpaytoken), ('setokpayname', setokpayname), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
+        ('startupdate', startupdate), ('clonebot', clonebot), ('clonepay', clonepay), ('clonelist', clonelist), ('cloneinfo ', cloneinfo), ('clonerestart ', clonerestart), ('clonedelete ', clonedelete), ('setcloneprice', setcloneprice), ('restockpushcfg', restockpushcfg), ('buynoticecfg', buynoticecfg), ('setbuynotice', setbuynotice), ('setrestocktarget', setrestocktarget), ('restockrequestarea ', restockrequestarea), ('nostock ', nostock), ('okpaycfg', okpaycfg), ('setokpayid', setokpayid), ('setokpaytoken', setokpaytoken), ('setokpayname', setokpayname), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
         ('backstart', backstart), ('paixurow', paixurow), ('addzdykey', addzdykey),
         ('qrscdelrow ', qrscdelrow), ('addhangkey ', addhangkey), ('delhangkey ', delhangkey),
         ('qrdelliekey ', qrdelliekey), ('keyxq ', keyxq), ('setkeyname ', setkeyname),
