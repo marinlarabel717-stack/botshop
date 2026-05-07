@@ -3889,7 +3889,7 @@ def restockrequestarea(update: Update, context: CallbackContext):
         '用户点击了提醒补货按钮，可留意是否需要补货相关商品。'
     )
     notify_source_admins(context, notify_text, exclude_user_ids=[user_id])
-    context.bot.send_message(chat_id=user_id, text='已帮你提醒管理员补货，请稍后留意上新消息 🌸')
+    context.bot.send_message(chat_id=user_id, text='已帮你提醒管理员补货，请稍后留意上新消息 [emoji:5222044641200720562:🌸]', parse_mode='HTML')
 
 
 def send_product_purchase_page(context, chat_id, user_id, nowuid):
