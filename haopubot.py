@@ -235,6 +235,17 @@ def matches_localized_label(user_id, text, locale_key, default_label):
     return normalized in candidates
 
 
+def build_user_profile_text(user_id, profile_user_id, username_text, creation_time, total_count, total_amount, balance):
+    return (
+        f"<b>[emoji:6321041414067068140:👤] {t(user_id, 'profile_id_label', default='您的ID:')}</b>  <code>{profile_user_id}</code>\n"
+        f"<b>[emoji:6323075330189826977:😃] {t(user_id, 'profile_username_label', default='您的用户名:')}</b>  {username_text}\n"
+        f"<b>[emoji:5217818964612108191:✨] {t(user_id, 'profile_created_label', default='注册日期:')}</b>  {creation_time}\n\n"
+        f"<b>[emoji:5220064167356025824:⭐️] {t(user_id, 'profile_total_count_label', default='总购数量:')}</b>  {total_count}\n\n"
+        f"<b>[emoji:5028746137645876535:📈] {t(user_id, 'profile_total_amount_label', default='总购金额:')}</b>  {standard_num(total_amount)} USDT\n\n"
+        f"<b>[emoji:4972482444025398275:👛] {t(user_id, 'profile_balance_label', default='您的余额:')}</b>  {balance} USDT"
+    )
+
+
 def candidate_storage_roots(folder_name):
     roots = [BASE_DIR / folder_name, Path(folder_name)]
     deduped = []
@@ -2086,49 +2097,49 @@ def get_buy_notice_text(product_text=''):
     return product_text
 
 
-def build_purchase_success_header(deducted_amount, remaining_amount):
+def build_purchase_success_header(user_id, deducted_amount, remaining_amount):
     deducted_text = standard_num(deducted_amount)
     remaining_text = standard_num(remaining_amount)
     return (
-        '<b>[emoji:5193209274452425995:🎉] 购买成功</b>\n\n'
-        f'<b>[emoji:4965219701572503640:💰] 从余额中扣除：</b> {deducted_text} USDT\n'
-        f'<b>[emoji:4972482444025398275:👛] 您的剩余金额：</b> {remaining_text} USDT'
+        f"<b>[emoji:5193209274452425995:🎉] {t(user_id, 'purchase_success_title', default='购买成功')}</b>\n\n"
+        f"<b>[emoji:4965219701572503640:💰] {t(user_id, 'deducted_balance_label', default='从余额中扣除：')}</b> {deducted_text} USDT\n"
+        f"<b>[emoji:4972482444025398275:👛] {t(user_id, 'remaining_balance_label', default='您的剩余金额：')}</b> {remaining_text} USDT"
     )
 
 
-def build_account_check_progress_text(total_count, checked_count, alive_count=0, invalid_count=0, frozen_count=0, timeout_count=0):
+def build_account_check_progress_text(user_id, total_count, checked_count, alive_count=0, invalid_count=0, frozen_count=0, timeout_count=0):
     return (
-        f'<b>{ACCOUNT_CHECK_EMOJI_PROGRESS} 正在检查账号状态，请稍等！</b>\n\n'
-        f'<b>{ACCOUNT_CHECK_EMOJI_TOTAL} 已检测：</b> {checked_count} / {total_count}'
+        f"<b>{ACCOUNT_CHECK_EMOJI_PROGRESS} {t(user_id, 'account_check_progress_title', default='正在检查账号状态，请稍等！')}</b>\n\n"
+        f"<b>{ACCOUNT_CHECK_EMOJI_TOTAL} {t(user_id, 'account_check_checked_label', default='已检测：')}</b> {checked_count} / {total_count}"
     )
 
 
-def build_account_check_result_text(total_count, alive_count, invalid_count, frozen_count, timeout_count, deducted_amount, refund_amount, remaining_amount):
+def build_account_check_result_text(user_id, total_count, alive_count, invalid_count, frozen_count, timeout_count, deducted_amount, refund_amount, remaining_amount):
     deducted_text = standard_num(deducted_amount)
     refund_text = standard_num(refund_amount)
     remaining_text = standard_num(remaining_amount)
     lines = []
     if alive_count == 0 and timeout_count == 0:
-        lines.append(f'<b>{ACCOUNT_CHECK_EMOJI_INVALID} 本次账号检测全部失效，已退款</b>')
+        lines.append(f"<b>{ACCOUNT_CHECK_EMOJI_INVALID} {t(user_id, 'account_check_all_invalid_refunded', default='本次账号检测全部失效，已退款')}</b>")
     else:
-        lines.append('<b>[emoji:5193209274452425995:🎉] 购买成功</b>')
+        lines.append(f"<b>[emoji:5193209274452425995:🎉] {t(user_id, 'purchase_success_title', default='购买成功')}</b>")
     lines.extend([
         '',
-        f'<b>{ACCOUNT_CHECK_EMOJI_TOTAL} 账号数量：</b> {total_count}',
-        f'<b>{ACCOUNT_CHECK_EMOJI_ALIVE} 存活账号：</b> {alive_count}',
-        f'<b>{ACCOUNT_CHECK_EMOJI_INVALID} 无效账号：</b> {invalid_count}',
-        f'<b>{ACCOUNT_CHECK_EMOJI_FROZEN} 冻结账号：</b> {frozen_count}',
+        f"<b>{ACCOUNT_CHECK_EMOJI_TOTAL} {t(user_id, 'account_check_total_label', default='账号数量：')}</b> {total_count}",
+        f"<b>{ACCOUNT_CHECK_EMOJI_ALIVE} {t(user_id, 'account_check_alive_label', default='存活账号：')}</b> {alive_count}",
+        f"<b>{ACCOUNT_CHECK_EMOJI_INVALID} {t(user_id, 'account_check_invalid_label', default='无效账号：')}</b> {invalid_count}",
+        f"<b>{ACCOUNT_CHECK_EMOJI_FROZEN} {t(user_id, 'account_check_frozen_label', default='冻结账号：')}</b> {frozen_count}",
     ])
     if timeout_count:
-        lines.append(f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 超时账号：</b> {timeout_count}')
-    lines.append(f'<b>[emoji:4965219701572503640:💰] 从余额中扣除：</b> {deducted_text} USDT')
+        lines.append(f"<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} {t(user_id, 'account_check_timeout_label', default='超时账号：')}</b> {timeout_count}")
+    lines.append(f"<b>[emoji:4965219701572503640:💰] {t(user_id, 'deducted_balance_label', default='从余额中扣除：')}</b> {deducted_text} USDT")
     if refund_amount:
-        lines.append(f'<b>[emoji:5235511932064129087:🎁] 已退回余额：</b> {refund_text} USDT')
-    lines.append(f'<b>[emoji:4972482444025398275:👛] 您的剩余金额：</b> {remaining_text} USDT')
+        lines.append(f"<b>[emoji:5235511932064129087:🎁] {t(user_id, 'refunded_balance_label', default='已退回余额：')}</b> {refund_text} USDT")
+    lines.append(f"<b>[emoji:4972482444025398275:👛] {t(user_id, 'remaining_balance_label', default='您的剩余金额：')}</b> {remaining_text} USDT")
     if timeout_count:
         lines.extend([
             '',
-            f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 超时账号已随文件一起发给你，请联系客服处理。</b>'
+            f"<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} {t(user_id, 'account_check_timeout_notice', default='超时账号已随文件一起发给你，请联系客服处理。')}</b>"
         ])
     return '\n'.join(lines)
 
@@ -2433,7 +2444,7 @@ def deliver_accounts_with_check(context, user_id, fullname, username, nowuid, er
                         bot,
                         user_id,
                         progress_message_id,
-                        build_account_check_progress_text(total_count, checked_count, len(alive_items), len(invalid_items), len(frozen_items), len(timeout_items))
+                        build_account_check_progress_text(user_id, total_count, checked_count, len(alive_items), len(invalid_items), len(frozen_items), len(timeout_items))
                     )
                 except Exception:
                     logging.warning('Failed to update account-check progress for user %s at %s/%s', user_id, checked_count, total_count, exc_info=True)
@@ -2468,6 +2479,7 @@ def deliver_accounts_with_check(context, user_id, fullname, username, nowuid, er
         write_invalid_archive_meta(order_id, archive_payload)
 
     final_text = build_account_check_result_text(
+        user_id,
         total_count,
         len(alive_items),
         invalid_count,
@@ -2531,30 +2543,32 @@ def start(update: Update, context: CallbackContext):
     creation_time = user_list['creation_time']
     args = update.message.text.split(maxsplit=2)
     content = args[2] if len(args) == 3 else ""
-        if len(args) == 2:
-            start_arg = str(args[1] or '').strip()
-            if start_arg.startswith('buy_'):
-                nowuid = start_arg.replace('buy_', '', 1).strip()
-                send_product_purchase_page(context, user_id, user_id, nowuid)
-                return
-        if username is None:
-            username = fullname
-        else:
-            username = f'<a href="https://t.me/{username}">{username}</a>'
-        fstext = (
-            f"<b>[emoji:6321041414067068140:👤] {t(user_id, 'profile_id_label', default='您的ID:')}</b>  <code>{user_id}</code>\n"
-            f"<b>[emoji:6323075330189826977:😃] {t(user_id, 'profile_username_label', default='您的用户名:')}</b>  {username}\n"
-            f"<b>[emoji:5217818964612108191:✨] {t(user_id, 'profile_created_label', default='注册日期:')}</b>  {creation_time}\n\n"
-            f"<b>[emoji:5220064167356025824:⭐️] {t(user_id, 'profile_total_count_label', default='总购数量:')}</b>  {zgsl}\n\n"
-            f"<b>[emoji:5028746137645876535:📈] {t(user_id, 'profile_total_amount_label', default='总购金额:')}</b>  {standard_num(zgje)} USDT\n\n"
-            f"<b>[emoji:4972482444025398275:👛] {t(user_id, 'profile_balance_label', default='您的余额:')}</b>  {USDT} USDT"
-        )
 
-        keyboard = [[InlineKeyboardButton(t(user_id, 'purchase_history_button', default='🛒购买记录'), callback_data=f'gmaijilu {user_id}')],
-                    [InlineKeyboardButton(t(user_id, 'close', default='关闭'), callback_data=f'close {user_id}')]]
-        context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
-                                 reply_markup=InlineKeyboardMarkup(keyboard), disable_web_page_preview=True)
-        return
+    if len(args) == 2:
+        start_arg = str(args[1] or '').strip()
+        if start_arg.startswith('buy_'):
+            nowuid = start_arg.replace('buy_', '', 1).strip()
+            send_product_purchase_page(context, user_id, user_id, nowuid)
+            return
+
+    if username is None:
+        username = fullname
+    else:
+        username = f'<a href="https://t.me/{username}">{username}</a>'
+    fstext = (
+        f"<b>[emoji:6321041414067068140:👤] {t(user_id, 'profile_id_label', default='您的ID:')}</b>  <code>{user_id}</code>\n"
+        f"<b>[emoji:6323075330189826977:😃] {t(user_id, 'profile_username_label', default='您的用户名:')}</b>  {username}\n"
+        f"<b>[emoji:5217818964612108191:✨] {t(user_id, 'profile_created_label', default='注册日期:')}</b>  {creation_time}\n\n"
+        f"<b>[emoji:5220064167356025824:⭐️] {t(user_id, 'profile_total_count_label', default='总购数量:')}</b>  {zgsl}\n\n"
+        f"<b>[emoji:5028746137645876535:📈] {t(user_id, 'profile_total_amount_label', default='总购金额:')}</b>  {standard_num(zgje)} USDT\n\n"
+        f"<b>[emoji:4972482444025398275:👛] {t(user_id, 'profile_balance_label', default='您的余额:')}</b>  {USDT} USDT"
+    )
+
+    keyboard = [[InlineKeyboardButton(t(user_id, 'purchase_history_button', default='🛒购买记录'), callback_data=f'gmaijilu {user_id}')],
+                [InlineKeyboardButton(t(user_id, 'close', default='关闭'), callback_data=f'close {user_id}')]]
+    context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
+                             reply_markup=InlineKeyboardMarkup(keyboard), disable_web_page_preview=True)
+    return
 
     send_user_home(context, user_id, state=state)
     # message_id = context.bot.send_photo(chat_id=user_id,  photo=open('辛迪充值图片.png', 'rb'))
@@ -2821,16 +2835,15 @@ def gmaijilu(update: Update, context: CallbackContext):
     count = 1
     for i in jilu_list:
         bianhao = i['bianhao']
-        projectname = i['projectname']
-        fhtext = i['text']
+        projectname = get_localized_name(user_id, i.get('projectname'))
 
         keyboard.append([InlineKeyboardButton(f'{projectname}', callback_data=f'zcfshuo {bianhao}')])
         count += 1
     if len(list(gmjlu.find({'user_id': df_id}))) > 10:
-        keyboard.append([InlineKeyboardButton('下一页', callback_data=f'gmainext {df_id}:10')])
-    keyboard.append([InlineKeyboardButton('⬅️返回', callback_data=f'backgmjl {df_id}')])
+        keyboard.append([InlineKeyboardButton(t(user_id, 'next_page', default='下一页'), callback_data=f'gmainext {df_id}:10')])
+    keyboard.append([InlineKeyboardButton(t(user_id, 'back', default='⬅️返回'), callback_data=f'backgmjl {df_id}')])
     try:
-        query.edit_message_text(text='🛒您的购物记录', parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
+        query.edit_message_text(text=t(user_id, 'purchase_history_title', default='🛒您的购物记录'), parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
     except:
         pass
 
@@ -2848,23 +2861,22 @@ def gmainext(update: Update, context: CallbackContext):
     count = 1
     for i in jilu_list:
         bianhao = i['bianhao']
-        projectname = i['projectname']
-        fhtext = i['text']
+        projectname = get_localized_name(user_id, i.get('projectname'))
 
         keyboard.append([InlineKeyboardButton(f'{projectname}', callback_data=f'zcfshuo {bianhao}')])
         count += 1
     if len(list(gmjlu.find({"user_id": df_id}, sort=[("timer", -1)], skip=int(page)))) > 10:
         if int(page) == 0:
-            keyboard.append([InlineKeyboardButton('下一页', callback_data=f'gmainext {df_id}:{int(page) + 10}')])
+            keyboard.append([InlineKeyboardButton(t(user_id, 'next_page', default='下一页'), callback_data=f'gmainext {df_id}:{int(page) + 10}')])
         else:
-            keyboard.append([InlineKeyboardButton('上一页', callback_data=f'gmainext {df_id}:{int(page) - 10}'),
-                             InlineKeyboardButton('下一页', callback_data=f'gmainext {df_id}:{int(page) + 10}')])
+            keyboard.append([InlineKeyboardButton(t(user_id, 'prev_page', default='上一页'), callback_data=f'gmainext {df_id}:{int(page) - 10}'),
+                             InlineKeyboardButton(t(user_id, 'next_page', default='下一页'), callback_data=f'gmainext {df_id}:{int(page) + 10}')])
     else:
-        keyboard.append([InlineKeyboardButton('上一页', callback_data=f'gmainext {df_id}:{int(page) - 10}')])
+        keyboard.append([InlineKeyboardButton(t(user_id, 'prev_page', default='上一页'), callback_data=f'gmainext {df_id}:{int(page) - 10}')])
 
-    keyboard.append([InlineKeyboardButton('⬅️返回', callback_data=f'backgmjl {df_id}')])
+    keyboard.append([InlineKeyboardButton(t(user_id, 'back', default='⬅️返回'), callback_data=f'backgmjl {df_id}')])
     try:
-        query.edit_message_text(text='🛒您的购物记录', parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
+        query.edit_message_text(text=t(user_id, 'purchase_history_title', default='🛒您的购物记录'), parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
     except:
         pass
 
@@ -2885,20 +2897,10 @@ def backgmjl(update: Update, context: CallbackContext):
     zgsl = df_list['zgsl']
     zgje = df_list['zgje']
     USDT = df_list['USDT']
-    fstext = f'''
-<b>用户ID:</b>  <code>{df_id}</code>
-<b>用户名:</b>  {df_username}
-<b>注册日期:</b>  {creation_time}
+    fstext = build_user_profile_text(user_id, df_id, df_username, creation_time, zgsl, zgje, USDT)
 
-<b>总购数量:</b>  {zgsl}
-
-<b>总购金额:</b>  {standard_num(zgje)} USDT
-
-<b>您的余额:</b>  {USDT} USDT
-    '''
-
-    keyboard = [[InlineKeyboardButton('🛒购买记录', callback_data=f'gmaijilu {df_id}')],
-                [InlineKeyboardButton('关闭', callback_data=f'close {df_id}')]]
+    keyboard = [[InlineKeyboardButton(t(user_id, 'purchase_history_button', default='🛒购买记录'), callback_data=f'gmaijilu {df_id}')],
+                [InlineKeyboardButton(t(user_id, 'close', default='关闭'), callback_data=f'close {df_id}')]]
     query.edit_message_text(text=fstext, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML',
                             disable_web_page_preview=True)
 
@@ -2918,7 +2920,7 @@ def zcfshuo(update: Update, context: CallbackContext):
     else:
         zip_filename = gmjlu_list['text']
         fstext = gmjlu_list['ts']
-        keyboard = [[InlineKeyboardButton('✅已读（点击销毁此消息）', callback_data=f'close {user_id}')]]
+        keyboard = [[InlineKeyboardButton(t(user_id, 'read_and_destroy_button', default='✅已读（点击销毁此消息）'), callback_data=f'close {user_id}')]]
         context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML', disable_web_page_preview=True,
                                  reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -4271,18 +4273,18 @@ def startupdate(update: Update, context: CallbackContext):
 def build_recharge_method_keyboard(user_id):
     keyboard = []
     if SHOW_TRC20_RECHARGE_ENTRY:
-        keyboard.append([InlineKeyboardButton('[emoji:5080312910866024090:😀] USDT 直充 | 链上到账', callback_data='recharge_trc20')])
+        keyboard.append([InlineKeyboardButton(t(user_id, 'recharge_trc20_button', default='[emoji:5080312910866024090:😀] USDT 直充 | 链上到账'), callback_data='recharge_trc20')])
     if okpay_entry_enabled():
-        keyboard.append([InlineKeyboardButton('[emoji:6321339712430676611:😄] OKPay支付 | 秒速到账', callback_data='recharge_okpay')])
-    keyboard.append([InlineKeyboardButton('取消充值', callback_data=f'close {user_id}')])
+        keyboard.append([InlineKeyboardButton(t(user_id, 'recharge_okpay_button', default='[emoji:6321339712430676611:😄] OKPay支付 | 秒速到账'), callback_data='recharge_okpay')])
+    keyboard.append([InlineKeyboardButton(t(user_id, 'cancel_recharge', default='取消充值'), callback_data=f'close {user_id}')])
     return keyboard
 
 
 def send_recharge_method_menu(context, user_id):
     if not SHOW_TRC20_RECHARGE_ENTRY and not okpay_entry_enabled():
-        context.bot.send_message(chat_id=user_id, text='当前未开启任何充值方式，请联系管理员')
+        context.bot.send_message(chat_id=user_id, text=t(user_id, 'recharge_method_unavailable', default='当前未开启任何充值方式，请联系管理员'))
         return
-    fstext = '[emoji:5197474438970363734:⤵️] 请选择支付方式'
+    fstext = t(user_id, 'recharge_method_title', default='[emoji:5197474438970363734:⤵️] 请选择支付方式')
     keyboard = build_recharge_method_keyboard(user_id)
     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -4298,10 +4300,8 @@ def zdycz(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
     query.answer()
-    text = f'''
-输入充值金额
-'''
-    keyboard = [[InlineKeyboardButton('取消', callback_data=f'close {user_id}')]]
+    text = t(user_id, 'enter_recharge_amount', default='输入充值金额')
+    keyboard = [[InlineKeyboardButton(t(user_id, 'cancel', default='取消'), callback_data=f'close {user_id}')]]
 
     message_id = context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -4312,10 +4312,8 @@ def okzdycz(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
     query.answer()
-    text = f'''
-输入OKPay充值金额
-'''
-    keyboard = [[InlineKeyboardButton('取消', callback_data=f'close {user_id}')]]
+    text = t(user_id, 'enter_okpay_amount', default='输入OKPay充值金额')
+    keyboard = [[InlineKeyboardButton(t(user_id, 'cancel', default='取消'), callback_data=f'close {user_id}')]]
 
     message_id = context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -4342,11 +4340,7 @@ def recharge_trc20(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
     user_id = query.from_user.id
-    fstext = f'''
-<b>💰请选择下面 TRC20-USDT 充值金额
-
-♥系统会生成唯一小数金额，请严格按订单金额转账[emoji:5219866512961062330:⁉️]</b>
-    '''
+    fstext = t(user_id, 'trc20_recharge_menu_text', default='<b>💰请选择下面 TRC20-USDT 充值金额\n\n♥系统会生成唯一小数金额，请严格按订单金额转账[emoji:5219866512961062330:⁉️]</b>')
     keyboard = [
         [InlineKeyboardButton('10USDT', callback_data='yuecz 10'),
          InlineKeyboardButton('30USDT', callback_data='yuecz 30'),
@@ -4357,9 +4351,9 @@ def recharge_trc20(update: Update, context: CallbackContext):
         [InlineKeyboardButton('1000USDT', callback_data='yuecz 1000'),
          InlineKeyboardButton('1500USDT', callback_data='yuecz 1500'),
          InlineKeyboardButton('2000USDT', callback_data='yuecz 2000')],
-        [InlineKeyboardButton('自定义充值金额', callback_data='zdycz')],
-        [InlineKeyboardButton('返回支付方式', callback_data='recharge_menu')],
-        [InlineKeyboardButton('取消充值', callback_data=f'close {user_id}')]
+        [InlineKeyboardButton(t(user_id, 'custom_recharge_amount', default='自定义充值金额'), callback_data='zdycz')],
+        [InlineKeyboardButton(t(user_id, 'back_to_payment_methods', default='返回支付方式'), callback_data='recharge_menu')],
+        [InlineKeyboardButton(t(user_id, 'cancel_recharge', default='取消充值'), callback_data=f'close {user_id}')]
     ]
     context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
                              reply_markup=InlineKeyboardMarkup(keyboard))
@@ -4369,9 +4363,7 @@ def recharge_okpay(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
     user_id = query.from_user.id
-    fstext = f'''
-<b>请选择下面 OKPay 充值金额</b>
-    '''
+    fstext = t(user_id, 'okpay_recharge_menu_text', default='<b>请选择下面 OKPay 充值金额</b>')
     keyboard = [
         [InlineKeyboardButton('10USDT', callback_data='okyuecz 10'),
          InlineKeyboardButton('30USDT', callback_data='okyuecz 30'),
@@ -4382,9 +4374,9 @@ def recharge_okpay(update: Update, context: CallbackContext):
         [InlineKeyboardButton('1000USDT', callback_data='okyuecz 1000'),
          InlineKeyboardButton('1500USDT', callback_data='okyuecz 1500'),
          InlineKeyboardButton('2000USDT', callback_data='okyuecz 2000')],
-        [InlineKeyboardButton('自定义充值金额', callback_data='okzdycz')],
-        [InlineKeyboardButton('返回支付方式', callback_data='recharge_menu')],
-        [InlineKeyboardButton('取消充值', callback_data=f'close {user_id}')]
+        [InlineKeyboardButton(t(user_id, 'custom_recharge_amount', default='自定义充值金额'), callback_data='okzdycz')],
+        [InlineKeyboardButton(t(user_id, 'back_to_payment_methods', default='返回支付方式'), callback_data='recharge_menu')],
+        [InlineKeyboardButton(t(user_id, 'cancel_recharge', default='取消充值'), callback_data=f'close {user_id}')]
     ]
     context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
                              reply_markup=InlineKeyboardMarkup(keyboard))
@@ -4543,21 +4535,22 @@ def search_products_by_area_code(area_code):
 
 
 def build_area_code_search_text(area_code, results):
+    user_id = int(results[0].get('viewer_user_id') or 0) if results else 0
     total = len(results)
     in_stock_count = sum(1 for item in results if int(item.get('stock_count') or 0) > 0)
-    tail_text = '请从下面列表中选择要查看的商品。' if in_stock_count > 0 else '当前相关商品暂无库存，你可以点击底部按钮提醒补货。'
+    tail_text = t(user_id, 'area_code_tail_in_stock', default='请从下面列表中选择要查看的商品。') if in_stock_count > 0 else t(user_id, 'area_code_tail_empty', default='当前相关商品暂无库存，你可以点击底部按钮提醒补货。')
     return (
-        f'<b>[emoji:5220064167356025824:⭐️] 区号搜索结果</b>\n\n'
-        f'[emoji:5217818964612108191:✨] 搜索关键词：<code>{area_code}</code>\n'
-        f'[emoji:5028746137645876535:📈] 匹配商品：<code>{total}</code> 个\n\n'
+        f"<b>[emoji:5220064167356025824:⭐️] {t(user_id, 'area_code_result_title', default='区号搜索结果')}</b>\n\n"
+        f"[emoji:5217818964612108191:✨] {t(user_id, 'area_code_keyword_label', default='搜索关键词：')}<code>{area_code}</code>\n"
+        f"[emoji:5028746137645876535:📈] {t(user_id, 'area_code_match_count_label', default='匹配商品：')}<code>{total}</code> {t(user_id, 'items_unit', default='个')}\n\n"
         f'{tail_text}'
     )
 
 
 def build_area_code_restock_request_keyboard(area_code, user_id):
     return [
-        [InlineKeyboardButton('[emoji:5397916757333654639:➕]提醒补货', callback_data=f'restockrequestarea {area_code}')],
-        [InlineKeyboardButton('🏠主菜单', callback_data='backzcd'), InlineKeyboardButton('❌关闭', callback_data=f'close {user_id}')]
+        [InlineKeyboardButton(t(user_id, 'restock_request_button', default='[emoji:5397916757333654639:➕]提醒补货'), callback_data=f'restockrequestarea {area_code}')],
+        [InlineKeyboardButton(t(user_id, 'main_menu', default='🏠主菜单'), callback_data='backzcd'), InlineKeyboardButton(t(user_id, 'close_button_with_icon', default='❌关闭'), callback_data=f'close {user_id}')]
     ]
 
 
@@ -4565,7 +4558,7 @@ def build_area_code_search_keyboard(results, user_id):
     keyboard = []
     has_stock = any(int(item.get('stock_count') or 0) > 0 for item in results)
     for item in results[:40]:
-        projectname = str(item.get('projectname') or '商品').strip()
+        projectname = get_localized_name(user_id, str(item.get('projectname') or '商品').strip())
         money = standard_num(item.get('money', 0))
         stock_count = int(item.get('stock_count') or 0)
         label = f'{projectname} （{stock_count}） - ${money}'
@@ -4573,8 +4566,8 @@ def build_area_code_search_keyboard(results, user_id):
             label = label[:57] + '...'
         keyboard.append([InlineKeyboardButton(label, callback_data=f'gmsp {item["nowuid"]}:{stock_count}')])
     if not has_stock:
-        keyboard.append([InlineKeyboardButton('[emoji:5397916757333654639:➕]提醒补货', callback_data=f'restockrequestarea {results[0].get("search_keyword", "")}')])
-    keyboard.append([InlineKeyboardButton('🏠主菜单', callback_data='backzcd'), InlineKeyboardButton('❌关闭', callback_data=f'close {user_id}')])
+        keyboard.append([InlineKeyboardButton(t(user_id, 'restock_request_button', default='[emoji:5397916757333654639:➕]提醒补货'), callback_data=f'restockrequestarea {results[0].get("search_keyword", "")}')])
+    keyboard.append([InlineKeyboardButton(t(user_id, 'main_menu', default='🏠主菜单'), callback_data='backzcd'), InlineKeyboardButton(t(user_id, 'close_button_with_icon', default='❌关闭'), callback_data=f'close {user_id}')])
     return keyboard
 
 
@@ -4583,6 +4576,7 @@ def handle_area_code_search(context, user_id, fullname, username, area_code):
     if results:
         for item in results:
             item['search_keyword'] = area_code
+            item['viewer_user_id'] = user_id
         context.bot.send_message(
             chat_id=user_id,
             text=build_area_code_search_text(area_code, results),
@@ -4592,8 +4586,8 @@ def handle_area_code_search(context, user_id, fullname, username, area_code):
         return True
 
     tip_text = (
-        f'[emoji:5301246586918024418:⚠️] 暂时没有找到 {area_code} 相关商品。\n\n'
-        '你可以点击下方按钮提醒补货，或者稍后再来看看。'
+        f"[emoji:5301246586918024418:⚠️] {t(user_id, 'area_code_not_found_prefix', default='暂时没有找到')} {area_code} {t(user_id, 'area_code_not_found_suffix', default='相关商品。')}\n\n"
+        f"{t(user_id, 'area_code_not_found_tip', default='你可以点击下方按钮提醒补货，或者稍后再来看看。')}"
     )
     context.bot.send_message(
         chat_id=user_id,
@@ -4612,7 +4606,7 @@ def restockrequestarea(update: Update, context: CallbackContext):
     area_code = str(query.data.replace('restockrequestarea ', '', 1)).strip()
     query.answer()
     if not is_area_code_search_text(area_code):
-        context.bot.send_message(chat_id=user_id, text='提醒补货失败：区号格式无效')
+        context.bot.send_message(chat_id=user_id, text=t(user_id, 'restock_request_invalid_area', default='提醒补货失败：区号格式无效'))
         return
     created_at = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
     result = restock_requests.update_one(
@@ -4628,7 +4622,7 @@ def restockrequestarea(update: Update, context: CallbackContext):
         upsert=True
     )
     if result.upserted_id is None:
-        context.bot.send_message(chat_id=user_id, text='这个区号你已经提醒过补货啦，请等管理员上新 [emoji:5222044641200720562:🌸]', parse_mode='HTML')
+        context.bot.send_message(chat_id=user_id, text=t(user_id, 'restock_request_exists', default='这个区号你已经提醒过补货啦，请等管理员上新 [emoji:5222044641200720562:🌸]'), parse_mode='HTML')
         return
     display_name = fullname or username or str(user_id)
     at_text = f'@{username}' if username else '无用户名'
@@ -4639,7 +4633,7 @@ def restockrequestarea(update: Update, context: CallbackContext):
         '用户点击了提醒补货按钮，可留意是否需要补货相关商品。'
     )
     notify_source_admins(context, notify_text, exclude_user_ids=[user_id])
-    context.bot.send_message(chat_id=user_id, text='已帮你提醒管理员补货，请稍后留意上新消息 [emoji:5222044641200720562:🌸]', parse_mode='HTML')
+    context.bot.send_message(chat_id=user_id, text=t(user_id, 'restock_request_created', default='已帮你提醒管理员补货，请稍后留意上新消息 [emoji:5222044641200720562:🌸]'), parse_mode='HTML')
 
 
 def send_product_purchase_page(context, chat_id, user_id, nowuid):
@@ -5860,12 +5854,12 @@ async def on_post_init(application):
 def create_trc20_deposit_order(context, user_id, amount):
     trc20 = get_trc20_address()
     if not is_valid_trc20_address(trc20):
-        context.bot.send_message(chat_id=user_id, text='TRC20充值地址未正确配置，请先联系管理员设置有效地址')
+        context.bot.send_message(chat_id=user_id, text=t(user_id, 'trc20_address_invalid', default='TRC20充值地址未正确配置，请先联系管理员设置有效地址'))
         return
 
     amount = Decimal(str(amount)).quantize(Decimal('0.0001'))
     if amount <= 0:
-        context.bot.send_message(chat_id=user_id, text='充值金额必须大于0')
+        context.bot.send_message(chat_id=user_id, text=t(user_id, 'recharge_amount_gt_zero', default='充值金额必须大于0'))
         return
 
     created_ts_ms = current_ts_ms()
@@ -5882,7 +5876,7 @@ def create_trc20_deposit_order(context, user_id, amount):
         try:
             pay_amount, pay_amount_text = allocate_trc20_pay_amount(amount, user_id)
         except Exception as exc:
-            context.bot.send_message(chat_id=user_id, text=f'创建TRC20充值订单失败：{exc}')
+            context.bot.send_message(chat_id=user_id, text=t(user_id, 'create_trc20_order_failed', default='创建TRC20充值订单失败：{error}', error=exc))
             return
 
         try:
@@ -5910,26 +5904,20 @@ def create_trc20_deposit_order(context, user_id, amount):
             continue
 
     if reserved_id is None:
-        context.bot.send_message(chat_id=user_id, text='当前TRC20订单创建人数较多，请稍后重试')
+        context.bot.send_message(chat_id=user_id, text=t(user_id, 'trc20_order_busy', default='当前TRC20订单创建人数较多，请稍后重试'))
         return
 
-    caption = f'''
-<b>[emoji:6323075330189826977:😃] 充值详情</b>
-
-[emoji:5350486389806868244:✅] 唯一收款地址：<code>{trc20}</code>
-（推荐使用扫码转账更加安全 点击上方地址即可快速复制粘贴）
-
-[emoji:4965219701572503640:💰] 实际支付金额：<code>{pay_amount_text} USDT</code>
-（[emoji:5416117059207572332:➡️] 点击上方金额可快速复制粘贴）
-
-[emoji:5370715226209525171:🔋]充值订单创建时间：{created_time}
-[emoji:5370688996844249600:🪫]转账最后截止时间：{deadline_time}
-
-❗️请一定按照金额后面小数点转账，否则无法自动到账
-❗️付款前请再次核对地址与金额，避免转错
-    '''
+    caption = t(
+        user_id,
+        'trc20_recharge_caption',
+        default='<b>[emoji:6323075330189826977:😃] 充值详情</b>\n\n[emoji:5350486389806868244:✅] 唯一收款地址：<code>{address}</code>\n（推荐使用扫码转账更加安全 点击上方地址即可快速复制粘贴）\n\n[emoji:4965219701572503640:💰] 实际支付金额：<code>{amount} USDT</code>\n（[emoji:5416117059207572332:➡️] 点击上方金额可快速复制粘贴）\n\n[emoji:5370715226209525171:🔋]充值订单创建时间：{created_time}\n[emoji:5370688996844249600:🪫]转账最后截止时间：{deadline_time}\n\n❗️请一定按照金额后面小数点转账，否则无法自动到账\n❗️付款前请再次核对地址与金额，避免转错',
+        address=trc20,
+        amount=pay_amount_text,
+        created_time=created_time,
+        deadline_time=deadline_time,
+    )
     keyboard = [
-        [InlineKeyboardButton('❌取消订单', callback_data=f'qxdingdan {bianhao}')]
+        [InlineKeyboardButton(t(user_id, 'cancel_order_button', default='❌取消订单'), callback_data=f'qxdingdan {bianhao}')]
     ]
 
     qr_image = qrcode.make(data=trc20)
@@ -5948,7 +5936,7 @@ def create_trc20_deposit_order(context, user_id, amount):
         )
     except Exception as exc:
         topup.delete_one({'_id': reserved_id})
-        context.bot.send_message(chat_id=user_id, text=f'创建TRC20充值订单失败：{exc}')
+        context.bot.send_message(chat_id=user_id, text=t(user_id, 'create_trc20_order_failed', default='创建TRC20充值订单失败：{error}', error=exc))
         return
 
     topup.update_one({'_id': reserved_id}, {'$set': {'message_id': message_id.message_id}})
@@ -5956,13 +5944,13 @@ def create_trc20_deposit_order(context, user_id, amount):
 
 def create_okpay_deposit_order(context, user_id, amount):
     if not refresh_okpay_entry_status():
-        context.bot.send_message(chat_id=user_id, text='OKPay未配置，请先联系管理员在后台配置商户ID、Token 和 名称')
+        context.bot.send_message(chat_id=user_id, text=t(user_id, 'okpay_not_configured', default='OKPay未配置，请先联系管理员在后台配置商户ID、Token 和 名称'))
         return
 
     amount = standard_num(amount)
     amount = float(amount) if str(amount).count('.') > 0 else int(amount)
     if float(amount) <= 0:
-        context.bot.send_message(chat_id=user_id, text='充值金额必须大于0')
+        context.bot.send_message(chat_id=user_id, text=t(user_id, 'recharge_amount_gt_zero', default='充值金额必须大于0'))
         return
 
     timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
@@ -5973,7 +5961,7 @@ def create_okpay_deposit_order(context, user_id, amount):
     try:
         result = okpay_pay_link(bianhao, amount, 'USDT', bot=context.bot)
     except Exception as exc:
-        context.bot.send_message(chat_id=user_id, text=f'创建OKPay充值订单失败：{exc}')
+        context.bot.send_message(chat_id=user_id, text=t(user_id, 'create_okpay_order_failed', default='创建OKPay充值订单失败：{error}', error=exc))
         return
 
     if isinstance(result, dict) and result.get('status') == 'error':
@@ -5982,28 +5970,27 @@ def create_okpay_deposit_order(context, user_id, amount):
             try:
                 result = okpay_pay_link(bianhao, amount, 'USDT', include_callback=False, bot=context.bot)
             except Exception as exc:
-                context.bot.send_message(chat_id=user_id, text=f'创建OKPay充值订单失败：{exc}')
+                context.bot.send_message(chat_id=user_id, text=t(user_id, 'create_okpay_order_failed', default='创建OKPay充值订单失败：{error}', error=exc))
                 return
 
     data = result.get('data') or {}
     pay_url = data.get('pay_url') or result.get('pay_url')
     okpay_order_id = data.get('order_id') or result.get('order_id')
     if not pay_url:
-        context.bot.send_message(chat_id=user_id, text=f'创建OKPay充值订单失败：{result}')
+        context.bot.send_message(chat_id=user_id, text=t(user_id, 'create_okpay_order_failed', default='创建OKPay充值订单失败：{error}', error=result))
         return
 
-    text = f'''
-<b>OKPay充值订单已创建</b>
-
-订单号：<code>{bianhao}</code>
-充值金额：<code>{amount} USDT</code>
-
-请点击下面按钮完成支付，支付成功后系统会自动加余额。
-    '''
+    text = t(
+        user_id,
+        'okpay_order_created_text',
+        default='<b>OKPay充值订单已创建</b>\n\n订单号：<code>{order_id}</code>\n充值金额：<code>{amount} USDT</code>\n\n请点击下面按钮完成支付，支付成功后系统会自动加余额。',
+        order_id=bianhao,
+        amount=amount,
+    )
     keyboard = [
-        [InlineKeyboardButton('💳 打开OKPay支付', url=pay_url)],
-        [InlineKeyboardButton('✅ 我已支付', callback_data=f'okpay_paid {bianhao}')],
-        [InlineKeyboardButton('❌取消订单', callback_data=f'qxdingdan {bianhao}')]
+        [InlineKeyboardButton(t(user_id, 'open_okpay_button', default='💳 打开OKPay支付'), url=pay_url)],
+        [InlineKeyboardButton(t(user_id, 'i_paid_button', default='✅ 我已支付'), callback_data=f'okpay_paid {bianhao}')],
+        [InlineKeyboardButton(t(user_id, 'cancel_order_button', default='❌取消订单'), callback_data=f'qxdingdan {bianhao}')]
     ]
     message_id = context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
     topup.insert_one({
@@ -6053,7 +6040,7 @@ def qrgaimai(update: Update, context: CallbackContext):
     USDT = user_list['USDT']
     kc = len(list(hb.find({'nowuid': nowuid, 'state': 0})))
     if kc < gmsl:
-        context.bot.send_message(chat_id=user_id, text='当前库存不足')
+        context.bot.send_message(chat_id=user_id, text=t(user_id, 'stock_not_enough', default='当前库存不足'))
         return
     if zxymoney == 0:
         return
@@ -6069,7 +6056,7 @@ def qrgaimai(update: Update, context: CallbackContext):
         yijiid = ejfl_list['uid']
         yiji_list = fenlei.find_one({'uid': yijiid})
         yijiprojectname = yiji_list['projectname']
-        success_text = build_purchase_success_header(zxymoney, now_price)
+        success_text = build_purchase_success_header(user_id, zxymoney, now_price)
         fstext = get_buy_notice_text(ejfl_list.get('text', ''))
         notice_text = str(fstext or '').strip()
         account_check_runtime = get_account_check_runtime_status(fhtype) if fhtype in ACCOUNT_CHECK_SUPPORTED_TYPES else {'ready': False, 'reason': 'unsupported_entry_type'}
@@ -6079,8 +6066,8 @@ def qrgaimai(update: Update, context: CallbackContext):
             if ACCOUNT_CHECK_ENABLED and fhtype in ACCOUNT_CHECK_SUPPORTED_TYPES and not account_check_runtime.get('ready'):
                 runtime_reason = str(account_check_runtime.get('reason', 'account_check_runtime_unavailable'))
                 warning_text = (
-                    f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 检测环境未就绪，本次未执行账号检测，已按原始库存直发。</b>\n\n'
-                    f'<b>原因：</b> <code>{runtime_reason}</code>'
+                    f"<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} {t(user_id, 'account_check_runtime_not_ready', default='检测环境未就绪，本次未执行账号检测，已按原始库存直发。')}</b>\n\n"
+                    f"<b>{t(user_id, 'reason_label', default='原因：')}</b> <code>{runtime_reason}</code>"
                 )
                 send_html_message(context.bot, user_id, warning_text)
                 for admin_user in list(user.find({'state': '4'})):
@@ -6097,7 +6084,7 @@ def qrgaimai(update: Update, context: CallbackContext):
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
             selected_docs = reserve_inventory_items({'nowuid': nowuid}, gmsl, user_id, order_id, timer)
             if len(selected_docs) < gmsl:
-                context.bot.send_message(chat_id=user_id, text='当前库存不足')
+                context.bot.send_message(chat_id=user_id, text=t(user_id, 'stock_not_enough', default='当前库存不足'))
                 user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                 return
 
@@ -6113,7 +6100,7 @@ def qrgaimai(update: Update, context: CallbackContext):
                 progress_message = send_html_message(
                     context.bot,
                     user_id,
-                    build_account_check_progress_text(gmsl, 0, 0, 0, 0)
+                    build_account_check_progress_text(user_id, gmsl, 0, 0, 0, 0)
                 )
                 selected_items = [{'hbid': doc['hbid'], 'projectname': doc['projectname']} for doc in selected_docs]
                 threading.Thread(
@@ -6175,7 +6162,7 @@ def qrgaimai(update: Update, context: CallbackContext):
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
             selected_docs = reserve_inventory_items({'nowuid': nowuid, 'leixing': '谷歌'}, gmsl, user_id, order_id, timer)
             if len(selected_docs) < gmsl:
-                context.bot.send_message(chat_id=user_id, text='当前库存不足')
+                context.bot.send_message(chat_id=user_id, text=t(user_id, 'stock_not_enough', default='当前库存不足'))
                 user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                 return
 
@@ -6237,7 +6224,7 @@ def qrgaimai(update: Update, context: CallbackContext):
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
             selected_docs = reserve_inventory_items({'nowuid': nowuid}, gmsl, user_id, order_id, timer)
             if len(selected_docs) < gmsl:
-                context.bot.send_message(chat_id=user_id, text='当前库存不足')
+                context.bot.send_message(chat_id=user_id, text=t(user_id, 'stock_not_enough', default='当前库存不足'))
                 user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                 return
 
@@ -6291,7 +6278,7 @@ def qrgaimai(update: Update, context: CallbackContext):
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
             selected_docs = reserve_inventory_items({'nowuid': nowuid}, gmsl, user_id, order_id, timer)
             if len(selected_docs) < gmsl:
-                context.bot.send_message(chat_id=user_id, text='当前库存不足')
+                context.bot.send_message(chat_id=user_id, text=t(user_id, 'stock_not_enough', default='当前库存不足'))
                 user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                 return
 
@@ -6339,7 +6326,7 @@ def qrgaimai(update: Update, context: CallbackContext):
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
             selected_docs = reserve_inventory_items({'nowuid': nowuid}, gmsl, user_id, order_id, timer)
             if len(selected_docs) < gmsl:
-                context.bot.send_message(chat_id=user_id, text='当前库存不足')
+                context.bot.send_message(chat_id=user_id, text=t(user_id, 'stock_not_enough', default='当前库存不足'))
                 user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                 return
 
@@ -6356,7 +6343,7 @@ def qrgaimai(update: Update, context: CallbackContext):
                 progress_message = send_html_message(
                     context.bot,
                     user_id,
-                    build_account_check_progress_text(gmsl, 0, 0, 0, 0)
+                    build_account_check_progress_text(user_id, gmsl, 0, 0, 0, 0)
                 )
                 selected_items = [{'hbid': doc['hbid'], 'projectname': doc['projectname']} for doc in selected_docs]
                 threading.Thread(
@@ -6424,7 +6411,7 @@ def qrgaimai(update: Update, context: CallbackContext):
 
 
     else:
-        context.bot.send_message(chat_id=user_id, text='❌ 余额不足，请及时充值！')
+        context.bot.send_message(chat_id=user_id, text=t(user_id, 'insufficient_balance_recharge_now', default='❌ 余额不足，请及时充值！'))
         user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
         return
 
@@ -6582,36 +6569,36 @@ def qxdingdan(update: Update, context: CallbackContext):
 
 def okpay_paid(update: Update, context: CallbackContext):
     query = update.callback_query
-    query.answer('正在检查支付状态，请稍候...')
     user_id = query.from_user.id
+    query.answer(t(user_id, 'checking_payment_status', default='正在检查支付状态，请稍候...'))
     unique_id = query.data.replace('okpay_paid ', '', 1).strip()
     order = topup.find_one({'bianhao': unique_id})
     if order is None or order.get('type') != 'okpay':
-        context.bot.send_message(chat_id=user_id, text='未找到对应的OKPay充值订单，请重新创建订单')
+        context.bot.send_message(chat_id=user_id, text=t(user_id, 'okpay_order_not_found', default='未找到对应的OKPay充值订单，请重新创建订单'))
         return
     if order.get('user_id') != user_id:
-        context.bot.send_message(chat_id=user_id, text='这笔订单不属于你，无法主动查单')
+        context.bot.send_message(chat_id=user_id, text=t(user_id, 'okpay_order_not_owner', default='这笔订单不属于你，无法主动查单'))
         return
     if order.get('state') == TOPUP_STATE_PAID:
-        context.bot.send_message(chat_id=user_id, text='这笔OKPay订单已经到账，无需重复检查')
+        context.bot.send_message(chat_id=user_id, text=t(user_id, 'okpay_order_already_paid', default='这笔OKPay订单已经到账，无需重复检查'))
         return
     if order.get('state') != TOPUP_STATE_PENDING:
-        context.bot.send_message(chat_id=user_id, text='这笔OKPay订单已失效，请重新创建订单')
+        context.bot.send_message(chat_id=user_id, text=t(user_id, 'okpay_order_invalid', default='这笔OKPay订单已失效，请重新创建订单'))
         return
 
     try:
         ok, msg, result = okpay_check_and_credit(unique_id)
     except Exception as exc:
-        context.bot.send_message(chat_id=user_id, text=f'查询OKPay订单失败：{exc}')
+        context.bot.send_message(chat_id=user_id, text=t(user_id, 'okpay_query_failed', default='查询OKPay订单失败：{error}', error=exc))
         return
 
     if ok:
-        keyboard = [[InlineKeyboardButton('✅已到账（点击关闭）', callback_data=f'close {user_id}')]]
+        keyboard = [[InlineKeyboardButton(t(user_id, 'okpay_paid_close_button', default='✅已到账（点击关闭）'), callback_data=f'close {user_id}')]]
         try:
             context.bot.edit_message_text(
                 chat_id=user_id,
                 message_id=query.message.message_id,
-                text='✅ OKPay订单已确认支付，余额已自动到账。',
+                text=t(user_id, 'okpay_paid_confirmed', default='✅ OKPay订单已确认支付，余额已自动到账。'),
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
         except Exception:
@@ -6619,15 +6606,15 @@ def okpay_paid(update: Update, context: CallbackContext):
         return
 
     if msg == 'already_paid':
-        context.bot.send_message(chat_id=user_id, text='这笔OKPay订单已经到账，无需重复检查')
+        context.bot.send_message(chat_id=user_id, text=t(user_id, 'okpay_order_already_paid', default='这笔OKPay订单已经到账，无需重复检查'))
         return
     if msg == 'order_expired':
-        context.bot.send_message(chat_id=user_id, text='这笔OKPay订单已超时失效，请重新创建订单')
+        context.bot.send_message(chat_id=user_id, text=t(user_id, 'okpay_order_expired', default='这笔OKPay订单已超时失效，请重新创建订单'))
         return
 
     context.bot.send_message(
         chat_id=user_id,
-        text='暂未查询到这笔OKPay订单已付款，请确认支付成功后稍等几秒再点一次“我已支付”。'
+        text=t(user_id, 'okpay_order_not_paid_yet', default='暂未查询到这笔OKPay订单已付款，请确认支付成功后稍等几秒再点一次“我已支付”。')
     )
 
 
@@ -6686,19 +6673,19 @@ def textkeyboard(update: Update, context: CallbackContext):
 
                         money = float(text) if text.count('.') > 0 else int(text)
                         if money < 1:
-                            context.bot.send_message(chat_id=user_id, text='⚠️ 输入错误，最少金额不能小于1U')
+                            context.bot.send_message(chat_id=user_id, text=t(user_id, 'redpacket_min_amount_error', default='⚠️ 输入错误，最少金额不能小于1U'))
                             return
                         if USDT >= money:
-                            keyboard = [[InlineKeyboardButton('🚫取消', callback_data=f'close {user_id}')]]
+                            keyboard = [[InlineKeyboardButton(t(user_id, 'cancel_with_block', default='🚫取消'), callback_data=f'close {user_id}')]]
                             user.update_one({'user_id': user_id}, {"$set": {'sign': f'sethbsl {money}'}})
-                            context.bot.send_message(chat_id=user_id, text='<b>💡 请回复你要发送的红包数量</b>',
+                            context.bot.send_message(chat_id=user_id, text=t(user_id, 'redpacket_enter_count', default='<b>💡 请回复你要发送的红包数量</b>'),
                                                      parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
 
                         else:
                             user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
-                            context.bot.send_message(chat_id=user_id, text='⚠️ 操作失败，余额不足')
+                            context.bot.send_message(chat_id=user_id, text=t(user_id, 'operation_failed_balance_insufficient', default='⚠️ 操作失败，余额不足'))
                     else:
-                        context.bot.send_message(chat_id=user_id, text='⚠️ 输入错误，请输入数字！')
+                        context.bot.send_message(chat_id=user_id, text=t(user_id, 'input_error_enter_number', default='⚠️ 输入错误，请输入数字！'))
                 elif 'sethbsl' in sign:
                     money = sign.replace('sethbsl ', '')
                     money = float(money) if money.count('.') > 0 else int(money)
@@ -6706,16 +6693,16 @@ def textkeyboard(update: Update, context: CallbackContext):
                     if is_number(text) and text.count('.') == 0:
                         hbsl = int(text)
                         if hbsl == 0:
-                            context.bot.send_message(chat_id=user_id, text='红包数量不能为0')
+                            context.bot.send_message(chat_id=user_id, text=t(user_id, 'redpacket_count_not_zero', default='红包数量不能为0'))
                             return
                         if hbsl > 100:
-                            context.bot.send_message(chat_id=user_id, text='红包数量最大为100')
+                            context.bot.send_message(chat_id=user_id, text=t(user_id, 'redpacket_count_max_100', default='红包数量最大为100'))
                             return
                         user_list = user.find_one({"user_id": user_id})
                         USDT = user_list['USDT']
                         if USDT < money:
                             user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
-                            context.bot.send_message(chat_id=user_id, text='⚠️ 操作失败，余额不足')
+                            context.bot.send_message(chat_id=user_id, text=t(user_id, 'operation_failed_balance_insufficient', default='⚠️ 操作失败，余额不足'))
                             return
                         user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                         uid = generate_24bit_uid()
@@ -6733,14 +6720,18 @@ def textkeyboard(update: Update, context: CallbackContext):
                         now_money = float(now_money) if str((now_money)).count('.') > 0 else int(
                             standard_num(now_money))
                         user.update_one({'user_id': user_id}, {"$set": {'USDT': now_money}})
-                        fstext = f'''
-🧧 <a href="tg://user?id={user_id}">{fullname}</a> 发送了一个红包
-💵总金额:{money} USDT💰 剩余:{hbsl}/{hbsl}
-
-✅ 红包添加成功，请点击按钮发送
-                        '''
+                        fstext = t(
+                            user_id,
+                            'redpacket_created_text',
+                            default='🧧 <a href="tg://user?id={user_id}">{fullname}</a> 发送了一个红包\n💵总金额:{money} USDT💰 剩余:{remaining}/{total}\n\n✅ 红包添加成功，请点击按钮发送',
+                            user_id=user_id,
+                            fullname=fullname,
+                            money=money,
+                            remaining=hbsl,
+                            total=hbsl,
+                        )
                         keyboard = [
-                            [InlineKeyboardButton('发送红包', switch_inline_query=f'redpacket {uid}')]
+                            [InlineKeyboardButton(t(user_id, 'send_redpacket_button', default='发送红包'), switch_inline_query=f'redpacket {uid}')]
                         ]
 
                         context.bot.send_message(chat_id=user_id, text=fstext,
@@ -6748,7 +6739,7 @@ def textkeyboard(update: Update, context: CallbackContext):
 
                     else:
                         user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
-                        context.bot.send_message(chat_id=user_id, text='⚠️ 输入错误，请输入数字！')
+                        context.bot.send_message(chat_id=user_id, text=t(user_id, 'input_error_enter_number', default='⚠️ 输入错误，请输入数字！'))
 
 
                 elif sign == 'startupdate':
@@ -6770,8 +6761,8 @@ def textkeyboard(update: Update, context: CallbackContext):
                         create_okpay_deposit_order(context, user_id, money)
 
                     else:
-                        keyboard = [[InlineKeyboardButton('❌取消输入', callback_data=f'close {user_id}')]]
-                        context.bot.send_message(chat_id=user_id, text='请输入数字',
+                        keyboard = [[InlineKeyboardButton(t(user_id, 'cancel_input_button', default='❌取消输入'), callback_data=f'close {user_id}')]]
+                        context.bot.send_message(chat_id=user_id, text=t(user_id, 'please_enter_number', default='请输入数字'),
                                                  reply_markup=InlineKeyboardMarkup(keyboard))
                 elif 'zdycz' in sign:
                     if is_number(text):
@@ -6786,8 +6777,8 @@ def textkeyboard(update: Update, context: CallbackContext):
                         create_trc20_deposit_order(context, user_id, money)
 
                     else:
-                        keyboard = [[InlineKeyboardButton('❌取消输入', callback_data=f'close {user_id}')]]
-                        context.bot.send_message(chat_id=user_id, text='请输入数字',
+                        keyboard = [[InlineKeyboardButton(t(user_id, 'cancel_input_button', default='❌取消输入'), callback_data=f'close {user_id}')]]
+                        context.bot.send_message(chat_id=user_id, text=t(user_id, 'please_enter_number', default='请输入数字'),
                                                  reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -6810,33 +6801,34 @@ def textkeyboard(update: Update, context: CallbackContext):
                     if clean_text.isdigit():
                         gmsl = int(clean_text)
                         if gmsl <= 0:
-                            keyboard = [[InlineKeyboardButton('❌取消购买', callback_data=f'close {user_id}')]]
-                            context.bot.send_message(chat_id=user_id, text='购买数量只能输入大于0的整数',
+                            keyboard = [[InlineKeyboardButton(t(user_id, 'cancel_purchase_button', default='❌取消购买'), callback_data=f'close {user_id}')]]
+                            context.bot.send_message(chat_id=user_id, text=t(user_id, 'purchase_quantity_positive_int', default='购买数量只能输入大于0的整数'),
                                                      reply_markup=InlineKeyboardMarkup(keyboard))
                             return
 
                         zxymoney = standard_num(gmsl * money)
                         zxymoney = float(zxymoney) if str((zxymoney)).count('.') > 0 else int(standard_num(zxymoney))
                         if kc < gmsl:
-                            keyboard = [[InlineKeyboardButton('❌取消购买', callback_data=f'close {user_id}')]]
-                            context.bot.send_message(chat_id=user_id, text='当前库存不足【请再次输入数量】',
+                            keyboard = [[InlineKeyboardButton(t(user_id, 'cancel_purchase_button', default='❌取消购买'), callback_data=f'close {user_id}')]]
+                            context.bot.send_message(chat_id=user_id, text=t(user_id, 'stock_not_enough_retry', default='当前库存不足【请再次输入数量】'),
                                                      reply_markup=InlineKeyboardMarkup(keyboard))
 
                             return
 
-                        fstext = f'''
-<b>[emoji:5451937962629544243:🛍]您正在购买：{projectname}
-
-[emoji:5028746137645876535:📈] 数量：{gmsl}
-
-💰价格：{zxymoney}
-
-👛您的余额：{USDT}</b>
-                        '''
+                        localized_projectname = get_localized_name(user_id, ejfl_list)
+                        fstext = t(
+                            user_id,
+                            'purchase_confirm_text',
+                            default='<b>[emoji:5451937962629544243:🛍]您正在购买：{projectname}\n\n[emoji:5028746137645876535:📈] 数量：{quantity}\n\n💰价格：{amount}\n\n👛您的余额：{balance}</b>',
+                            projectname=localized_projectname,
+                            quantity=gmsl,
+                            amount=zxymoney,
+                            balance=USDT,
+                        )
                         keyboard = [
-                            [InlineKeyboardButton('❌取消交易', callback_data=f'close {user_id}'),
-                             InlineKeyboardButton('确认购买✅', callback_data=f'qrgaimai {nowuid}:{gmsl}:{zxymoney}')],
-                            [InlineKeyboardButton('🏠主菜单', callback_data='backzcd')]
+                            [InlineKeyboardButton(t(user_id, 'cancel_trade_button', default='❌取消交易'), callback_data=f'close {user_id}'),
+                             InlineKeyboardButton(t(user_id, 'confirm_purchase_button', default='确认购买✅'), callback_data=f'qrgaimai {nowuid}:{gmsl}:{zxymoney}')],
+                            [InlineKeyboardButton(t(user_id, 'main_menu', default='🏠主菜单'), callback_data='backzcd')]
 
                         ]
                         user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
@@ -6844,8 +6836,8 @@ def textkeyboard(update: Update, context: CallbackContext):
                                                  reply_markup=InlineKeyboardMarkup(keyboard))
 
                     else:
-                        keyboard = [[InlineKeyboardButton('❌取消购买', callback_data=f'close {user_id}')]]
-                        context.bot.send_message(chat_id=user_id, text='购买数量只能输入大于0的整数，不购买请点击取消',
+                        keyboard = [[InlineKeyboardButton(t(user_id, 'cancel_purchase_button', default='❌取消购买'), callback_data=f'close {user_id}')]]
+                        context.bot.send_message(chat_id=user_id, text=t(user_id, 'purchase_quantity_positive_int_cancel', default='购买数量只能输入大于0的整数，不购买请点击取消'),
                                                  reply_markup=InlineKeyboardMarkup(keyboard))
                         # user.update_one({'user_id': user_id},{"$set":{'sign': 0}})
 
