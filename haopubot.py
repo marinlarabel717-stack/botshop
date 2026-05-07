@@ -1931,10 +1931,7 @@ def create_delivery_order_id():
 
 def build_inventory_entry_file_path(leixing, nowuid, projectname):
     if leixing == '协议号':
-        session_path = BASE_DIR / '协议号' / str(nowuid) / f'{projectname}.session'
-        if session_path.exists():
-            return session_path
-        return BASE_DIR / '协议号' / str(nowuid) / f'{projectname}.json'
+        return BASE_DIR / '协议号' / str(nowuid) / f'{projectname}.session'
     return BASE_DIR / '号包' / str(nowuid) / str(projectname)
 
 
@@ -1945,7 +1942,7 @@ def resolve_inventory_check_target(leixing, nowuid, projectname):
     folder_path = BASE_DIR / '号包' / str(nowuid) / str(projectname)
     tdata_path = folder_path / 'tdata'
     if tdata_path.exists() and tdata_path.is_dir():
-        return '直登号', folder_path
+        return '直登号', tdata_path
 
     session_files = sorted(folder_path.glob('*.session')) if folder_path.exists() else []
     if session_files:
@@ -2066,7 +2063,14 @@ def build_delivery_zip(leixing, user_id, nowuid, entry_names):
 def run_single_account_check(leixing, nowuid, item, timeout_seconds):
     projectname = item['projectname']
     check_entry_type, target_path = resolve_inventory_check_target(leixing, nowuid, projectname)
-    check_result = check_account_inventory_item(check_entry_type, str(target_path), timeout_seconds)
+    runtime_status = get_account_check_runtime_status(check_entry_type)
+    if not runtime_status.get('ready'):
+        check_result = {
+            'status': 'timeout',
+            'reason': f"runtime_not_ready:{runtime_status.get('reason', 'unknown')}"
+        }
+    else:
+        check_result = check_account_inventory_item(check_entry_type, str(target_path), timeout_seconds)
     return item, projectname, check_result
 
 

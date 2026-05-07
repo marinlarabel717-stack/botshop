@@ -198,19 +198,13 @@ async def _check_session_async(session_path: Path, timeout_seconds: int) -> Dict
     if not session_path.exists():
         return {'status': 'invalid', 'reason': 'session_file_missing'}
 
-    client = None
-    if SESSION_CHECK_API_ID and SESSION_CHECK_API_HASH and TelethonClient is not None:
-        try:
-            client = TelethonClient(str(session_path), int(SESSION_CHECK_API_ID), SESSION_CHECK_API_HASH, receive_updates=False)
-        except Exception as exc:
-            return {'status': 'timeout', 'reason': f'session_client_init_failed:{exc}'}
-    elif OpenTeleClient is not None and API is not None:
-        try:
-            client = OpenTeleClient(str(session_path), api=API.TelegramDesktop, receive_updates=False)
-        except Exception as exc:
-            return {'status': 'timeout', 'reason': f'session_client_init_failed:{exc}'}
-    else:
-        raise DependencyUnavailable('missing_session_check_dependencies')
+    if not (SESSION_CHECK_API_ID and SESSION_CHECK_API_HASH and TelethonClient is not None):
+        raise DependencyUnavailable('missing_session_api_or_telethon')
+
+    try:
+        client = TelethonClient(str(session_path), int(SESSION_CHECK_API_ID), SESSION_CHECK_API_HASH, receive_updates=False)
+    except Exception as exc:
+        return {'status': 'timeout', 'reason': f'session_client_init_failed:{exc}'}
 
     return await _probe_client(client, timeout_seconds)
 
@@ -282,9 +276,7 @@ def get_account_check_runtime_status(entry_type: str) -> Dict[str, Any]:
     if entry_type == '协议号':
         if SESSION_CHECK_API_ID and SESSION_CHECK_API_HASH and TelethonClient is not None:
             return {'ready': True, 'backend': 'telethon'}
-        if OpenTeleClient is not None and API is not None:
-            return {'ready': True, 'backend': 'opentele_session'}
-        return {'ready': False, 'reason': 'missing_session_check_dependencies'}
+        return {'ready': False, 'reason': 'missing_session_api_or_telethon'}
     if entry_type == '直登号':
         if TDesktop is not None and API is not None and UseCurrentSession is not None:
             return {'ready': True, 'backend': 'opentele_tdata'}
