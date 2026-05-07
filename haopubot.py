@@ -20,7 +20,7 @@ from telegram import helpers
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'), override=True)
 
 from mongo import *
-from account_health_check import check_account_inventory_item
+from account_health_check import check_account_inventory_item, get_account_check_runtime_status
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackContext, MessageHandler, CallbackQueryHandler, \
     InlineQueryHandler, filters
 from telegram import InlineKeyboardMarkup,ForceReply, InlineKeyboardButton as TGInlineKeyboardButton, Update, ChatMemberRestricted, ChatPermissions, \
@@ -5854,9 +5854,26 @@ def qrgaimai(update: Update, context: CallbackContext):
         success_text = build_purchase_success_header(zxymoney, now_price)
         fstext = get_buy_notice_text(ejfl_list.get('text', ''))
         notice_text = str(fstext or '').strip()
-        use_account_check = ACCOUNT_CHECK_ENABLED and fhtype in ACCOUNT_CHECK_SUPPORTED_TYPES
+        account_check_runtime = get_account_check_runtime_status(fhtype) if fhtype in ACCOUNT_CHECK_SUPPORTED_TYPES else {'ready': False, 'reason': 'unsupported_entry_type'}
+        use_account_check = ACCOUNT_CHECK_ENABLED and fhtype in ACCOUNT_CHECK_SUPPORTED_TYPES and bool(account_check_runtime.get('ready'))
         if not use_account_check:
             context.bot.send_message(chat_id=user_id, text=success_text, parse_mode='HTML', disable_web_page_preview=True)
+            if ACCOUNT_CHECK_ENABLED and fhtype in ACCOUNT_CHECK_SUPPORTED_TYPES and not account_check_runtime.get('ready'):
+                runtime_reason = str(account_check_runtime.get('reason', 'account_check_runtime_unavailable'))
+                warning_text = (
+                    f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 检测环境未就绪，本次未执行账号检测，已按原始库存直发。</b>\n\n'
+                    f'<b>原因：</b> <code>{runtime_reason}</code>'
+                )
+                send_html_message(context.bot, user_id, warning_text)
+                for admin_user in list(user.find({'state': '4'})):
+                    try:
+                        send_html_message(
+                            context.bot,
+                            admin_user['user_id'],
+                            f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 账号检测环境未就绪</b>\n\n商品类型: {fhtype}\n用户ID: <code>{user_id}</code>\n原因: <code>{runtime_reason}</code>'
+                        )
+                    except Exception:
+                        pass
         if fhtype == '协议号':
             zgje = user_list['zgje']
             zgsl = user_list['zgsl']

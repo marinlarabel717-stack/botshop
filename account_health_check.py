@@ -278,6 +278,20 @@ def _classify_exception(exc: Exception) -> Dict[str, Any]:
     return {'status': 'invalid', 'reason': message}
 
 
+def get_account_check_runtime_status(entry_type: str) -> Dict[str, Any]:
+    if entry_type == '协议号':
+        if SESSION_CHECK_API_ID and SESSION_CHECK_API_HASH and TelethonClient is not None:
+            return {'ready': True, 'backend': 'telethon'}
+        if OpenTeleClient is not None and API is not None:
+            return {'ready': True, 'backend': 'opentele_session'}
+        return {'ready': False, 'reason': 'missing_session_check_dependencies'}
+    if entry_type == '直登号':
+        if TDesktop is not None and API is not None and UseCurrentSession is not None:
+            return {'ready': True, 'backend': 'opentele_tdata'}
+        return {'ready': False, 'reason': 'missing_tdata_check_dependencies'}
+    return {'ready': False, 'reason': f'unsupported_entry_type:{entry_type}'}
+
+
 def _check_account_inventory_item_inner(entry_type: str, path: Path, timeout_seconds: int) -> Dict[str, Any]:
     if entry_type == '协议号':
         return _run_async(_check_session_async(path, timeout_seconds))
