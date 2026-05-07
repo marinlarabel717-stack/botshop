@@ -2,6 +2,7 @@ import asyncio
 import io
 import datetime, qrcode, socket, struct, threading, hashlib, uuid
 import inspect
+import random
 import telegram
 import os
 import sys
@@ -4857,15 +4858,44 @@ def format_usdt_amount(value, places='0.0001'):
 
 def allocate_trc20_pay_amount(base_amount, user_id):
     base = Decimal(str(base_amount)).quantize(Decimal('0.0001'))
+    rng = random.SystemRandom()
     pending_amounts = set()
     for row in topup.find({'type': 'trc20', 'state': {'$ne': 1}}, {'pay_amount_text': 1}):
         pay_amount_text = row.get('pay_amount_text')
         if pay_amount_text:
             pending_amounts.add(str(pay_amount_text))
 
-    start = (int(user_id) % 9000) + 1
-    for offset in range(9000):
-        suffix = ((start + offset - 1) % 9000) + 1
+    recent_suffixes = set()
+    recent_rows = topup.find(
+        {'type': 'trc20', 'user_id': user_id},
+        {'pay_amount_text': 1, 'requested_amount': 1, 'money': 1},
+        sort=[('timer', -1)],
+        limit=50
+    )
+    for row in recent_rows:
+        requested_amount = row.get('requested_amount', row.get('money', 0))
+        try:
+            requested_base = Decimal(str(requested_amount)).quantize(Decimal('0.0001'))
+        except Exception:
+            continue
+        if requested_base != base:
+            continue
+        pay_amount_text = str(row.get('pay_amount_text') or '').strip()
+        if not pay_amount_text:
+            continue
+        try:
+            suffix = int((Decimal(pay_amount_text) - base) * Decimal('10000'))
+        except Exception:
+            continue
+        if 1 <= suffix <= 9000:
+            recent_suffixes.add(suffix)
+
+    preferred_suffixes = [suffix for suffix in range(1, 9001) if suffix not in recent_suffixes]
+    fallback_suffixes = [suffix for suffix in range(1, 9001) if suffix in recent_suffixes]
+    rng.shuffle(preferred_suffixes)
+    rng.shuffle(fallback_suffixes)
+
+    for suffix in preferred_suffixes + fallback_suffixes:
         pay_amount = (base + (Decimal(suffix) / Decimal('10000'))).quantize(Decimal('0.0001'))
         pay_amount_text = format_usdt_amount(pay_amount)
         if pay_amount_text not in pending_amounts:

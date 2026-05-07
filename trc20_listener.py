@@ -265,18 +265,18 @@ def normalize_quant_raw(value, decimals):
 def upsert_transfer(item, address):
     txid = item.get('transaction_id') or item.get('transactionId') or item.get('id')
     if not txid:
-        return False
+        return 'ignored'
 
     event_type = str(item.get('type') or item.get('event_type') or '').strip().lower()
     if any(keyword in event_type for keyword in ('approve', 'approval', 'authorize', 'authorization')):
-        return False
+        return 'ignored'
 
     if item.get('confirmed') is False:
-        return False
+        return 'ignored'
 
     tx_result = str(item.get('result') or item.get('transaction_result') or '').strip().upper()
     if tx_result and tx_result not in ('SUCCESS', 'SUCESS'):
-        return False
+        return 'ignored'
 
     to_address = (item.get('to') or item.get('to_address') or address or '').strip()
     from_address = (item.get('from') or item.get('from_address') or '').strip()
@@ -288,13 +288,13 @@ def upsert_transfer(item, address):
     quant_raw = normalize_quant_raw(item.get('value') or '0', decimals)
 
     if TRC20_USDT_CONTRACT and contract_address != TRC20_USDT_CONTRACT:
-        return False
+        return 'ignored'
     if to_address != address:
-        return False
+        return 'ignored'
     if not from_address:
-        return False
+        return 'ignored'
     if Decimal(quant_raw) <= 0:
-        return False
+        return 'ignored'
 
     doc = {
         'txid': txid,
@@ -312,7 +312,7 @@ def upsert_transfer(item, address):
         'timer': now_str(),
     }
     result = qukuai.update_one({'txid': txid}, {'$setOnInsert': doc}, upsert=True)
-    return bool(result.upserted_id)
+    return 'inserted' if result.upserted_id else 'duplicate'
 
 
 def run_once(state):
@@ -337,7 +337,9 @@ def run_once(state):
             logger.exception('监听地址 %s 拉取失败: %s', address, exc)
             continue
 
-        logger.info('地址 %s 本轮拉取到 %s 条链上记录，min_timestamp=%s', address, len(txs), min_timestamp)
+        inserted_for_address = 0
+        duplicate_for_address = 0
+        ignored_for_address = 0
 
         max_ts = last_ts
         for item in txs:
@@ -345,15 +347,23 @@ def run_once(state):
             if block_timestamp > max_ts:
                 max_ts = block_timestamp
             try:
-                if upsert_transfer(item, address):
+                result = upsert_transfer(item, address)
+                if result == 'inserted':
                     inserted += 1
+                    inserted_for_address += 1
                     txid = item.get('transaction_id') or item.get('transactionId') or item.get('id')
                     logger.info('发现新TRC20入账: address=%s txid=%s', address, txid)
+                elif result == 'duplicate':
+                    duplicate_for_address += 1
+                else:
+                    ignored_for_address += 1
             except Exception as exc:
                 logger.exception('写入交易失败: %s', exc)
 
         if max_ts:
             state[address] = max_ts
+        logger.info('地址 %s 本轮统计：拉取=%s，新增=%s，重复=%s，忽略=%s，min_timestamp=%s',
+                    address, len(txs), inserted_for_address, duplicate_for_address, ignored_for_address, min_timestamp)
 
     return state, inserted
 
