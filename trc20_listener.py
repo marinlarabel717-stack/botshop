@@ -1,6 +1,8 @@
 import os
 import time
 import json
+import sys
+import logging
 from decimal import Decimal
 from pathlib import Path
 
@@ -14,6 +16,8 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent
 STATE_DIR = BASE_DIR / 'data'
 STATE_FILE = STATE_DIR / 'trc20_listener_state.json'
+LOG_DIR = BASE_DIR / 'logs'
+LOG_FILE = LOG_DIR / 'trc20_listener.log'
 
 MONGO_URI = os.getenv('MONGO_URI', 'mongodb://127.0.0.1:27018/')
 MONGO_USER = os.getenv('MONGO_USER', '')
@@ -46,6 +50,37 @@ mydb = teleclient[MONGO_DB_NAME]
 chain_db = teleclient[MONGO_CHAIN_DB_NAME]
 shangtext = mydb['shangtext']
 qukuai = chain_db['qukuai']
+
+
+def setup_logging():
+    try:
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8', line_buffering=True)
+        if hasattr(sys.stderr, 'reconfigure'):
+            sys.stderr.reconfigure(encoding='utf-8', line_buffering=True)
+    except Exception:
+        pass
+
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    logger = logging.getLogger('trc20_listener')
+    if logger.handlers:
+        return logger
+    logger.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
+
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setFormatter(formatter)
+    logger.addHandler(stream_handler)
+
+    file_handler = logging.FileHandler(LOG_FILE, encoding='utf-8')
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+    logger.propagate = False
+    return logger
+
+
+logger = setup_logging()
 
 
 def now_ts_ms():
@@ -133,12 +168,12 @@ def fetch_trc20_transactions(address, min_timestamp):
     while True:
         if fingerprint:
             if fingerprint in seen_fingerprints:
-                print(f'监听地址 {address} 遇到重复 fingerprint，提前结束本轮翻页，避免卡死')
+                logger.warning('监听地址 %s 遇到重复 fingerprint，提前结束本轮翻页，避免卡死', address)
                 break
             seen_fingerprints.add(fingerprint)
         page_count += 1
         if page_count > TRONGRID_MAX_PAGES:
-            print(f'监听地址 {address} 本轮已拉取 {TRONGRID_MAX_PAGES} 页，提前结束，避免长时间卡住')
+            logger.warning('监听地址 %s 本轮已拉取 %s 页，提前结束，避免长时间卡住', address, TRONGRID_MAX_PAGES)
             break
         req_params = dict(params)
         if fingerprint:
@@ -223,8 +258,10 @@ def run_once(state):
     inserted = 0
     addresses = get_monitor_addresses()
     if not addresses:
-        print('未发现有效TRC20监听地址，等待管理员配置充值地址...')
+        logger.warning('未发现有效TRC20监听地址，等待管理员配置充值地址...')
         return state, inserted
+
+    logger.info('本轮开始监听，地址数=%s，地址=%s', len(addresses), ', '.join(addresses))
 
     lookback_ms = TRONGRID_LOOKBACK_MINUTES * 60 * 1000
     for address in addresses:
@@ -236,8 +273,10 @@ def run_once(state):
         try:
             txs = fetch_trc20_transactions(address, min_timestamp)
         except Exception as exc:
-            print(f'监听地址 {address} 拉取失败: {exc}')
+            logger.exception('监听地址 %s 拉取失败: %s', address, exc)
             continue
+
+        logger.info('地址 %s 本轮拉取到 %s 条链上记录，min_timestamp=%s', address, len(txs), min_timestamp)
 
         max_ts = last_ts
         for item in txs:
@@ -248,9 +287,9 @@ def run_once(state):
                 if upsert_transfer(item, address):
                     inserted += 1
                     txid = item.get('transaction_id') or item.get('transactionId') or item.get('id')
-                    print(f'发现新TRC20入账: {address} txid={txid}')
+                    logger.info('发现新TRC20入账: address=%s txid=%s', address, txid)
             except Exception as exc:
-                print(f'写入交易失败: {exc}')
+                logger.exception('写入交易失败: %s', exc)
 
         if max_ts:
             state[address] = max_ts
@@ -261,18 +300,18 @@ def run_once(state):
 def main():
     ensure_indexes()
     state = load_state()
-    print('TRC20监听器已启动')
+    logger.info('TRC20监听器已启动，日志文件：%s', LOG_FILE)
     while True:
         try:
             state, inserted = run_once(state)
             save_state(state)
             if inserted:
-                print(f'本轮新增 {inserted} 笔交易')
+                logger.info('本轮新增 %s 笔交易', inserted)
         except KeyboardInterrupt:
-            print('TRC20监听器已停止')
+            logger.info('TRC20监听器已停止')
             break
         except Exception as exc:
-            print(f'监听主循环异常: {exc}')
+            logger.exception('监听主循环异常: %s', exc)
         time.sleep(TRONGRID_POLL_SECONDS)
 
 
