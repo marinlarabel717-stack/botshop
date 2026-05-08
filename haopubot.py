@@ -151,7 +151,7 @@ TRANSLATION_REPLACEMENT_FALLBACKS = {
     ])
 }
 TRANSLATION_UI_TEXTS = {
-    'language_toggle': {'zh': '[emoji:5298584437338946835:🌐] English', 'en': '[emoji:5298584437338946835:🌐] 中文'},
+    'language_toggle': {'zh': '[emoji:5298584437338946835:🌐]English', 'en': '[emoji:5298584437338946835:🌐]中文'},
     'language_switch_prompt': {'zh': '请选择语言', 'en': 'Please choose your language'},
     'language_switch_done': {'zh': '语言已切换为中文', 'en': 'Language switched to English'},
     'language_switch_zh': {'zh': '中文服务', 'en': '中文服务'},
@@ -160,6 +160,7 @@ TRANSLATION_UI_TEXTS = {
     'menu_profile': {'zh': '👤个人中心', 'en': '👤 Profile'},
     'menu_recharge': {'zh': '💸我要充值', 'en': '💸 Recharge'},
     'menu_redpacket': {'zh': '🧧红包', 'en': '🧧 Red Packets'},
+    'menu_clone_same': {'zh': '#g [emoji:5287684458881756303:🤖]一键克隆同款', 'en': '#g [emoji:5287684458881756303:🤖]Clone This Bot'},
     'purchase_history_button': {'zh': '🛒购买记录', 'en': '🛒 Purchase History'},
     'close': {'zh': '关闭', 'en': 'Close'},
     'close_with_icon': {'zh': '❌关闭', 'en': '❌ Close'},
@@ -231,6 +232,12 @@ TRANSLATION_UI_TEXTS = {
     'area_request_exists': {'zh': '这个区号你已经提醒过补货啦，请等管理员上新 [emoji:5222044641200720562:🌸]', 'en': 'You have already requested restock for this area code. Please wait for the admin to add stock. [emoji:5222044641200720562:🌸]'},
     'area_request_done': {'zh': '已帮你提醒管理员补货，请稍后留意上新消息 [emoji:5222044641200720562:🌸]', 'en': 'I have notified the admin for restock. Please watch for new stock updates. [emoji:5222044641200720562:🌸]'},
     'stock_count_label': {'zh': '库存', 'en': 'Stock'},
+    'redpacket_menu_title': {'zh': '从下面的列表中选择一个红包', 'en': 'Choose a red packet from the list below'},
+    'redpacket_ongoing_active': {'zh': '◾️进行中', 'en': '◾️ Ongoing'},
+    'redpacket_ended_tab': {'zh': '已结束', 'en': 'Ended'},
+    'redpacket_ongoing_tab': {'zh': '进行中', 'en': 'Ongoing'},
+    'redpacket_ended_active': {'zh': '◾️已结束', 'en': '◾️ Ended'},
+    'redpacket_add': {'zh': '➕添加', 'en': '➕ Add'},
 }
 
 _translation_memory_cache = {}
@@ -552,6 +559,8 @@ def get_fixed_frontend_text_key(source_text):
         normalize_menu_text('✅购买'): 'buy_now',
         normalize_menu_text('⚠️暂无库存'): 'out_of_stock_button',
         normalize_menu_text('🛒购买记录'): 'purchase_history_button',
+        normalize_menu_text('一键克隆同款'): 'menu_clone_same',
+        normalize_menu_text('一键克隆Bot'): 'menu_clone_same',
     }
     return mapping.get(normalized)
 
@@ -2180,10 +2189,11 @@ def jxzhb(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
     user_id = query.from_user.id
+    lang = get_user_lang(user_id)
 
     keyboard = [
-        [InlineKeyboardButton('◾️进行中', callback_data='jxzhb'),
-         InlineKeyboardButton('已结束', callback_data='yjshb')],
+        [InlineKeyboardButton(get_ui_text('redpacket_ongoing_active', lang=lang), callback_data='jxzhb'),
+         InlineKeyboardButton(get_ui_text('redpacket_ended_tab', lang=lang), callback_data='yjshb')],
 
     ]
 
@@ -2197,8 +2207,8 @@ def jxzhb(update: Update, context: CallbackContext):
         keyboard.append(
             [InlineKeyboardButton(f'🧧[{timer}] {syhb}/{hbsl} - {hbmoney} USDT', callback_data=f'xzhb {uid}')])
 
-    keyboard.append([InlineKeyboardButton('➕添加', callback_data='addhb')])
-    keyboard.append([InlineKeyboardButton('关闭', callback_data=f'close {user_id}')])
+    keyboard.append([InlineKeyboardButton(get_ui_text('redpacket_add', lang=lang), callback_data='addhb')])
+    keyboard.append([InlineKeyboardButton(get_ui_text('close', lang=lang), callback_data=f'close {user_id}')])
 
     query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -2207,10 +2217,11 @@ def yjshb(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
     user_id = query.from_user.id
+    lang = get_user_lang(user_id)
 
     keyboard = [
-        [InlineKeyboardButton('️进行中', callback_data='jxzhb'),
-         InlineKeyboardButton('◾已结束', callback_data='yjshb')],
+        [InlineKeyboardButton(get_ui_text('redpacket_ongoing_tab', lang=lang), callback_data='jxzhb'),
+         InlineKeyboardButton(get_ui_text('redpacket_ended_active', lang=lang), callback_data='yjshb')],
 
     ]
 
@@ -2222,8 +2233,8 @@ def yjshb(update: Update, context: CallbackContext):
         keyboard.append(
             [InlineKeyboardButton(f'🧧[{timer}] 0/{hbsl} - {hbmoney} USDT (over)', callback_data=f'xzhb {uid}')])
 
-    keyboard.append([InlineKeyboardButton('➕添加', callback_data='addhb')])
-    keyboard.append([InlineKeyboardButton('关闭', callback_data=f'close {user_id}')])
+    keyboard.append([InlineKeyboardButton(get_ui_text('redpacket_add', lang=lang), callback_data='addhb')])
+    keyboard.append([InlineKeyboardButton(get_ui_text('close', lang=lang), callback_data=f'close {user_id}')])
 
     query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -4210,20 +4221,22 @@ def can_use_clonebot(state):
 
 
 def build_clone_purchase_keyboard(user_id, user_balance, fee):
+    lang = get_user_lang(user_id)
     keyboard = []
     if Decimal(str(user_balance)) >= fee:
-        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_OKPAY}支付 {format_clone_price(fee)} USDT 并继续', callback_data='clonepay')])
+        keyboard.append([InlineKeyboardButton(translate_text(f'{ADMIN_EMOJI_OKPAY}支付 {format_clone_price(fee)} USDT 并继续', lang), callback_data='clonepay')])
     else:
-        keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_OKPAY}余额不足，先去充值', callback_data='recharge_menu')])
-    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')])
+        keyboard.append([InlineKeyboardButton(translate_text(f'{ADMIN_EMOJI_OKPAY}余额不足，先去充值', lang), callback_data='recharge_menu')])
+    keyboard.append([InlineKeyboardButton(translate_text(f'{ADMIN_EMOJI_CLOSE}取消', lang), callback_data=f'close {user_id}')])
     return keyboard
 
 
 def send_clonebot_prompt(context, user_id):
+    lang = get_user_lang(user_id)
     user_list = user.find_one({'user_id': user_id}) or {}
     state = user_list.get('state')
     if not can_use_clonebot(state):
-        context.bot.send_message(chat_id=user_id, text='当前未开放一键克隆功能')
+        context.bot.send_message(chat_id=user_id, text=translate_text('当前未开放一键克隆功能', lang))
         return
     fee = get_clone_price_decimal()
     clone_credit = get_user_clone_credit(user_id)
@@ -4237,6 +4250,8 @@ def send_clonebot_prompt(context, user_id):
 
 [emoji:5301246586918024418:⚠️] 支付成功后，才能继续发送新 Bot Token 进行克隆。
         '''
+        if lang == 'en':
+            text = translate_text(text, 'en')
         keyboard = build_clone_purchase_keyboard(user_id, balance, fee)
         context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
         return
@@ -4248,7 +4263,9 @@ def send_clonebot_prompt(context, user_id):
 
 [emoji:5220195537520711716:⚡️] 默认会把当前操作用户设为新 Bot 管理员，并自动拉起新 Bot。
 '''
-    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
+    if lang == 'en':
+        text = translate_text(text, 'en')
+    keyboard = [[InlineKeyboardButton(translate_text(f'{ADMIN_EMOJI_CLOSE}取消', lang), callback_data=f'close {user_id}')]]
     user.update_one({'user_id': user_id}, {"$set": {"sign": 'clonebottoken'}})
     context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -4256,11 +4273,12 @@ def send_clonebot_prompt(context, user_id):
 def clonepay(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
+    lang = get_user_lang(user_id)
     query.answer()
     user_list = user.find_one({'user_id': user_id}) or {}
     state = user_list.get('state')
     if not can_use_clonebot(state):
-        context.bot.send_message(chat_id=user_id, text='当前未开放一键克隆功能')
+        context.bot.send_message(chat_id=user_id, text=translate_text('当前未开放一键克隆功能', lang))
         return
     fee = get_clone_price_decimal()
     if fee <= 0 or is_clone_fee_exempt(user_id, state):
@@ -4269,7 +4287,7 @@ def clonepay(update: Update, context: CallbackContext):
 
     balance = Decimal(str(user_list.get('USDT', 0) or 0)).quantize(Decimal('0.01'))
     if balance < fee:
-        text = f'余额不足，当前需支付 {format_clone_price(fee)} USDT，您现在余额为 {format_clone_price(balance)} USDT。'
+        text = translate_text(f'余额不足，当前需支付 {format_clone_price(fee)} USDT，您现在余额为 {format_clone_price(balance)} USDT。', lang)
         keyboard = build_clone_purchase_keyboard(user_id, balance, fee)
         try:
             query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard))
@@ -4287,9 +4305,10 @@ def clonepay(update: Update, context: CallbackContext):
 def clonebot(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
+    lang = get_user_lang(user_id)
     query.answer()
     if not BOT_CLONE_ENABLED:
-        context.bot.send_message(chat_id=user_id, text='当前机器人未开放克隆功能')
+        context.bot.send_message(chat_id=user_id, text=translate_text('当前机器人未开放克隆功能', lang))
         return
     send_clonebot_prompt(context, user_id)
 
@@ -5415,7 +5434,7 @@ def build_user_home_reply_keyboard(user_id):
     keyboard = [row for row in keyboard if row]
     keyboard.append([KeyboardButton(get_ui_text('language_toggle', lang=lang))])
     if BOT_CLONE_ENABLED and ALLOW_PUBLIC_BOT_CLONE:
-        keyboard.append([KeyboardButton(localize_dynamic_text('#g [emoji:5287684458881756303:🤖]一键克隆同款', user_id=user_id, lang=lang))])
+        keyboard.append([KeyboardButton(localize_button_label('#g [emoji:5287684458881756303:🤖]一键克隆同款', user_id=user_id, lang=lang))])
     return keyboard
 
 
@@ -7253,9 +7272,10 @@ def textkeyboard(update: Update, context: CallbackContext):
                     text = f'<b>[emoji:5287684458881756303:🤖] 克隆列表</b>\n\n当前付费价格：<code>{format_clone_price(price)} USDT</code>\n活跃克隆数：<code>{total}</code>'
                     context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
                 elif sign == 'clonebottoken':
+                    lang = get_user_lang(user_id)
                     if not can_use_clonebot(state):
                         user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
-                        context.bot.send_message(chat_id=user_id, text='当前未开放一键克隆功能')
+                        context.bot.send_message(chat_id=user_id, text=translate_text('当前未开放一键克隆功能', lang))
                         return
                     fee = get_clone_price_decimal()
                     fee_exempt = is_clone_fee_exempt(user_id, state)
@@ -7266,14 +7286,14 @@ def textkeyboard(update: Update, context: CallbackContext):
                         return
                     context.bot.send_message(
                         chat_id=user_id,
-                        text='[emoji:5220195537520711716:⚡️] 正在克隆中，请稍等…\n\n[emoji:5287684458881756303:🤖] 已收到新的 Bot Token，正在为你创建并启动新 Bot。',
+                        text=translate_text('[emoji:5220195537520711716:⚡️] 正在克隆中，请稍等…\n\n[emoji:5287684458881756303:🤖] 已收到新的 Bot Token，正在为你创建并启动新 Bot。', lang),
                         parse_mode='HTML'
                     )
                     try:
                         result = clone_bot_instance(text.strip(), user_id, source_bot_id=context.bot.id)
                     except Exception as exc:
-                        keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消输入', callback_data=f'close {user_id}')]]
-                        context.bot.send_message(chat_id=user_id, text=f'一键克隆失败：{exc}',
+                        keyboard = [[InlineKeyboardButton(translate_text(f'{ADMIN_EMOJI_CLOSE}取消输入', lang), callback_data=f'close {user_id}')]]
+                        context.bot.send_message(chat_id=user_id, text=translate_text(f'一键克隆失败：{exc}', lang),
                                                  reply_markup=InlineKeyboardMarkup(keyboard))
                         return
                     update_doc = {'sign': 0}
@@ -7306,6 +7326,8 @@ def textkeyboard(update: Update, context: CallbackContext):
 [emoji:5287684458881756303:🤖] 机器人：@{result['bot_username']}
 [emoji:6321041414067068140:👤] 管理员：{user_id}
                     '''
+                    if lang == 'en':
+                        clone_text = translate_text(clone_text, 'en')
                     context.bot.send_message(chat_id=user_id, text=clone_text, parse_mode='HTML')
                     send_clone_success_notice(context, user_id, result, fee_paid=(float(fee) if fee > 0 and not fee_exempt else 0))
                 elif 'setkeyname' in sign:
@@ -7764,7 +7786,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                 key_list = get_key.find_one({"projectname": text})
             if key_list is None and normalized_text:
                 key_list = normalized_key_map.get(normalized_text)
-            if normalized_text in (normalize_menu_text('🤖一键克隆同款'), normalize_menu_text(localize_dynamic_text('🤖一键克隆同款', user_id=user_id, lang=lang)), normalize_menu_text('🤖一键克隆Bot')):
+            if matches_ui_text(text, 'menu_clone_same'):
                 del_message(update.message)
                 send_clonebot_prompt(context, user_id)
             elif matches_ui_text(text, 'menu_profile'):
@@ -7782,14 +7804,12 @@ def textkeyboard(update: Update, context: CallbackContext):
 
             elif '红包' in text or matches_ui_text(text, 'menu_redpacket'):
                 del_message(update.message)
-                fstext = f'''
-从下面的列表中选择一个红包
-                '''
+                fstext = get_ui_text('redpacket_menu_title', viewer_user_id=user_id)
                 keyboard = [
-                    [InlineKeyboardButton('◾️进行中', callback_data='jxzhb'),
-                     InlineKeyboardButton('已结束', callback_data='yjshb')],
-                    [InlineKeyboardButton('➕添加', callback_data='addhb')],
-                    [InlineKeyboardButton('关闭', callback_data=f'close {user_id}')]
+                    [InlineKeyboardButton(get_ui_text('redpacket_ongoing_active', viewer_user_id=user_id), callback_data='jxzhb'),
+                     InlineKeyboardButton(get_ui_text('redpacket_ended_tab', viewer_user_id=user_id), callback_data='yjshb')],
+                    [InlineKeyboardButton(get_ui_text('redpacket_add', viewer_user_id=user_id), callback_data='addhb')],
+                    [InlineKeyboardButton(get_ui_text('close', viewer_user_id=user_id), callback_data=f'close {user_id}')]
                 ]
                 context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
