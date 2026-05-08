@@ -242,6 +242,8 @@ TRANSLATION_UI_TEXTS = {
 
 _translation_memory_cache = {}
 _translation_client = None
+_user_lang_cache = {}
+_localized_button_cache = {}
 
 
 ADMIN_EMOJI_USERLIST = '[emoji:6321041414067068140:👤]'
@@ -504,17 +506,24 @@ def get_user_lang(user_id=None, fallback=None):
     lang = normalize_lang_code(fallback)
     if user_id is None:
         return lang
+    cached = _user_lang_cache.get(user_id)
+    if cached:
+        return cached
     row = user.find_one({'user_id': user_id}, {'lang': 1}) or {}
     stored = row.get('lang')
     if stored:
-        return normalize_lang_code(stored)
+        normalized = normalize_lang_code(stored)
+        _user_lang_cache[user_id] = normalized
+        return normalized
     user.update_one({'user_id': user_id}, {'$set': {'lang': lang}})
+    _user_lang_cache[user_id] = lang
     return lang
 
 
 def set_user_lang(user_id, lang):
     lang = normalize_lang_code(lang)
     user.update_one({'user_id': user_id}, {'$set': {'lang': lang}})
+    _user_lang_cache[user_id] = lang
     return lang
 
 
@@ -584,6 +593,11 @@ def localize_button_label(source_text, user_id=None, lang=None):
     if lang == 'zh':
         return original_text
 
+    cache_key = (lang, original_text)
+    cached = _localized_button_cache.get(cache_key)
+    if cached:
+        return cached
+
     style_prefix = ''
     body_text = original_text
     style, stripped_body = parse_button_style_prefix(original_text)
@@ -598,19 +612,29 @@ def localize_button_label(source_text, user_id=None, lang=None):
         if emoji_style:
             emoji_prefix += f':{emoji_style}'
         emoji_prefix += ']'
-        return f'{style_prefix}{emoji_prefix}{translated_body}'.strip()
+        result = f'{style_prefix}{emoji_prefix}{translated_body}'.strip()
+        _localized_button_cache[cache_key] = result
+        return result
 
     known_emoji_id, emoji_text, clean_text = extract_known_button_icon(body_text)
     if emoji_text:
         translated_body = strip_button_label_decoration(get_ui_text(fixed_key, lang=lang)) if fixed_key else localize_dynamic_text(clean_text, user_id=user_id, lang=lang)
         if body_text.strip().startswith(emoji_text):
-            return f'{style_prefix}{emoji_text}{translated_body}'.strip()
+            result = f'{style_prefix}{emoji_text}{translated_body}'.strip()
+            _localized_button_cache[cache_key] = result
+            return result
         if body_text.strip().endswith(emoji_text):
-            return f'{style_prefix}{translated_body}{emoji_text}'.strip()
+            result = f'{style_prefix}{translated_body}{emoji_text}'.strip()
+            _localized_button_cache[cache_key] = result
+            return result
 
     if fixed_key:
-        return f'{style_prefix}{get_ui_text(fixed_key, lang=lang)}'.strip()
-    return f'{style_prefix}{localize_dynamic_text(body_text, user_id=user_id, lang=lang)}'.strip()
+        result = f'{style_prefix}{get_ui_text(fixed_key, lang=lang)}'.strip()
+        _localized_button_cache[cache_key] = result
+        return result
+    result = f'{style_prefix}{localize_dynamic_text(body_text, user_id=user_id, lang=lang)}'.strip()
+    _localized_button_cache[cache_key] = result
+    return result
 
 
 def sanitize_service_name(value):
@@ -3088,6 +3112,7 @@ def gmaijilu(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
     user_id = query.from_user.id
+    lang = get_user_lang(user_id)
     df_id = int(query.data.replace('gmaijilu ', ''))
     jilu_list = list(gmjlu.find({'user_id': df_id}, sort=[('timer', -1)], limit=10))
     keyboard = []
@@ -3098,7 +3123,7 @@ def gmaijilu(update: Update, context: CallbackContext):
         projectname = i['projectname']
         fhtext = i['text']
 
-        keyboard.append([InlineKeyboardButton(localize_catalog_name(projectname, user_id), callback_data=f'zcfshuo {bianhao}')])
+        keyboard.append([InlineKeyboardButton(localize_catalog_name(projectname, user_id, lang=lang), callback_data=f'zcfshuo {bianhao}')])
         count += 1
     if len(list(gmjlu.find({'user_id': df_id}))) > 10:
         keyboard.append([InlineKeyboardButton(get_ui_text('next_page', viewer_user_id=user_id), callback_data=f'gmainext {df_id}:10')])
@@ -3116,6 +3141,7 @@ def gmainext(update: Update, context: CallbackContext):
     page = data.split(":")[1]
     df_id = int(data.split(':')[0])
     user_id = query.from_user.id
+    lang = get_user_lang(user_id)
     keyboard = []
     text_list = []
     jilu_list = list(gmjlu.find({"user_id": df_id}, sort=[("timer", -1)], skip=int(page), limit=10))
@@ -3125,7 +3151,7 @@ def gmainext(update: Update, context: CallbackContext):
         projectname = i['projectname']
         fhtext = i['text']
 
-        keyboard.append([InlineKeyboardButton(localize_catalog_name(projectname, user_id), callback_data=f'zcfshuo {bianhao}')])
+        keyboard.append([InlineKeyboardButton(localize_catalog_name(projectname, user_id, lang=lang), callback_data=f'zcfshuo {bianhao}')])
         count += 1
     if len(list(gmjlu.find({"user_id": df_id}, sort=[("timer", -1)], skip=int(page)))) > 10:
         if int(page) == 0:
@@ -4710,6 +4736,7 @@ def catejflsp(update: Update, context: CallbackContext):
     query.answer()
     bot_id = context.bot.id
     user_id = query.from_user.id
+    lang = get_user_lang(user_id)
 
     product_rows = []
     ej_list = list(ejfl.find({'uid': uid}, sort=[('row', 1)]))
@@ -4734,7 +4761,7 @@ def catejflsp(update: Update, context: CallbackContext):
     keyboard = []
     for item in product_rows:
         price_text = standard_num(item['money'])
-        button_text = f"{localize_catalog_name(item['projectname'], user_id)} （{item['stock']}） - ${price_text}"
+        button_text = f"{localize_catalog_name(item['projectname'], user_id, lang=lang)} （{item['stock']}） - ${price_text}"
         keyboard.append([InlineKeyboardButton(button_text, callback_data=f"gmsp {item['nowuid']}:{item['stock']}")])
 
     fstext = get_ui_text('category_list_text', viewer_user_id=user_id)
@@ -4771,10 +4798,11 @@ def get_product_purchase_payload(nowuid):
 
 
 def build_product_purchase_text(projectname, money, stock_count, user_id=None):
+    lang = get_user_lang(user_id) if user_id is not None else DEFAULT_LANG
     return get_ui_text(
         'product_purchase_text',
         viewer_user_id=user_id,
-        projectname=localize_catalog_name(projectname, user_id) if user_id is not None else projectname,
+        projectname=localize_catalog_name(projectname, user_id, lang=lang) if user_id is not None else projectname,
         money=standard_num(money),
         stock_count=stock_count,
     )
@@ -5532,11 +5560,12 @@ def build_profile_keyboard(user_id):
             [InlineKeyboardButton(get_ui_text('close', viewer_user_id=user_id), callback_data=f'close {user_id}')]]
 
 
-def localize_catalog_name(value, user_id):
-    return localize_button_label(str(value or '').strip() or '商品', user_id=user_id)
+def localize_catalog_name(value, user_id, lang=None):
+    return localize_button_label(str(value or '').strip() or '商品', user_id=user_id, lang=lang)
 
 
 def build_category_catalog_keyboard(user_id):
+    lang = get_user_lang(user_id)
     keylist = list(fenlei.find({}, sort=[('row', 1)]))
     keyboard = [[] for _ in range(100)]
     for item in keylist:
@@ -5545,7 +5574,7 @@ def build_category_catalog_keyboard(user_id):
         hsl = 0
         for child in list(ejfl.find({'uid': uid})):
             hsl += len(list(hb.find({'nowuid': child['nowuid'], 'state': 0})))
-        projectname = localize_catalog_name(item.get('projectname'), user_id)
+        projectname = localize_catalog_name(item.get('projectname'), user_id, lang=lang)
         keyboard[row].append(InlineKeyboardButton(f'{projectname} [ {hsl} ]', callback_data=f'catejflsp {uid}:{hsl}'))
     return [row for row in keyboard if row]
 
