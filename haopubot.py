@@ -244,6 +244,7 @@ _translation_memory_cache = {}
 _translation_client = None
 _user_lang_cache = {}
 _localized_button_cache = {}
+_translation_warm_jobs = set()
 
 
 ADMIN_EMOJI_USERLIST = '[emoji:6321041414067068140:👤]'
@@ -495,6 +496,38 @@ def translate_text(text, target_lang='en'):
         return fallback_text
 
 
+def get_cached_translation_text(text, target_lang='en'):
+    text = str(text or '')
+    target_lang = normalize_lang_code(target_lang)
+    if not text or target_lang == 'zh':
+        return text
+
+    fallback_text = apply_translation_fallbacks(text, target_lang)
+    if fallback_text != text:
+        return fallback_text
+
+    cache_key = f'{target_lang}:{text}'
+    cached = _translation_memory_cache.get(cache_key)
+    if cached:
+        return cached
+
+    override_doc = translation_overrides.find_one({'text': text, 'lang': target_lang})
+    if override_doc and override_doc.get('fanyi'):
+        translated = str(override_doc.get('fanyi'))
+        if translated and translated != text:
+            _translation_memory_cache[cache_key] = translated
+            return translated
+
+    cache_doc = translation_cache.find_one({'text': text, 'lang': target_lang})
+    if cache_doc and cache_doc.get('fanyi'):
+        translated = str(cache_doc.get('fanyi'))
+        if translated and translated != text:
+            _translation_memory_cache[cache_key] = translated
+            return translated
+
+    return fallback_text
+
+
 def get_ui_text(key, viewer_user_id=None, lang=None, **kwargs):
     lang = normalize_lang_code(lang or (get_user_lang(viewer_user_id) if viewer_user_id is not None else DEFAULT_LANG))
     bucket = TRANSLATION_UI_TEXTS.get(key, {})
@@ -524,17 +557,72 @@ def set_user_lang(user_id, lang):
     lang = normalize_lang_code(lang)
     user.update_one({'user_id': user_id}, {'$set': {'lang': lang}})
     _user_lang_cache[user_id] = lang
+    _localized_button_cache.clear()
     return lang
 
 
 def toggle_user_lang(user_id):
     lang = 'en' if get_user_lang(user_id) == 'zh' else 'zh'
-    return set_user_lang(user_id, lang)
+    lang = set_user_lang(user_id, lang)
+    warm_storefront_translation_cache(user_id=user_id, lang=lang)
+    return lang
 
 
 def localize_dynamic_text(text, user_id=None, lang=None):
     lang = normalize_lang_code(lang or (get_user_lang(user_id) if user_id is not None else DEFAULT_LANG))
     return translate_text(text, lang) if lang == 'en' else str(text or '')
+
+
+def localize_dynamic_text_fast(text, user_id=None, lang=None):
+    lang = normalize_lang_code(lang or (get_user_lang(user_id) if user_id is not None else DEFAULT_LANG))
+    return get_cached_translation_text(text, lang) if lang == 'en' else str(text or '')
+
+
+def collect_storefront_translation_texts(limit=800):
+    texts = []
+    seen = set()
+
+    def add_text(value):
+        value = str(value or '').strip()
+        if not value or value in seen:
+            return
+        seen.add(value)
+        texts.append(value)
+
+    try:
+        for item in get_key.find({}, {'projectname': 1}).limit(limit):
+            add_text(item.get('projectname'))
+        for item in fenlei.find({}, {'projectname': 1}).limit(limit):
+            add_text(item.get('projectname'))
+        for item in ejfl.find({}, {'projectname': 1}).limit(limit):
+            add_text(item.get('projectname'))
+    except Exception:
+        logging.warning('Failed to collect storefront translation texts', exc_info=True)
+
+    return texts
+
+
+def warm_storefront_translation_cache(user_id=None, lang=None):
+    lang = normalize_lang_code(lang or (get_user_lang(user_id) if user_id is not None else DEFAULT_LANG))
+    if lang != 'en':
+        return
+
+    job_key = f'storefront:{lang}'
+    if job_key in _translation_warm_jobs:
+        return
+    _translation_warm_jobs.add(job_key)
+
+    def worker():
+        try:
+            for text in collect_storefront_translation_texts():
+                try:
+                    translate_text(text, lang)
+                except Exception:
+                    logging.warning('Warm translation failed for text=%r', text, exc_info=True)
+        finally:
+            _translation_warm_jobs.discard(job_key)
+
+    threading.Thread(target=worker, daemon=True).start()
 
 
 def matches_menu_text(user_id, incoming_text, source_text):
@@ -586,6 +674,16 @@ def strip_button_label_decoration(text):
     return str(text or '').strip()
 
 
+def cache_localized_button_result(cache_key, original_text, result, lang, fixed_key=None):
+    if lang == 'en' and not fixed_key:
+        normalized_original = normalize_menu_text(get_button_match_text(original_text))
+        normalized_result = normalize_menu_text(get_button_match_text(result))
+        if normalized_original and normalized_original == normalized_result:
+            return result
+    _localized_button_cache[cache_key] = result
+    return result
+
+
 def localize_button_label(source_text, user_id=None, lang=None):
     lang = normalize_lang_code(lang or (get_user_lang(user_id) if user_id is not None else DEFAULT_LANG))
     fixed_key = get_fixed_frontend_text_key(source_text)
@@ -607,34 +705,29 @@ def localize_button_label(source_text, user_id=None, lang=None):
 
     emoji_id, alt, emoji_style, rest = parse_dynamic_emoji_prefix(body_text)
     if emoji_id:
-        translated_body = strip_button_label_decoration(get_ui_text(fixed_key, lang=lang)) if fixed_key else localize_dynamic_text(rest, user_id=user_id, lang=lang)
+        translated_body = strip_button_label_decoration(get_ui_text(fixed_key, lang=lang)) if fixed_key else localize_dynamic_text_fast(rest, user_id=user_id, lang=lang)
         emoji_prefix = f'[emoji:{emoji_id}:{alt}'
         if emoji_style:
             emoji_prefix += f':{emoji_style}'
         emoji_prefix += ']'
         result = f'{style_prefix}{emoji_prefix}{translated_body}'.strip()
-        _localized_button_cache[cache_key] = result
-        return result
+        return cache_localized_button_result(cache_key, original_text, result, lang, fixed_key=fixed_key)
 
     known_emoji_id, emoji_text, clean_text = extract_known_button_icon(body_text)
     if emoji_text:
-        translated_body = strip_button_label_decoration(get_ui_text(fixed_key, lang=lang)) if fixed_key else localize_dynamic_text(clean_text, user_id=user_id, lang=lang)
+        translated_body = strip_button_label_decoration(get_ui_text(fixed_key, lang=lang)) if fixed_key else localize_dynamic_text_fast(clean_text, user_id=user_id, lang=lang)
         if body_text.strip().startswith(emoji_text):
             result = f'{style_prefix}{emoji_text}{translated_body}'.strip()
-            _localized_button_cache[cache_key] = result
-            return result
+            return cache_localized_button_result(cache_key, original_text, result, lang, fixed_key=fixed_key)
         if body_text.strip().endswith(emoji_text):
             result = f'{style_prefix}{translated_body}{emoji_text}'.strip()
-            _localized_button_cache[cache_key] = result
-            return result
+            return cache_localized_button_result(cache_key, original_text, result, lang, fixed_key=fixed_key)
 
     if fixed_key:
         result = f'{style_prefix}{get_ui_text(fixed_key, lang=lang)}'.strip()
-        _localized_button_cache[cache_key] = result
-        return result
-    result = f'{style_prefix}{localize_dynamic_text(body_text, user_id=user_id, lang=lang)}'.strip()
-    _localized_button_cache[cache_key] = result
-    return result
+        return cache_localized_button_result(cache_key, original_text, result, lang, fixed_key=fixed_key)
+    result = f'{style_prefix}{localize_dynamic_text_fast(body_text, user_id=user_id, lang=lang)}'.strip()
+    return cache_localized_button_result(cache_key, original_text, result, lang, fixed_key=fixed_key)
 
 
 def sanitize_service_name(value):
@@ -5527,6 +5620,7 @@ def build_user_home_reply_keyboard(user_id):
 
 
 def send_user_home(context, user_id):
+    warm_storefront_translation_cache(user_id=user_id)
     welcome_text, entities = get_localized_welcome_content(user_id)
     reply_markup = ReplyKeyboardMarkup(build_user_home_reply_keyboard(user_id), resize_keyboard=True, one_time_keyboard=False)
     welcome_kwargs = {'chat_id': user_id, 'text': welcome_text, 'reply_markup': reply_markup}
