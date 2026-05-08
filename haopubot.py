@@ -4240,29 +4240,33 @@ def can_use_clonebot(state):
     return ALLOW_PUBLIC_BOT_CLONE or str(state) == '4'
 
 
-def build_clone_purchase_keyboard(user_id, user_balance, fee):
-    lang = get_user_lang(user_id)
-    keyboard = []
-    if Decimal(str(user_balance)) >= fee:
-        keyboard.append([InlineKeyboardButton(translate_text(f'{ADMIN_EMOJI_OKPAY}支付 {format_clone_price(fee)} USDT 并继续', lang), callback_data='clonepay')])
-    else:
-        keyboard.append([InlineKeyboardButton(translate_text(f'{ADMIN_EMOJI_OKPAY}余额不足，先去充值', lang), callback_data='recharge_menu')])
-    keyboard.append([InlineKeyboardButton(translate_text(f'{ADMIN_EMOJI_CLOSE}取消', lang), callback_data=f'close {user_id}')])
-    return keyboard
+def get_clone_unavailable_text(user_id):
+    return 'Clone This Bot is currently unavailable' if get_user_lang(user_id) == 'en' else '当前未开放一键克隆功能'
 
 
-def send_clonebot_prompt(context, user_id):
-    lang = get_user_lang(user_id)
-    user_list = user.find_one({'user_id': user_id}) or {}
-    state = user_list.get('state')
-    if not can_use_clonebot(state):
-        context.bot.send_message(chat_id=user_id, text=translate_text('当前未开放一键克隆功能', lang))
-        return
-    fee = get_clone_price_decimal()
-    clone_credit = get_user_clone_credit(user_id)
-    if fee > 0 and not is_clone_fee_exempt(user_id, state) and clone_credit <= 0:
-        balance = Decimal(str(user_list.get('USDT', 0) or 0)).quantize(Decimal('0.01'))
-        text = f'''
+def get_clone_purchase_button_text(user_id, fee):
+    return f'{ADMIN_EMOJI_OKPAY}Pay {format_clone_price(fee)} USDT and Continue' if get_user_lang(user_id) == 'en' else f'{ADMIN_EMOJI_OKPAY}支付 {format_clone_price(fee)} USDT 并继续'
+
+
+def get_clone_recharge_button_text(user_id):
+    return f'{ADMIN_EMOJI_OKPAY}Recharge First' if get_user_lang(user_id) == 'en' else f'{ADMIN_EMOJI_OKPAY}余额不足，先去充值'
+
+
+def get_clone_cancel_text(user_id):
+    return f'{ADMIN_EMOJI_CLOSE}Cancel' if get_user_lang(user_id) == 'en' else f'{ADMIN_EMOJI_CLOSE}取消'
+
+
+def build_clone_purchase_prompt_text(user_id, fee, balance):
+    if get_user_lang(user_id) == 'en':
+        return f'''
+[emoji:5445353829304387411:💳] Clone This Bot is in paid mode
+
+[emoji:4965219701572503640:💰] Clone Price: <code>{format_clone_price(fee)} USDT</code>
+[emoji:4972482444025398275:👛] Current Balance: <code>{format_clone_price(balance)} USDT</code>
+
+[emoji:5301246586918024418:⚠️] Payment must be completed before you can continue sending the new Bot Token.
+        '''
+    return f'''
 [emoji:5445353829304387411:💳] 当前一键克隆为付费模式
 
 [emoji:4965219701572503640:💰] 克隆价格：<code>{format_clone_price(fee)} USDT</code>
@@ -4270,12 +4274,19 @@ def send_clonebot_prompt(context, user_id):
 
 [emoji:5301246586918024418:⚠️] 支付成功后，才能继续发送新 Bot Token 进行克隆。
         '''
-        if lang == 'en':
-            text = translate_text(text, 'en')
-        keyboard = build_clone_purchase_keyboard(user_id, balance, fee)
-        context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
-        return
-    text = '''
+
+
+def build_clone_token_prompt_text(user_id):
+    if get_user_lang(user_id) == 'en':
+        return '''
+[emoji:5287684458881756303:🤖] Please send the new Bot Token you want to clone
+
+[emoji:5217818964612108191:✨] Example:
+123456789:ABCdefGhIJKlmNoPQRsTUVwxyz123456789
+
+[emoji:5220195537520711716:⚡️] The current user will be set as the new Bot admin by default, and the new Bot will be started automatically.
+'''
+    return '''
 [emoji:5287684458881756303:🤖] 请发送你要克隆的新 Bot Token
 
 [emoji:5217818964612108191:✨] 例如：
@@ -4283,9 +4294,40 @@ def send_clonebot_prompt(context, user_id):
 
 [emoji:5220195537520711716:⚡️] 默认会把当前操作用户设为新 Bot 管理员，并自动拉起新 Bot。
 '''
-    if lang == 'en':
-        text = translate_text(text, 'en')
-    keyboard = [[InlineKeyboardButton(translate_text(f'{ADMIN_EMOJI_CLOSE}取消', lang), callback_data=f'close {user_id}')]]
+
+
+def build_clone_balance_shortage_text(user_id, fee, balance):
+    if get_user_lang(user_id) == 'en':
+        return f'Insufficient balance. You need to pay {format_clone_price(fee)} USDT, and your current balance is {format_clone_price(balance)} USDT.'
+    return f'余额不足，当前需支付 {format_clone_price(fee)} USDT，您现在余额为 {format_clone_price(balance)} USDT。'
+
+
+def build_clone_purchase_keyboard(user_id, user_balance, fee):
+    keyboard = []
+    if Decimal(str(user_balance)) >= fee:
+        keyboard.append([InlineKeyboardButton(get_clone_purchase_button_text(user_id, fee), callback_data='clonepay')])
+    else:
+        keyboard.append([InlineKeyboardButton(get_clone_recharge_button_text(user_id), callback_data='recharge_menu')])
+    keyboard.append([InlineKeyboardButton(get_clone_cancel_text(user_id), callback_data=f'close {user_id}')])
+    return keyboard
+
+
+def send_clonebot_prompt(context, user_id):
+    user_list = user.find_one({'user_id': user_id}) or {}
+    state = user_list.get('state')
+    if not can_use_clonebot(state):
+        context.bot.send_message(chat_id=user_id, text=get_clone_unavailable_text(user_id))
+        return
+    fee = get_clone_price_decimal()
+    clone_credit = get_user_clone_credit(user_id)
+    if fee > 0 and not is_clone_fee_exempt(user_id, state) and clone_credit <= 0:
+        balance = Decimal(str(user_list.get('USDT', 0) or 0)).quantize(Decimal('0.01'))
+        text = build_clone_purchase_prompt_text(user_id, fee, balance)
+        keyboard = build_clone_purchase_keyboard(user_id, balance, fee)
+        context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+    text = build_clone_token_prompt_text(user_id)
+    keyboard = [[InlineKeyboardButton(get_clone_cancel_text(user_id), callback_data=f'close {user_id}')]]
     user.update_one({'user_id': user_id}, {"$set": {"sign": 'clonebottoken'}})
     context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -4293,12 +4335,11 @@ def send_clonebot_prompt(context, user_id):
 def clonepay(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
-    lang = get_user_lang(user_id)
     query.answer()
     user_list = user.find_one({'user_id': user_id}) or {}
     state = user_list.get('state')
     if not can_use_clonebot(state):
-        context.bot.send_message(chat_id=user_id, text=translate_text('当前未开放一键克隆功能', lang))
+        context.bot.send_message(chat_id=user_id, text=get_clone_unavailable_text(user_id))
         return
     fee = get_clone_price_decimal()
     if fee <= 0 or is_clone_fee_exempt(user_id, state):
@@ -4307,7 +4348,7 @@ def clonepay(update: Update, context: CallbackContext):
 
     balance = Decimal(str(user_list.get('USDT', 0) or 0)).quantize(Decimal('0.01'))
     if balance < fee:
-        text = translate_text(f'余额不足，当前需支付 {format_clone_price(fee)} USDT，您现在余额为 {format_clone_price(balance)} USDT。', lang)
+        text = build_clone_balance_shortage_text(user_id, fee, balance)
         keyboard = build_clone_purchase_keyboard(user_id, balance, fee)
         try:
             query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard))
@@ -4325,10 +4366,9 @@ def clonepay(update: Update, context: CallbackContext):
 def clonebot(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
-    lang = get_user_lang(user_id)
     query.answer()
     if not BOT_CLONE_ENABLED:
-        context.bot.send_message(chat_id=user_id, text=translate_text('当前机器人未开放克隆功能', lang))
+        context.bot.send_message(chat_id=user_id, text='Clone This Bot is disabled on this bot' if get_user_lang(user_id) == 'en' else '当前机器人未开放克隆功能')
         return
     send_clonebot_prompt(context, user_id)
 
@@ -7295,7 +7335,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                     lang = get_user_lang(user_id)
                     if not can_use_clonebot(state):
                         user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
-                        context.bot.send_message(chat_id=user_id, text=translate_text('当前未开放一键克隆功能', lang))
+                        context.bot.send_message(chat_id=user_id, text=get_clone_unavailable_text(user_id))
                         return
                     fee = get_clone_price_decimal()
                     fee_exempt = is_clone_fee_exempt(user_id, state)
@@ -7306,14 +7346,14 @@ def textkeyboard(update: Update, context: CallbackContext):
                         return
                     context.bot.send_message(
                         chat_id=user_id,
-                        text=translate_text('[emoji:5220195537520711716:⚡️] 正在克隆中，请稍等…\n\n[emoji:5287684458881756303:🤖] 已收到新的 Bot Token，正在为你创建并启动新 Bot。', lang),
+                        text='[emoji:5220195537520711716:⚡️] Cloning in progress, please wait…\n\n[emoji:5287684458881756303:🤖] New Bot Token received. Creating and starting your new Bot now.' if lang == 'en' else '[emoji:5220195537520711716:⚡️] 正在克隆中，请稍等…\n\n[emoji:5287684458881756303:🤖] 已收到新的 Bot Token，正在为你创建并启动新 Bot。',
                         parse_mode='HTML'
                     )
                     try:
                         result = clone_bot_instance(text.strip(), user_id, source_bot_id=context.bot.id)
                     except Exception as exc:
-                        keyboard = [[InlineKeyboardButton(translate_text(f'{ADMIN_EMOJI_CLOSE}取消输入', lang), callback_data=f'close {user_id}')]]
-                        context.bot.send_message(chat_id=user_id, text=translate_text(f'一键克隆失败：{exc}', lang),
+                        keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}Cancel Input' if lang == 'en' else f'{ADMIN_EMOJI_CLOSE}取消输入', callback_data=f'close {user_id}')]]
+                        context.bot.send_message(chat_id=user_id, text=f'Clone This Bot failed: {exc}' if lang == 'en' else f'一键克隆失败：{exc}',
                                                  reply_markup=InlineKeyboardMarkup(keyboard))
                         return
                     update_doc = {'sign': 0}
@@ -7347,7 +7387,12 @@ def textkeyboard(update: Update, context: CallbackContext):
 [emoji:6321041414067068140:👤] 管理员：{user_id}
                     '''
                     if lang == 'en':
-                        clone_text = translate_text(clone_text, 'en')
+                        clone_text = f'''
+[emoji:5312028599803460968:🆗] Clone Successful
+
+[emoji:5287684458881756303:🤖] Bot: @{result['bot_username']}
+[emoji:6321041414067068140:👤] Admin: {user_id}
+                    '''
                     context.bot.send_message(chat_id=user_id, text=clone_text, parse_mode='HTML')
                     send_clone_success_notice(context, user_id, result, fee_paid=(float(fee) if fee > 0 and not fee_exempt else 0))
                 elif 'setkeyname' in sign:
