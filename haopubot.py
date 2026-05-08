@@ -151,7 +151,7 @@ TRANSLATION_REPLACEMENT_FALLBACKS = {
     ])
 }
 TRANSLATION_UI_TEXTS = {
-    'language_toggle': {'zh': '🌐 English', 'en': '🌐 中文'},
+    'language_toggle': {'zh': '[emoji:5296308529873828834:🌠] English', 'en': '[emoji:5296308529873828834:🌠] 中文'},
     'language_switch_prompt': {'zh': '请选择语言', 'en': 'Please choose your language'},
     'language_switch_done': {'zh': '语言已切换为中文', 'en': 'Language switched to English'},
     'language_switch_zh': {'zh': '中文服务', 'en': '中文服务'},
