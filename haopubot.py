@@ -151,7 +151,7 @@ TRANSLATION_REPLACEMENT_FALLBACKS = {
     ])
 }
 TRANSLATION_UI_TEXTS = {
-    'language_toggle': {'zh': '[emoji:5296308529873828834:🌠] English', 'en': '[emoji:5296308529873828834:🌠] 中文'},
+    'language_toggle': {'zh': '[emoji:5298584437338946835:🌐] English', 'en': '[emoji:5298584437338946835:🌐] 中文'},
     'language_switch_prompt': {'zh': '请选择语言', 'en': 'Please choose your language'},
     'language_switch_done': {'zh': '语言已切换为中文', 'en': 'Language switched to English'},
     'language_switch_zh': {'zh': '中文服务', 'en': '中文服务'},
@@ -523,17 +523,17 @@ def localize_dynamic_text(text, user_id=None, lang=None):
 
 def matches_menu_text(user_id, incoming_text, source_text):
     candidates = {
-        normalize_menu_text(source_text),
-        normalize_menu_text(localize_dynamic_text(source_text, user_id=user_id)),
+        normalize_menu_text(get_button_match_text(source_text)),
+        normalize_menu_text(get_button_match_text(localize_dynamic_text(source_text, user_id=user_id))),
     }
-    return normalize_menu_text(incoming_text) in {item for item in candidates if item}
+    return normalize_menu_text(get_button_match_text(incoming_text)) in {item for item in candidates if item}
 
 
 def matches_ui_text(incoming_text, key):
-    normalized = normalize_menu_text(incoming_text)
+    normalized = normalize_menu_text(get_button_match_text(incoming_text))
     candidates = {
-        normalize_menu_text(get_ui_text(key, lang='zh')),
-        normalize_menu_text(get_ui_text(key, lang='en')),
+        normalize_menu_text(get_button_match_text(get_ui_text(key, lang='zh'))),
+        normalize_menu_text(get_button_match_text(get_ui_text(key, lang='en'))),
     }
     return normalized in {item for item in candidates if item}
 
