@@ -82,14 +82,12 @@ DEFAULT_CLONE_WELCOME_TEXT = (
 )
 
 DEFAULT_CLONE_WELCOME_TEXT_EN = (
-    '<b>🔥 Welcome to BotShop\n\n'
-    '‼️Please let the admin finish these settings first:\n\n'
-    '😃 Welcome message / contact info\n'
-    '😄 Menu buttons\n'
-    '😃 Categories and products\n'
-    '😄 TRC20 recharge address\n'
-    '😃 Other payment settings\n\n'
-    '⚙️ /start ⬅️ Tap the command to open the menu</b>'
+    '💎 Our Services 💎\n'
+    'Telegram Accounts, API Accounts, and Direct-Login Accounts (.tdata) — Wholesale & Retail!\n'
+    'Telegram Premium Activation, Established Accounts, Groups, and Channels!\n\n'
+    '❗️ If you are new to our products, please purchase a small quantity for testing first to avoid any unnecessary disputes. Thank you for your cooperation!\n\n'
+    '❗️ Disclaimer: All products sold in this store are intended solely for entertainment and testing purposes; they must not be used for any illegal activities. Please comply with all local laws and regulations!\n\n'
+    '🚀 /start ⬅️ Click this command to open the bottom menu!'
 )
 
 DEFAULT_LANG = 'zh'
@@ -392,6 +390,35 @@ def apply_translation_fallbacks(text, target_lang):
     return translated
 
 
+def translate_text_via_http(text, target_lang='en'):
+    text = str(text or '')
+    target_lang = normalize_lang_code(target_lang)
+    if not text or target_lang == 'zh':
+        return text
+
+    masked_text, mapping = mask_translation_tokens(text)
+    response = requests.get(
+        'https://translate.googleapis.com/translate_a/single',
+        params={
+            'client': 'gtx',
+            'sl': 'auto',
+            'tl': TRANSLATION_TARGET_LANG.get(target_lang, target_lang),
+            'dt': 't',
+            'q': masked_text,
+        },
+        timeout=12,
+    )
+    response.raise_for_status()
+    data = response.json()
+    translated = ''.join(
+        str(part[0] or '')
+        for part in (data[0] or [])
+        if isinstance(part, list) and part
+    ).strip()
+    translated = unmask_translation_tokens(translated, mapping).strip()
+    return translated or text
+
+
 def translate_text(text, target_lang='en'):
     text = str(text or '')
     target_lang = normalize_lang_code(target_lang)
@@ -410,17 +437,31 @@ def translate_text(text, target_lang='en'):
     override_doc = translation_overrides.find_one({'text': text, 'lang': target_lang})
     if override_doc and override_doc.get('fanyi'):
         translated = str(override_doc.get('fanyi'))
-        _translation_memory_cache[cache_key] = translated
-        return translated
+        if translated and translated != text:
+            _translation_memory_cache[cache_key] = translated
+            return translated
 
     cache_doc = translation_cache.find_one({'text': text, 'lang': target_lang})
     if cache_doc and cache_doc.get('fanyi'):
         translated = str(cache_doc.get('fanyi'))
-        _translation_memory_cache[cache_key] = translated
-        return translated
+        if translated and translated != text:
+            _translation_memory_cache[cache_key] = translated
+            return translated
 
     client = get_translation_client()
     if client is None:
+        try:
+            translated = translate_text_via_http(text, target_lang)
+            if translated and translated != text:
+                translation_cache.update_one(
+                    {'text': text, 'lang': target_lang},
+                    {'$set': {'text': text, 'lang': target_lang, 'fanyi': translated, 'updated_at': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}},
+                    upsert=True
+                )
+                _translation_memory_cache[cache_key] = translated
+                return translated
+        except Exception:
+            logging.warning('HTTP translation failed for lang=%s text=%r', target_lang, text, exc_info=True)
         _translation_memory_cache[cache_key] = fallback_text
         return fallback_text
 
@@ -429,6 +470,8 @@ def translate_text(text, target_lang='en'):
         result = client.translate(masked_text.replace('\n', '\\n'), target=TRANSLATION_TARGET_LANG.get(target_lang, target_lang))
         translated = getattr(result, 'translatedText', None) or getattr(result, 'text', None) or str(result or '')
         translated = unmask_translation_tokens(translated.replace('\\n', '\n'), mapping).strip() or text
+        if translated == text:
+            translated = translate_text_via_http(text, target_lang)
         translation_cache.update_one(
             {'text': text, 'lang': target_lang},
             {'$set': {'text': text, 'lang': target_lang, 'fanyi': translated, 'updated_at': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}},
@@ -493,6 +536,32 @@ def matches_ui_text(incoming_text, key):
         normalize_menu_text(get_ui_text(key, lang='en')),
     }
     return normalized in {item for item in candidates if item}
+
+
+def get_fixed_frontend_text_key(source_text):
+    normalized = normalize_menu_text(get_button_match_text(str(source_text or '')))
+    mapping = {
+        normalize_menu_text('🛒商品列表'): 'menu_goods_list',
+        normalize_menu_text('👤个人中心'): 'menu_profile',
+        normalize_menu_text('💸我要充值'): 'menu_recharge',
+        normalize_menu_text('🧧红包'): 'menu_redpacket',
+        normalize_menu_text('🏠主菜单'): 'main_menu',
+        normalize_menu_text('⬅️返回'): 'back',
+        normalize_menu_text('❌关闭'): 'close_with_icon',
+        normalize_menu_text('关闭'): 'close',
+        normalize_menu_text('✅购买'): 'buy_now',
+        normalize_menu_text('⚠️暂无库存'): 'out_of_stock_button',
+        normalize_menu_text('🛒购买记录'): 'purchase_history_button',
+    }
+    return mapping.get(normalized)
+
+
+def localize_button_label(source_text, user_id=None, lang=None):
+    lang = normalize_lang_code(lang or (get_user_lang(user_id) if user_id is not None else DEFAULT_LANG))
+    fixed_key = get_fixed_frontend_text_key(source_text)
+    if fixed_key:
+        return get_ui_text(fixed_key, lang=lang)
+    return localize_dynamic_text(source_text, user_id=user_id, lang=lang)
 
 
 def sanitize_service_name(value):
@@ -5288,7 +5357,7 @@ def build_user_home_reply_keyboard(user_id):
     keyboard = [[] for _ in range(100)]
     for item in keylist:
         row = max(1, int(item.get('Row', 1))) - 1
-        label = localize_dynamic_text(item.get('projectname', ''), user_id=user_id, lang=lang)
+        label = localize_button_label(item.get('projectname', ''), user_id=user_id, lang=lang)
         keyboard[row].append(KeyboardButton(label))
     keyboard = [row for row in keyboard if row]
     keyboard.append([KeyboardButton(get_ui_text('language_toggle', lang=lang))])
@@ -5332,7 +5401,7 @@ def build_profile_keyboard(user_id):
 
 
 def localize_catalog_name(value, user_id):
-    return localize_dynamic_text(str(value or '').strip() or '商品', user_id=user_id)
+    return localize_button_label(str(value or '').strip() or '商品', user_id=user_id)
 
 
 def build_category_catalog_keyboard(user_id):
