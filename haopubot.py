@@ -95,6 +95,63 @@ DEFAULT_CLONE_WELCOME_TEXT_EN = (
 DEFAULT_LANG = 'zh'
 SUPPORTED_LANGS = {'zh', 'en'}
 TRANSLATION_TARGET_LANG = {'zh': 'zh-CN', 'en': 'en'}
+TRANSLATION_EXACT_FALLBACKS = {
+    'en': {
+        '🛒商品列表': '🛒 Product Catalog',
+        '👤个人中心': '👤 Profile',
+        '💸我要充值': '💸 Recharge',
+        '🧧红包': '🧧 Red Packets',
+        '🌐 English': '🌐 中文',
+        '🌐 中文': '🌐 English',
+        '🏠主菜单': '🏠 Home',
+        '⬅️返回': '⬅️ Back',
+        '❌关闭': '❌ Close',
+        '关闭': 'Close',
+        '[emoji:5397916757333654639:➕]提醒补货': '[emoji:5397916757333654639:➕] Restock Alert',
+        '#g [emoji:5287684458881756303:🤖]一键克隆同款': '#g [emoji:5287684458881756303:🤖] Clone This Bot',
+        '🤖一键克隆同款': '🤖 Clone This Bot',
+        '✅购买': '✅ Buy Now',
+        '⚠️暂无库存': '⚠️ Out of Stock',
+        '🛒购买记录': '🛒 Purchase History',
+        '下一页': 'Next',
+        '上一页': 'Previous',
+        '返回个人中心': 'Back to Profile',
+        '自定义充值金额': 'Custom Amount',
+        '返回支付方式': 'Back to Payment Methods',
+        '取消充值': 'Cancel Recharge',
+        '请输入充值金额': 'Please enter the recharge amount',
+        '请输入OKPay充值金额': 'Please enter the OKPay recharge amount',
+        '请输入数字': 'Please enter a number',
+        '确认购买✅': 'Confirm ✅',
+    }
+}
+TRANSLATION_REPLACEMENT_FALLBACKS = {
+    'en': OrderedDict([
+        ('欢迎使用号铺机器人', 'Welcome to BotShop'),
+        ('点击命令打开菜单', 'Tap the command to open the menu'),
+        ('请选择充值方式', 'Please choose a recharge method'),
+        ('请选择支付方式', 'Please choose a payment method'),
+        ('商品列表', 'Product Catalog'),
+        ('个人中心', 'Profile'),
+        ('我要充值', 'Recharge'),
+        ('红包', 'Red Packets'),
+        ('购买记录', 'Purchase History'),
+        ('返回个人中心', 'Back to Profile'),
+        ('主菜单', 'Home'),
+        ('返回', 'Back'),
+        ('关闭', 'Close'),
+        ('购买', 'Buy Now'),
+        ('暂无库存', 'Out of Stock'),
+        ('提醒补货', 'Restock Alert'),
+        ('联系客服', 'Contact Support'),
+        ('使用教程', 'Tutorial'),
+        ('查询库存', 'Check Stock'),
+        ('充值金额', 'Recharge Amount'),
+        ('价格', 'Price'),
+        ('库存', 'Stock'),
+        ('数量', 'Quantity'),
+    ])
+}
 TRANSLATION_UI_TEXTS = {
     'language_toggle': {'zh': '🌐 English', 'en': '🌐 中文'},
     'language_switch_prompt': {'zh': '请选择语言', 'en': 'Please choose your language'},
@@ -321,11 +378,29 @@ def unmask_translation_tokens(text, mapping):
     return restored
 
 
+def apply_translation_fallbacks(text, target_lang):
+    text = str(text or '')
+    target_lang = normalize_lang_code(target_lang)
+    exact = TRANSLATION_EXACT_FALLBACKS.get(target_lang, {})
+    if text in exact:
+        return exact[text]
+
+    replacements = TRANSLATION_REPLACEMENT_FALLBACKS.get(target_lang, OrderedDict())
+    translated = text
+    for source, target in replacements.items():
+        translated = translated.replace(source, target)
+    return translated
+
+
 def translate_text(text, target_lang='en'):
     text = str(text or '')
     target_lang = normalize_lang_code(target_lang)
     if not text or target_lang == 'zh':
         return text
+
+    fallback_text = apply_translation_fallbacks(text, target_lang)
+    if fallback_text != text:
+        return fallback_text
 
     cache_key = f'{target_lang}:{text}'
     cached = _translation_memory_cache.get(cache_key)
@@ -346,8 +421,8 @@ def translate_text(text, target_lang='en'):
 
     client = get_translation_client()
     if client is None:
-        _translation_memory_cache[cache_key] = text
-        return text
+        _translation_memory_cache[cache_key] = fallback_text
+        return fallback_text
 
     masked_text, mapping = mask_translation_tokens(text)
     try:
@@ -363,8 +438,9 @@ def translate_text(text, target_lang='en'):
         return translated
     except Exception:
         logging.warning('Auto translation failed for lang=%s text=%r', target_lang, text, exc_info=True)
-        _translation_memory_cache[cache_key] = text
-        return text
+        fallback_text = apply_translation_fallbacks(text, target_lang)
+        _translation_memory_cache[cache_key] = fallback_text
+        return fallback_text
 
 
 def get_ui_text(key, viewer_user_id=None, lang=None, **kwargs):
