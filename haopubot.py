@@ -6718,15 +6718,9 @@ def textkeyboard(update: Update, context: CallbackContext):
                 sign = 0
 
         if matches_ui_text(text, 'language_toggle'):
-            keyboard = [
-                [KeyboardButton(get_ui_text('language_switch_zh', lang='zh')), KeyboardButton(get_ui_text('language_switch_en', lang='en'))],
-                [KeyboardButton(get_ui_text('main_menu', viewer_user_id=user_id))]
-            ]
-            context.bot.send_message(
-                chat_id=user_id,
-                text=get_ui_text('language_switch_prompt', viewer_user_id=user_id),
-                reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
-            )
+            new_lang = toggle_user_lang(user_id)
+            context.bot.send_message(chat_id=user_id, text=get_ui_text('language_switch_done', lang=new_lang))
+            send_user_home(context, user_id)
             return
 
         if matches_ui_text(text, 'language_switch_zh') or matches_ui_text(text, 'language_switch_en'):
