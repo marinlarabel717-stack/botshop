@@ -2342,51 +2342,71 @@ def get_buy_notice_text(product_text=''):
 def build_purchase_success_header(deducted_amount, remaining_amount, user_id=None):
     deducted_text = standard_num(deducted_amount)
     remaining_text = standard_num(remaining_amount)
-    text = (
+    lang = get_user_lang(user_id) if user_id is not None else 'zh'
+    if lang == 'en':
+        return (
+            '<b>[emoji:5193209274452425995:🎉] Purchase Successful</b>\n\n'
+            f'<b>[emoji:4965219701572503640:💰] Deducted from Balance:</b> {deducted_text} USDT\n'
+            f'<b>[emoji:4972482444025398275:👛] Remaining Balance:</b> {remaining_text} USDT'
+        )
+    return (
         '<b>[emoji:5193209274452425995:🎉] 购买成功</b>\n\n'
         f'<b>[emoji:4965219701572503640:💰] 从余额中扣除：</b> {deducted_text} USDT\n'
         f'<b>[emoji:4972482444025398275:👛] 您的剩余金额：</b> {remaining_text} USDT'
     )
-    return translate_text(text, get_user_lang(user_id)) if user_id is not None and get_user_lang(user_id) == 'en' else text
 
 
 def build_account_check_progress_text(total_count, checked_count, alive_count=0, invalid_count=0, frozen_count=0, timeout_count=0, user_id=None):
-    text = (
+    lang = get_user_lang(user_id) if user_id is not None else 'zh'
+    if lang == 'en':
+        return (
+            f'<b>{ACCOUNT_CHECK_EMOJI_PROGRESS} Checking account status, please wait...</b>\n\n'
+            f'<b>{ACCOUNT_CHECK_EMOJI_TOTAL} Checked:</b> {checked_count} / {total_count}'
+        )
+    return (
         f'<b>{ACCOUNT_CHECK_EMOJI_PROGRESS} 正在检查账号状态，请稍等！</b>\n\n'
         f'<b>{ACCOUNT_CHECK_EMOJI_TOTAL} 已检测：</b> {checked_count} / {total_count}'
     )
-    return translate_text(text, get_user_lang(user_id)) if user_id is not None and get_user_lang(user_id) == 'en' else text
 
 
 def build_account_check_result_text(total_count, alive_count, invalid_count, frozen_count, timeout_count, deducted_amount, refund_amount, remaining_amount, user_id=None):
     deducted_text = standard_num(deducted_amount)
     refund_text = standard_num(refund_amount)
     remaining_text = standard_num(remaining_amount)
+    lang = get_user_lang(user_id) if user_id is not None else 'zh'
     lines = []
     if alive_count == 0 and timeout_count == 0:
-        lines.append(f'<b>{ACCOUNT_CHECK_EMOJI_INVALID} 本次账号检测全部失效，已退款</b>')
+        lines.append(f'<b>{ACCOUNT_CHECK_EMOJI_INVALID} All checked accounts were invalid. Refund issued.</b>' if lang == 'en' else f'<b>{ACCOUNT_CHECK_EMOJI_INVALID} 本次账号检测全部失效，已退款</b>')
     else:
-        lines.append('<b>[emoji:5193209274452425995:🎉] 购买成功</b>')
-    lines.extend([
-        '',
-        f'<b>{ACCOUNT_CHECK_EMOJI_TOTAL} 账号数量：</b> {total_count}',
-        f'<b>{ACCOUNT_CHECK_EMOJI_ALIVE} 存活账号：</b> {alive_count}',
-        f'<b>{ACCOUNT_CHECK_EMOJI_INVALID} 无效账号：</b> {invalid_count}',
-        f'<b>{ACCOUNT_CHECK_EMOJI_FROZEN} 冻结账号：</b> {frozen_count}',
-    ])
+        lines.append('<b>[emoji:5193209274452425995:🎉] Purchase Successful</b>' if lang == 'en' else '<b>[emoji:5193209274452425995:🎉] 购买成功</b>')
+    if lang == 'en':
+        lines.extend([
+            '',
+            f'<b>{ACCOUNT_CHECK_EMOJI_TOTAL} Total Accounts:</b> {total_count}',
+            f'<b>{ACCOUNT_CHECK_EMOJI_ALIVE} Valid Accounts:</b> {alive_count}',
+            f'<b>{ACCOUNT_CHECK_EMOJI_INVALID} Invalid Accounts:</b> {invalid_count}',
+            f'<b>{ACCOUNT_CHECK_EMOJI_FROZEN} Frozen Accounts:</b> {frozen_count}',
+        ])
+    else:
+        lines.extend([
+            '',
+            f'<b>{ACCOUNT_CHECK_EMOJI_TOTAL} 账号数量：</b> {total_count}',
+            f'<b>{ACCOUNT_CHECK_EMOJI_ALIVE} 存活账号：</b> {alive_count}',
+            f'<b>{ACCOUNT_CHECK_EMOJI_INVALID} 无效账号：</b> {invalid_count}',
+            f'<b>{ACCOUNT_CHECK_EMOJI_FROZEN} 冻结账号：</b> {frozen_count}',
+        ])
     if timeout_count:
-        lines.append(f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 超时账号：</b> {timeout_count}')
-    lines.append(f'<b>[emoji:4965219701572503640:💰] 从余额中扣除：</b> {deducted_text} USDT')
+        lines.append(f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} Timed-out Accounts:</b> {timeout_count}' if lang == 'en' else f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 超时账号：</b> {timeout_count}')
+    lines.append(f'<b>[emoji:4965219701572503640:💰] Deducted from Balance:</b> {deducted_text} USDT' if lang == 'en' else f'<b>[emoji:4965219701572503640:💰] 从余额中扣除：</b> {deducted_text} USDT')
     if refund_amount:
-        lines.append(f'<b>[emoji:5235511932064129087:🎁] 已退回余额：</b> {refund_text} USDT')
-    lines.append(f'<b>[emoji:4972482444025398275:👛] 您的剩余金额：</b> {remaining_text} USDT')
+        lines.append(f'<b>[emoji:5235511932064129087:🎁] Refunded to Balance:</b> {refund_text} USDT' if lang == 'en' else f'<b>[emoji:5235511932064129087:🎁] 已退回余额：</b> {refund_text} USDT')
+    lines.append(f'<b>[emoji:4972482444025398275:👛] Remaining Balance:</b> {remaining_text} USDT' if lang == 'en' else f'<b>[emoji:4972482444025398275:👛] 您的剩余金额：</b> {remaining_text} USDT')
     if timeout_count:
         lines.extend([
             '',
-            f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 超时账号已随文件一起发给你，请联系客服处理。</b>'
+            f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} Timed-out accounts were delivered with the file. Please contact support if needed.</b>' if lang == 'en' else f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 超时账号已随文件一起发给你，请联系客服处理。</b>'
         ])
-    text = '\n'.join(lines)
-    return translate_text(text, get_user_lang(user_id)) if user_id is not None and get_user_lang(user_id) == 'en' else text
+    return '\n'.join(lines)
 
 
 def build_account_check_admin_notice(fullname, username, user_id, yijiprojectname, erjiprojectname, total_count, alive_count, invalid_count, frozen_count, timeout_count, order_id, deducted_amount, refund_amount):
