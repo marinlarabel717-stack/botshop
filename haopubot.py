@@ -2328,24 +2328,26 @@ def get_buy_notice_text(product_text=''):
     return product_text
 
 
-def build_purchase_success_header(deducted_amount, remaining_amount):
+def build_purchase_success_header(deducted_amount, remaining_amount, user_id=None):
     deducted_text = standard_num(deducted_amount)
     remaining_text = standard_num(remaining_amount)
-    return (
+    text = (
         '<b>[emoji:5193209274452425995:🎉] 购买成功</b>\n\n'
         f'<b>[emoji:4965219701572503640:💰] 从余额中扣除：</b> {deducted_text} USDT\n'
         f'<b>[emoji:4972482444025398275:👛] 您的剩余金额：</b> {remaining_text} USDT'
     )
+    return translate_text(text, get_user_lang(user_id)) if user_id is not None and get_user_lang(user_id) == 'en' else text
 
 
-def build_account_check_progress_text(total_count, checked_count, alive_count=0, invalid_count=0, frozen_count=0, timeout_count=0):
-    return (
+def build_account_check_progress_text(total_count, checked_count, alive_count=0, invalid_count=0, frozen_count=0, timeout_count=0, user_id=None):
+    text = (
         f'<b>{ACCOUNT_CHECK_EMOJI_PROGRESS} 正在检查账号状态，请稍等！</b>\n\n'
         f'<b>{ACCOUNT_CHECK_EMOJI_TOTAL} 已检测：</b> {checked_count} / {total_count}'
     )
+    return translate_text(text, get_user_lang(user_id)) if user_id is not None and get_user_lang(user_id) == 'en' else text
 
 
-def build_account_check_result_text(total_count, alive_count, invalid_count, frozen_count, timeout_count, deducted_amount, refund_amount, remaining_amount):
+def build_account_check_result_text(total_count, alive_count, invalid_count, frozen_count, timeout_count, deducted_amount, refund_amount, remaining_amount, user_id=None):
     deducted_text = standard_num(deducted_amount)
     refund_text = standard_num(refund_amount)
     remaining_text = standard_num(remaining_amount)
@@ -2372,7 +2374,8 @@ def build_account_check_result_text(total_count, alive_count, invalid_count, fro
             '',
             f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 超时账号已随文件一起发给你，请联系客服处理。</b>'
         ])
-    return '\n'.join(lines)
+    text = '\n'.join(lines)
+    return translate_text(text, get_user_lang(user_id)) if user_id is not None and get_user_lang(user_id) == 'en' else text
 
 
 def build_account_check_admin_notice(fullname, username, user_id, yijiprojectname, erjiprojectname, total_count, alive_count, invalid_count, frozen_count, timeout_count, order_id, deducted_amount, refund_amount):
@@ -2675,7 +2678,7 @@ def deliver_accounts_with_check(context, user_id, fullname, username, nowuid, er
                         bot,
                         user_id,
                         progress_message_id,
-                        build_account_check_progress_text(total_count, checked_count, len(alive_items), len(invalid_items), len(frozen_items), len(timeout_items))
+                        build_account_check_progress_text(total_count, checked_count, len(alive_items), len(invalid_items), len(frozen_items), len(timeout_items), user_id=user_id)
                     )
                 except Exception:
                     logging.warning('Failed to update account-check progress for user %s at %s/%s', user_id, checked_count, total_count, exc_info=True)
@@ -2718,6 +2721,7 @@ def deliver_accounts_with_check(context, user_id, fullname, username, nowuid, er
         charged_amount,
         refund_amount,
         remaining_amount,
+        user_id=user_id,
     )
     finalize_account_check_message(bot, user_id, progress_message_id, final_text)
 
@@ -3135,18 +3139,23 @@ def zcfshuo(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
     user_id = query.from_user.id
+    lang = get_user_lang(user_id)
     bianhao = query.data.replace('zcfshuo ', '')
     gmjlu_list = gmjlu.find_one({'bianhao': bianhao})
     leixing = gmjlu_list['leixing']
     if leixing == '会员链接':
         text = gmjlu_list['text']
+        if lang == 'en':
+            text = translate_text(text, 'en')
 
         context.bot.send_message(chat_id=user_id, text=text, disable_web_page_preview=True)
 
     else:
         zip_filename = gmjlu_list['text']
         fstext = gmjlu_list['ts']
-        keyboard = [[InlineKeyboardButton('✅已读（点击销毁此消息）', callback_data=f'close {user_id}')]]
+        if lang == 'en':
+            fstext = translate_text(fstext, 'en')
+        keyboard = [[InlineKeyboardButton(translate_text('✅已读（点击销毁此消息）', lang), callback_data=f'close {user_id}')]]
         context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML', disable_web_page_preview=True,
                                  reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -5977,9 +5986,12 @@ def okpay_mark_deposit_paid(payload):
 
     if OKPAY_BOT is not None:
         try:
+            notify_text = f'<b>✅ OKPay充值到账：{money} {coin}\n\n💳 当前余额：{now_money} USDT</b>'
+            if get_user_lang(user_id) == 'en':
+                notify_text = translate_text(notify_text, 'en')
             OKPAY_BOT.send_message(
                 chat_id=user_id,
-                text=f'<b>✅ OKPay充值到账：{money} {coin}\n\n💳 当前余额：{now_money} USDT</b>',
+                text=notify_text,
                 parse_mode='HTML'
             )
         except Exception as exc:
@@ -6267,6 +6279,7 @@ def qrgaimai(update: Update, context: CallbackContext):
     query.answer()
     bot_id = context.bot.id
     user_id = query.from_user.id
+    lang = get_user_lang(user_id)
     fullname = query.from_user.full_name.replace('<', '').replace('>', '')
     username = query.from_user.username
     data = query.data.replace('qrgaimai ', '')
@@ -6277,7 +6290,7 @@ def qrgaimai(update: Update, context: CallbackContext):
     USDT = user_list['USDT']
     kc = len(list(hb.find({'nowuid': nowuid, 'state': 0})))
     if kc < gmsl:
-        context.bot.send_message(chat_id=user_id, text='当前库存不足')
+        context.bot.send_message(chat_id=user_id, text=translate_text('当前库存不足', lang))
         return
     if zxymoney == 0:
         return
@@ -6293,9 +6306,12 @@ def qrgaimai(update: Update, context: CallbackContext):
         yijiid = ejfl_list['uid']
         yiji_list = fenlei.find_one({'uid': yijiid})
         yijiprojectname = yiji_list['projectname']
-        success_text = build_purchase_success_header(zxymoney, now_price)
+        lang = get_user_lang(user_id)
+        success_text = build_purchase_success_header(zxymoney, now_price, user_id=user_id)
         fstext = get_buy_notice_text(ejfl_list.get('text', ''))
         notice_text = str(fstext or '').strip()
+        if lang == 'en' and notice_text:
+            notice_text = translate_text(notice_text, 'en')
         account_check_runtime = get_account_check_runtime_status(fhtype) if fhtype in ACCOUNT_CHECK_SUPPORTED_TYPES else {'ready': False, 'reason': 'unsupported_entry_type'}
         use_account_check = ACCOUNT_CHECK_ENABLED and fhtype in ACCOUNT_CHECK_SUPPORTED_TYPES and bool(account_check_runtime.get('ready'))
         if not use_account_check:
@@ -6306,6 +6322,8 @@ def qrgaimai(update: Update, context: CallbackContext):
                     f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 检测环境未就绪，本次未执行账号检测，已按原始库存直发。</b>\n\n'
                     f'<b>原因：</b> <code>{runtime_reason}</code>'
                 )
+                if lang == 'en':
+                    warning_text = translate_text(warning_text, 'en')
                 send_html_message(context.bot, user_id, warning_text)
                 for admin_user in list(user.find({'state': '4'})):
                     try:
@@ -6321,7 +6339,7 @@ def qrgaimai(update: Update, context: CallbackContext):
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
             selected_docs = reserve_inventory_items({'nowuid': nowuid}, gmsl, user_id, order_id, timer)
             if len(selected_docs) < gmsl:
-                context.bot.send_message(chat_id=user_id, text='当前库存不足')
+                context.bot.send_message(chat_id=user_id, text=translate_text('当前库存不足', lang))
                 user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                 return
 
@@ -6337,7 +6355,7 @@ def qrgaimai(update: Update, context: CallbackContext):
                 progress_message = send_html_message(
                     context.bot,
                     user_id,
-                    build_account_check_progress_text(gmsl, 0, 0, 0, 0)
+                    build_account_check_progress_text(gmsl, 0, 0, 0, 0, user_id=user_id)
                 )
                 selected_items = [{'hbid': doc['hbid'], 'projectname': doc['projectname']} for doc in selected_docs]
                 threading.Thread(
@@ -6399,7 +6417,7 @@ def qrgaimai(update: Update, context: CallbackContext):
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
             selected_docs = reserve_inventory_items({'nowuid': nowuid, 'leixing': '谷歌'}, gmsl, user_id, order_id, timer)
             if len(selected_docs) < gmsl:
-                context.bot.send_message(chat_id=user_id, text='当前库存不足')
+                context.bot.send_message(chat_id=user_id, text=translate_text('当前库存不足', lang))
                 user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                 return
 
@@ -6461,7 +6479,7 @@ def qrgaimai(update: Update, context: CallbackContext):
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
             selected_docs = reserve_inventory_items({'nowuid': nowuid}, gmsl, user_id, order_id, timer)
             if len(selected_docs) < gmsl:
-                context.bot.send_message(chat_id=user_id, text='当前库存不足')
+                context.bot.send_message(chat_id=user_id, text=translate_text('当前库存不足', lang))
                 user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                 return
 
@@ -6515,7 +6533,7 @@ def qrgaimai(update: Update, context: CallbackContext):
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
             selected_docs = reserve_inventory_items({'nowuid': nowuid}, gmsl, user_id, order_id, timer)
             if len(selected_docs) < gmsl:
-                context.bot.send_message(chat_id=user_id, text='当前库存不足')
+                context.bot.send_message(chat_id=user_id, text=translate_text('当前库存不足', lang))
                 user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                 return
 
@@ -6563,7 +6581,7 @@ def qrgaimai(update: Update, context: CallbackContext):
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
             selected_docs = reserve_inventory_items({'nowuid': nowuid}, gmsl, user_id, order_id, timer)
             if len(selected_docs) < gmsl:
-                context.bot.send_message(chat_id=user_id, text='当前库存不足')
+                context.bot.send_message(chat_id=user_id, text=translate_text('当前库存不足', lang))
                 user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                 return
 
@@ -6580,7 +6598,7 @@ def qrgaimai(update: Update, context: CallbackContext):
                 progress_message = send_html_message(
                     context.bot,
                     user_id,
-                    build_account_check_progress_text(gmsl, 0, 0, 0, 0)
+                    build_account_check_progress_text(gmsl, 0, 0, 0, 0, user_id=user_id)
                 )
                 selected_items = [{'hbid': doc['hbid'], 'projectname': doc['projectname']} for doc in selected_docs]
                 threading.Thread(
@@ -6648,7 +6666,7 @@ def qrgaimai(update: Update, context: CallbackContext):
 
 
     else:
-        context.bot.send_message(chat_id=user_id, text='❌ 余额不足，请及时充值！')
+        context.bot.send_message(chat_id=user_id, text=translate_text('❌ 余额不足，请及时充值！', lang))
         user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
         return
 
@@ -6925,40 +6943,42 @@ def textkeyboard(update: Update, context: CallbackContext):
             if update.message.text:
 
                 if sign == 'addhb':
+                    lang = get_user_lang(user_id)
                     if is_number(text):
 
                         money = float(text) if text.count('.') > 0 else int(text)
                         if money < 1:
-                            context.bot.send_message(chat_id=user_id, text='⚠️ 输入错误，最少金额不能小于1U')
+                            context.bot.send_message(chat_id=user_id, text=translate_text('⚠️ 输入错误，最少金额不能小于1U', lang))
                             return
                         if USDT >= money:
-                            keyboard = [[InlineKeyboardButton('🚫取消', callback_data=f'close {user_id}')]]
+                            keyboard = [[InlineKeyboardButton(translate_text('🚫取消', lang), callback_data=f'close {user_id}')]]
                             user.update_one({'user_id': user_id}, {"$set": {'sign': f'sethbsl {money}'}})
-                            context.bot.send_message(chat_id=user_id, text='<b>💡 请回复你要发送的红包数量</b>',
+                            context.bot.send_message(chat_id=user_id, text=translate_text('<b>💡 请回复你要发送的红包数量</b>', lang),
                                                      parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
 
                         else:
                             user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
-                            context.bot.send_message(chat_id=user_id, text='⚠️ 操作失败，余额不足')
+                            context.bot.send_message(chat_id=user_id, text=translate_text('⚠️ 操作失败，余额不足', lang))
                     else:
-                        context.bot.send_message(chat_id=user_id, text='⚠️ 输入错误，请输入数字！')
+                        context.bot.send_message(chat_id=user_id, text=translate_text('⚠️ 输入错误，请输入数字！', lang))
                 elif 'sethbsl' in sign:
+                    lang = get_user_lang(user_id)
                     money = sign.replace('sethbsl ', '')
                     money = float(money) if money.count('.') > 0 else int(money)
 
                     if is_number(text) and text.count('.') == 0:
                         hbsl = int(text)
                         if hbsl == 0:
-                            context.bot.send_message(chat_id=user_id, text='红包数量不能为0')
+                            context.bot.send_message(chat_id=user_id, text=translate_text('红包数量不能为0', lang))
                             return
                         if hbsl > 100:
-                            context.bot.send_message(chat_id=user_id, text='红包数量最大为100')
+                            context.bot.send_message(chat_id=user_id, text=translate_text('红包数量最大为100', lang))
                             return
                         user_list = user.find_one({"user_id": user_id})
                         USDT = user_list['USDT']
                         if USDT < money:
                             user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
-                            context.bot.send_message(chat_id=user_id, text='⚠️ 操作失败，余额不足')
+                            context.bot.send_message(chat_id=user_id, text=translate_text('⚠️ 操作失败，余额不足', lang))
                             return
                         user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                         uid = generate_24bit_uid()
@@ -6982,8 +7002,10 @@ def textkeyboard(update: Update, context: CallbackContext):
 
 ✅ 红包添加成功，请点击按钮发送
                         '''
+                        if lang == 'en':
+                            fstext = translate_text(fstext, 'en')
                         keyboard = [
-                            [InlineKeyboardButton('发送红包', switch_inline_query=f'redpacket {uid}')]
+                            [InlineKeyboardButton(translate_text('发送红包', lang), switch_inline_query=f'redpacket {uid}')]
                         ]
 
                         context.bot.send_message(chat_id=user_id, text=fstext,
@@ -6991,7 +7013,7 @@ def textkeyboard(update: Update, context: CallbackContext):
 
                     else:
                         user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
-                        context.bot.send_message(chat_id=user_id, text='⚠️ 输入错误，请输入数字！')
+                        context.bot.send_message(chat_id=user_id, text=translate_text('⚠️ 输入错误，请输入数字！', lang))
 
 
                 elif sign == 'startupdate':
