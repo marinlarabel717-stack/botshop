@@ -559,9 +559,37 @@ def get_fixed_frontend_text_key(source_text):
 def localize_button_label(source_text, user_id=None, lang=None):
     lang = normalize_lang_code(lang or (get_user_lang(user_id) if user_id is not None else DEFAULT_LANG))
     fixed_key = get_fixed_frontend_text_key(source_text)
+    original_text = str(source_text or '')
+    if lang == 'zh':
+        return original_text
+
+    style_prefix = ''
+    body_text = original_text
+    style, stripped_body = parse_button_style_prefix(original_text)
+    if style:
+        style_prefix = next((prefix for prefix, mapped in BUTTON_STYLE_PREFIX_MAP.items() if mapped == style), '') + ' '
+        body_text = stripped_body
+
+    emoji_id, alt, emoji_style, rest = parse_dynamic_emoji_prefix(body_text)
+    if emoji_id:
+        translated_body = get_ui_text(fixed_key, lang=lang) if fixed_key else localize_dynamic_text(rest, user_id=user_id, lang=lang)
+        emoji_prefix = f'[emoji:{emoji_id}:{alt}'
+        if emoji_style:
+            emoji_prefix += f':{emoji_style}'
+        emoji_prefix += ']'
+        return f'{style_prefix}{emoji_prefix}{translated_body}'.strip()
+
+    known_emoji_id, emoji_text, clean_text = extract_known_button_icon(body_text)
+    if emoji_text:
+        translated_body = get_ui_text(fixed_key, lang=lang) if fixed_key else localize_dynamic_text(clean_text, user_id=user_id, lang=lang)
+        if body_text.strip().startswith(emoji_text):
+            return f'{style_prefix}{emoji_text}{translated_body}'.strip()
+        if body_text.strip().endswith(emoji_text):
+            return f'{style_prefix}{translated_body}{emoji_text}'.strip()
+
     if fixed_key:
-        return get_ui_text(fixed_key, lang=lang)
-    return localize_dynamic_text(source_text, user_id=user_id, lang=lang)
+        return f'{style_prefix}{get_ui_text(fixed_key, lang=lang)}'.strip()
+    return f'{style_prefix}{localize_dynamic_text(body_text, user_id=user_id, lang=lang)}'.strip()
 
 
 def sanitize_service_name(value):
@@ -5343,12 +5371,16 @@ def get_localized_welcome_content(user_id):
     if lang == 'zh':
         return text, entities
 
-    custom_en = str(get_text_config('欢迎语:en', '') or get_text_config('欢迎语:en-US', '') or '').strip()
+    custom_en = str(
+        get_text_config('欢迎语英文', '')
+        or get_text_config('英文欢迎语', '')
+        or get_text_config('欢迎语:en', '')
+        or get_text_config('欢迎语:en-US', '')
+        or ''
+    ).strip()
     if custom_en:
         return custom_en, []
-    if text == DEFAULT_CLONE_WELCOME_TEXT:
-        return DEFAULT_CLONE_WELCOME_TEXT_EN, []
-    return translate_text(text, 'en'), []
+    return DEFAULT_CLONE_WELCOME_TEXT_EN, []
 
 
 def build_user_home_reply_keyboard(user_id):
