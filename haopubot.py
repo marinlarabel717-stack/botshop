@@ -3446,7 +3446,7 @@ def generate_24bit_uid():
 def build_product_detail_keyboard(nowuid, uid, user_id):
     return [
         [InlineKeyboardButton(f'{MOOD_EMOJI_FIRE}取出所有库存', callback_data=f'qchuall {nowuid}'),
-         InlineKeyboardButton(f'{MOOD_EMOJI_STAR}商品使用说明', callback_data=f'update_sysm {nowuid}')],
+         InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除该分类', callback_data=f'delcurconfirm {nowuid}')],
         [InlineKeyboardButton('📄上传谷歌账户', callback_data=f'update_gg {nowuid}'),
          InlineKeyboardButton('💡购买提示', callback_data=f'update_wbts {nowuid}')],
         [InlineKeyboardButton('🔗上传链接', callback_data=f'update_hy {nowuid}'),
@@ -5371,6 +5371,45 @@ def flpxyd(update: Update, context: CallbackContext):
     context.bot.send_message(chat_id=user_id, text='商品管理', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
+def send_category_detail_page(context: CallbackContext, user_id, uid):
+    fl_pro = fenlei.find_one({'uid': uid})['projectname']
+    keyboard = [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
+                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
+                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
+                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []]
+    ej_list = ejfl.find({'uid': uid})
+    for i in ej_list:
+        nowuid = i['nowuid']
+        projectname = i['projectname']
+        row = i['row']
+        keyboard[row - 1].append(InlineKeyboardButton(f'{projectname}', callback_data=f'fejxxi {nowuid}'))
+
+    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}修改分类名', callback_data=f'upspname {uid}'),
+                     InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}新增二级分类', callback_data=f'newejfl {uid}')])
+    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}调整二级分类排序', callback_data=f'paixuejfl {uid}'),
+                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除二级分类', callback_data=f'delejfl {uid}')])
+    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
+    fstext = f'''
+分类: {fl_pro}
+    '''
+    context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+def delete_secondary_category_by_nowuid(context: CallbackContext, user_id, nowuid):
+    ej_item = ejfl.find_one({'nowuid': nowuid})
+    if ej_item is None:
+        context.bot.send_message(chat_id=user_id, text='该分类不存在或已删除')
+        return
+    uid = ej_item['uid']
+    row = int(ej_item['row'])
+    ejfl.delete_many({'uid': uid, 'row': row})
+    max_list = list(ejfl.find({'uid': uid, 'row': {'$gt': row}}))
+    for i in max_list:
+        max_row = i['row']
+        ejfl.update_many({'uid': uid, 'row': max_row}, {"$set": {"row": max_row - 1}})
+    send_category_detail_page(context, user_id, uid)
+
+
 def delejfl(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
@@ -5407,37 +5446,42 @@ def qrscejrow(update: Update, context: CallbackContext):
     query.answer()
     del_message(query.message)
 
-    row = int(query.data.replace('qrscejrow ', '').split(':')[0])
     nowuid = query.data.replace('qrscejrow ', '').split(':')[1]
-    uid = ejfl.find_one({'nowuid': nowuid})['uid']
-    bot_id = context.bot.id
-    ejfl.delete_many({'uid': uid, "row": row})
-    max_list = list(ejfl.find({'row': {"$gt": row}}))
-    for i in max_list:
-        max_row = i['row']
-        ejfl.update_many({'uid': uid, 'row': max_row}, {"$set": {"row": max_row - 1}})
+    delete_secondary_category_by_nowuid(context, user_id, nowuid)
 
+
+def delcurconfirm(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
+    nowuid = query.data.replace('delcurconfirm ', '')
+    ej_item = ejfl.find_one({'nowuid': nowuid})
+    if ej_item is None:
+        query.edit_message_text('该分类不存在或已删除')
+        return
+    uid = ej_item['uid']
     fl_pro = fenlei.find_one({'uid': uid})['projectname']
-    keyboard = [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []]
-    ej_list = ejfl.find({'uid': uid})
-    for i in ej_list:
-        nowuid = i['nowuid']
-        projectname = i['projectname']
-        row = i['row']
-        keyboard[row - 1].append(InlineKeyboardButton(f'{projectname}', callback_data=f'fejxxi {nowuid}'))
-
-    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}修改分类名', callback_data=f'upspname {uid}'),
-                     InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}新增二级分类', callback_data=f'newejfl {uid}')])
-    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}调整二级分类排序', callback_data=f'paixuejfl {uid}'),
-                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除二级分类', callback_data=f'delejfl {uid}')])
-    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
+    ej_projectname = ej_item['projectname']
+    keyboard = [
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}确认删除', callback_data=f'delcurejfl {nowuid}')],
+        [InlineKeyboardButton('⬅️返回商品详情', callback_data=f'fejxxi {nowuid}')]
+    ]
     fstext = f'''
-分类: {fl_pro}
+确认删除该分类？
+
+主分类: {fl_pro}
+二级分类: {ej_projectname}
     '''
-    context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
+    query.edit_message_text(text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+def delcurejfl(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
+    del_message(query.message)
+    nowuid = query.data.replace('delcurejfl ', '')
+    delete_secondary_category_by_nowuid(context, user_id, nowuid)
 
 
 def delfl(update: Update, context: CallbackContext):
@@ -8579,7 +8623,7 @@ def main():
         ('newejfl ', newejfl), ('fejxxi ', fejxxi), ('upejflname ', upejflname),
         ('catejflsp ', catejflsp), ('backzcd', backzcd), ('paixufl', paixufl), ('flpxyd ', flpxyd),
         ('delfl', delfl), ('qrscflrow ', qrscflrow), ('paixuejfl ', paixuejfl), ('ejfpaixu ', ejfpaixu),
-        ('delejfl ', delejfl), ('qrscejrow ', qrscejrow), ('update_hb ', update_hb), ('gmsp ', gmsp),
+        ('delejfl ', delejfl), ('qrscejrow ', qrscejrow), ('delcurconfirm ', delcurconfirm), ('delcurejfl ', delcurejfl), ('update_hb ', update_hb), ('gmsp ', gmsp),
         ('upmoney ', upmoney), ('gmqq', gmqq), ('qrgaimai ', qrgaimai),
         ('update_xyh ', update_xyh), ('update_hy ', update_hy), ('yhnext ', yhnext), ('yhlist', yhlist),
         ('gmaijilu', gmaijilu), ('zcfshuo', zcfshuo), ('gmainext ', gmainext), ('update_txt ', update_txt),
