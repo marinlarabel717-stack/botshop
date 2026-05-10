@@ -4715,13 +4715,44 @@ def startupdate(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
     query.answer()
-    bot_id = context.bot.id
-    text = f'''
-输入新的欢迎语
-'''
-    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
-    user.update_one({'user_id': user_id}, {"$set": {"sign": 'startupdate'}})
-    context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
+    data = str(query.data or '').strip()
+
+    if data == 'startupdate_zh':
+        user.update_one({'user_id': user_id}, {"$set": {"sign": 'startupdate_zh'}})
+        text = '请输入新的中文欢迎语'
+        keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
+        context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
+    if data == 'startupdate_en':
+        user.update_one({'user_id': user_id}, {"$set": {"sign": 'startupdate_en'}})
+        text = '请输入新的英文欢迎语'
+        keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
+        context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
+    current_zh = str(get_text_config('欢迎语', DEFAULT_CLONE_WELCOME_TEXT) or '').strip()
+    current_en = str(
+        get_text_config('欢迎语英文', '')
+        or get_text_config('英文欢迎语', '')
+        or get_text_config('欢迎语:en', '')
+        or get_text_config('欢迎语:en-US', '')
+        or ''
+    ).strip()
+    preview_zh = current_zh[:60] + ('…' if len(current_zh) > 60 else '') if current_zh else '未设置'
+    preview_en = current_en[:60] + ('…' if len(current_en) > 60 else '') if current_en else '未设置'
+    text = (
+        '请选择要修改的欢迎语版本：\n\n'
+        f'中文当前：{preview_zh}\n'
+        f'英文当前：{preview_en}'
+    )
+    keyboard = [
+        [InlineKeyboardButton('🇨🇳 中文欢迎语', callback_data='startupdate_zh'),
+         InlineKeyboardButton('🇺🇸 英文欢迎语', callback_data='startupdate_en')],
+        [InlineKeyboardButton('⬅️返回主界面', callback_data='backstart')],
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]
+    ]
+    query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def build_recharge_method_keyboard(user_id):
@@ -7328,7 +7359,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                         context.bot.send_message(chat_id=user_id, text=translate_text('⚠️ 输入错误，请输入数字！', lang))
 
 
-                elif sign == 'startupdate':
+                elif sign == 'startupdate_zh':
                     welcome_text = stored_text or text
                     shangtext.update_one({"projectname": '欢迎语'}, {"$set": {"text": welcome_text}})
                     shangtext.update_one({"projectname": '欢迎语样式'}, {"$set": {"text": pickle.dumps([])}})
@@ -7343,14 +7374,17 @@ def textkeyboard(update: Update, context: CallbackContext):
                             {"$set": {"projectname": '欢迎语英文', "text": translated_welcome_en}},
                             upsert=True
                         )
-                    else:
-                        shangtext.update_one(
-                            {"projectname": '欢迎语英文'},
-                            {"$set": {"projectname": '欢迎语英文', "text": ''}},
-                            upsert=True
-                        )
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
-                    context.bot.send_message(chat_id=user_id, text=f'当前欢迎语为:\n\n{welcome_text}')
+                    context.bot.send_message(chat_id=user_id, text=f'当前中文欢迎语为:\n\n{welcome_text}')
+                elif sign == 'startupdate_en':
+                    welcome_text_en = stored_text or text
+                    shangtext.update_one(
+                        {"projectname": '欢迎语英文'},
+                        {"$set": {"projectname": '欢迎语英文', "text": welcome_text_en}},
+                        upsert=True
+                    )
+                    user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                    context.bot.send_message(chat_id=user_id, text=f'当前英文欢迎语为:\n\n{welcome_text_en}')
                 elif 'okzdycz' in sign:
                     if is_number(text):
                         del_message(update.message)
