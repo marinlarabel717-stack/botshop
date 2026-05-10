@@ -3015,7 +3015,7 @@ def huifu(update: Update, context: CallbackContext):
                     else:
                         context.bot.send_message(chat_id=user_id, text='⚠️ 当前只支持文字、图片或动画')
             elif '回复按钮设置' == text:
-                text = messagetext
+                text = get_message_storage_text(update.message) or messagetext or ''
                 message_id = context.user_data[f'wanfapeizhi{user_id}']
                 del_message(message_id)
                 keyboard = parse_urls(text)
