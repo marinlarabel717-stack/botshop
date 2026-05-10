@@ -421,7 +421,7 @@ async def send_store_restock_notice(nowuid: str, added_count: int, task_id: str 
         bot_username = str(store_me.username or '').strip()
         buy_url = build_product_purchase_deep_link(bot_username, nowuid)
         if buy_url:
-            keyboard = InlineKeyboardMarkup([[InlineKeyboardButton('[emoji:5451937962629544243:🛍]购买商品', url=buy_url)]])
+            keyboard = InlineKeyboardMarkup([[InlineKeyboardButton('🛍购买商品', url=buy_url)]])
     except Exception as exc:
         log_task(task_id, f'获取主号铺 bot 信息失败：{exc}', logging.WARNING)
         keyboard = None
