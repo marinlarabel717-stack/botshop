@@ -109,6 +109,29 @@ def is_admin(user_id: int) -> bool:
     return int(user_id or 0) in ADMIN_USER_IDS
 
 
+def custom_emoji_plain_text(text: str) -> str:
+    raw = str(text or '').strip()
+    raw = CUSTOM_EMOJI_RE.sub(lambda m: m.group(1) or '', raw)
+    raw = unicodedata.normalize('NFKC', raw)
+    raw = re.sub(r'\s+', ' ', raw).strip()
+    return raw
+
+
+async def reply_rendered(message, text: str, reply_markup=None):
+    rendered_text, entities = build_custom_emoji_text_entities(str(text or ''))
+    return await message.reply_text(text=rendered_text, entities=entities, reply_markup=reply_markup)
+
+
+async def send_rendered(bot, chat_id, text: str, reply_markup=None):
+    rendered_text, entities = build_custom_emoji_text_entities(str(text or ''))
+    return await bot.send_message(chat_id=chat_id, text=rendered_text, entities=entities, reply_markup=reply_markup)
+
+
+async def edit_rendered(query, text: str, reply_markup=None):
+    rendered_text, entities = build_custom_emoji_text_entities(str(text or ''))
+    return await query.edit_message_text(text=rendered_text, entities=entities, reply_markup=reply_markup)
+
+
 def detect_entry_type(category_name: str, project_name: str) -> Optional[str]:
     text = f'{category_name} {project_name}'.lower()
     if '协议号' in text:
@@ -190,7 +213,7 @@ def build_candidate_keyboard(products: List[Dict[str, str]], page: int) -> Inlin
     page_items, total_pages = get_candidate_page(products, page)
     keyboard = []
     for idx, product in enumerate(page_items, start=page * CANDIDATE_PAGE_SIZE + 1):
-        label = f'{idx}. {product["category_name"]} -> {product["project_name"]}'
+        label = f'{idx}. {custom_emoji_plain_text(product["category_name"])} -> {custom_emoji_plain_text(product["project_name"])}'
         keyboard.append([InlineKeyboardButton(label[:60], callback_data=f'pick:{product["nowuid"]}')])
 
     nav = []
@@ -581,9 +604,10 @@ def process_tdata_zip(upload_path: Path, product: Dict[str, str], return_zip_pat
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_admin(update.effective_user.id if update.effective_user else 0):
-        await update.effective_message.reply_text('你没有使用权限。')
+        await reply_rendered(update.effective_message, '你没有使用权限。')
         return
-    await update.effective_message.reply_text(
+    await reply_rendered(
+        update.effective_message,
         '把 zip 文件直接发给我就行。\n\n'
         '规则：\n'
         '1. 按文件名匹配商品名（忽略 emoji）\n'
@@ -599,13 +623,14 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if not tg_user or not message or not message.document:
         return
     if not is_admin(tg_user.id):
-        await message.reply_text('你没有使用权限。')
+        await reply_rendered(message, '你没有使用权限。')
         return
 
     file_name = message.document.file_name or '未命名文件.zip'
     matched = match_products(file_name)
     if not matched:
-        await message.reply_text(
+        await reply_rendered(
+            message,
             f'未找到匹配商品。\n\n检测到文件名：{Path(file_name).stem}\n规则：忽略 emoji 后，文件名与商品名文字必须一致。'
         )
         return
@@ -619,7 +644,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     }
 
     if len(matched) > 1:
-        await message.reply_text(
+        await reply_rendered(
+            message,
             build_candidate_text(file_name, matched, 0),
             reply_markup=build_candidate_keyboard(matched, 0),
         )
@@ -627,7 +653,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     product = matched[0]
     context.user_data['pending_upload']['selected_nowuid'] = product['nowuid']
-    await message.reply_text(build_confirm_text(file_name, product), reply_markup=build_confirm_keyboard())
+    await reply_rendered(message, build_confirm_text(file_name, product), reply_markup=build_confirm_keyboard())
 
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -643,17 +669,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if query.data == 'upload:cancel':
         context.user_data.pop('pending_upload', None)
-        await query.edit_message_text('已取消本次上传。')
+        await edit_rendered(query, '已取消本次上传。')
         return
 
     if query.data.startswith('pickpage:'):
         if not products:
-            await query.edit_message_text('候选商品已失效，请重新发送文件。')
+            await edit_rendered(query, '候选商品已失效，请重新发送文件。')
             return
         page = int(query.data.split(':', 1)[1])
         pending['page'] = page
         context.user_data['pending_upload'] = pending
-        await query.edit_message_text(
+        await edit_rendered(
+            query,
             build_candidate_text(str(pending.get('file_name') or ''), products, page),
             reply_markup=build_candidate_keyboard(products, page),
         )
@@ -663,11 +690,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         nowuid = query.data.split(':', 1)[1]
         product = product_map.get(nowuid)
         if not product:
-            await query.edit_message_text('候选商品已失效，请重新发送文件。')
+            await edit_rendered(query, '候选商品已失效，请重新发送文件。')
             return
         pending['selected_nowuid'] = nowuid
         context.user_data['pending_upload'] = pending
-        await query.edit_message_text(
+        await edit_rendered(
+            query,
             build_confirm_text(str(pending.get('file_name') or ''), product),
             reply_markup=build_confirm_keyboard(),
         )
@@ -677,9 +705,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         selected_nowuid = pending.get('selected_nowuid')
         product = product_map.get(selected_nowuid)
         if not product:
-            await query.edit_message_text('没有找到待确认的商品，请重新发送文件。')
+            await edit_rendered(query, '没有找到待确认的商品，请重新发送文件。')
             return
-        await query.edit_message_text('开始处理文件，请稍等…')
+        await edit_rendered(query, '开始处理文件，请稍等…')
         await run_upload_task(update, context, product, pending)
         context.user_data.pop('pending_upload', None)
 
@@ -691,13 +719,13 @@ async def run_upload_task(update: Update, context: ContextTypes.DEFAULT_TYPE, pr
 
     entry_type = product.get('entry_type')
     if entry_type not in {'协议号', '直登号'}:
-        await context.bot.send_message(chat_id=chat_id, text='这个商品类型暂时还不支持自动上传。当前先支持：协议号 / 直登号。')
+        await send_rendered(context.bot, chat_id, '这个商品类型暂时还不支持自动上传。当前先支持：协议号 / 直登号。')
         return
 
     file_id = str(pending.get('file_id') or '')
     file_name = str(pending.get('file_name') or 'upload.zip')
     if not file_id:
-        await context.bot.send_message(chat_id=chat_id, text='文件信息丢了，请重新发送。')
+        await send_rendered(context.bot, chat_id, '文件信息丢了，请重新发送。')
         return
 
     tg_file = await context.bot.get_file(file_id)
@@ -718,7 +746,7 @@ async def run_upload_task(update: Update, context: ContextTypes.DEFAULT_TYPE, pr
     try:
         await tg_file.download_to_drive(custom_path=str(upload_path))
         if not zipfile.is_zipfile(upload_path):
-            await context.bot.send_message(chat_id=chat_id, text='目前只支持 zip 批量上传。')
+            await send_rendered(context.bot, chat_id, '目前只支持 zip 批量上传。')
             UPLOAD_TASKS.update_one({'task_id': task_id}, {'$set': {'state': 'failed', 'reason': 'not_zip'}})
             return
 
@@ -737,7 +765,7 @@ async def run_upload_task(update: Update, context: ContextTypes.DEFAULT_TYPE, pr
                 'finished_at': int(time.time()),
             }},
         )
-        await context.bot.send_message(chat_id=chat_id, text=build_result_text(product, added, duplicated, failed))
+        await send_rendered(context.bot, chat_id, build_result_text(product, added, duplicated, failed))
         if return_file and return_file.exists():
             await context.bot.send_document(
                 chat_id=chat_id,
@@ -753,7 +781,7 @@ async def run_upload_task(update: Update, context: ContextTypes.DEFAULT_TYPE, pr
             {'task_id': task_id},
             {'$set': {'state': 'failed', 'reason': str(exc), 'finished_at': int(time.time())}},
         )
-        await context.bot.send_message(chat_id=chat_id, text=f'处理失败：{exc}')
+        await send_rendered(context.bot, chat_id, f'处理失败：{exc}')
     finally:
         upload_path.unlink(missing_ok=True)
 
