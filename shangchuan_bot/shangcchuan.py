@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from dotenv import load_dotenv
-from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, Update
+from telegram import Bot, InlineKeyboardMarkup, InputFile, Update
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -35,6 +35,7 @@ if os.getenv('STORE_BOT_TOKEN') and not os.getenv('BOT_TOKEN'):
 
 from mongo import ejfl, fenlei, hb, mydb  # noqa: E402
 from haopubot import (  # noqa: E402
+    InlineKeyboardButton,
     build_custom_emoji_text_entities,
     build_product_purchase_deep_link,
     build_restock_push_broadcast_text,
