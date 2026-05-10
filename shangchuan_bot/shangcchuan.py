@@ -94,9 +94,13 @@ def ensure_dirs() -> None:
 
 def ensure_indexes() -> None:
     UPLOAD_TASKS.create_index([('user_id', 1), ('created_at', -1)], name='upload_task_user_created')
+    try:
+        UPLOAD_FINGERPRINTS.drop_index('upload_fingerprint_unique')
+    except Exception:
+        pass
     UPLOAD_FINGERPRINTS.create_index(
-        [('leixing', 1), ('fingerprint', 1)],
-        name='upload_fingerprint_unique',
+        [('nowuid', 1), ('leixing', 1), ('fingerprint', 1)],
+        name='upload_fingerprint_nowuid_unique',
         unique=True,
     )
     UPLOAD_FINGERPRINTS.create_index([('nowuid', 1)], name='upload_fingerprint_nowuid')
@@ -331,7 +335,7 @@ def hydrate_fingerprint_index(entry_type: str) -> None:
             continue
         try:
             UPLOAD_FINGERPRINTS.update_one(
-                {'leixing': entry_type, 'fingerprint': fingerprint},
+                {'nowuid': nowuid, 'leixing': entry_type, 'fingerprint': fingerprint},
                 {'$setOnInsert': {
                     'nowuid': nowuid,
                     'projectname': project_name,
@@ -346,14 +350,14 @@ def hydrate_fingerprint_index(entry_type: str) -> None:
     HYDRATED_TYPES.add(entry_type)
 
 
-def duplicate_exists(entry_type: str, fingerprint: str) -> bool:
+def duplicate_exists(entry_type: str, fingerprint: str, nowuid: str) -> bool:
     hydrate_fingerprint_index(entry_type)
-    return UPLOAD_FINGERPRINTS.find_one({'leixing': entry_type, 'fingerprint': fingerprint}) is not None
+    return UPLOAD_FINGERPRINTS.find_one({'nowuid': nowuid, 'leixing': entry_type, 'fingerprint': fingerprint}) is not None
 
 
 def store_fingerprint(entry_type: str, fingerprint: str, nowuid: str, project_name: str, hbid: str) -> None:
     UPLOAD_FINGERPRINTS.update_one(
-        {'leixing': entry_type, 'fingerprint': fingerprint},
+        {'nowuid': nowuid, 'leixing': entry_type, 'fingerprint': fingerprint},
         {'$set': {
             'nowuid': nowuid,
             'projectname': project_name,
@@ -602,10 +606,10 @@ def process_protocol_zip(upload_path: Path, product: Dict[str, str], duplicate_z
                     add_duplicate_protocol(bundle, 'batch_duplicate', project_name, files)
                     log_task(task_id, f'命中当前批次重复：{project_name}')
                     continue
-                if duplicate_exists('协议号', fingerprint):
+                if duplicate_exists('协议号', fingerprint, product['nowuid']):
                     duplicated += 1
-                    add_duplicate_protocol(bundle, 'server_duplicate', project_name, files)
-                    log_task(task_id, f'命中服务器库存重复：{project_name}')
+                    add_duplicate_protocol(bundle, 'same_product_duplicate', project_name, files)
+                    log_task(task_id, f'命中同商品重复：{project_name} nowuid={product["nowuid"]}')
                     continue
                 try:
                     save_protocol_files(product['nowuid'], project_name, files)
@@ -655,10 +659,10 @@ def process_tdata_zip(upload_path: Path, product: Dict[str, str], duplicate_zip_
                     add_duplicate_tdata(bundle, 'batch_duplicate', project_name, files)
                     log_task(task_id, f'命中当前批次重复：{project_name}')
                     continue
-                if duplicate_exists('直登号', fingerprint):
+                if duplicate_exists('直登号', fingerprint, product['nowuid']):
                     duplicated += 1
-                    add_duplicate_tdata(bundle, 'server_duplicate', project_name, files)
-                    log_task(task_id, f'命中服务器库存重复：{project_name}')
+                    add_duplicate_tdata(bundle, 'same_product_duplicate', project_name, files)
+                    log_task(task_id, f'命中同商品重复：{project_name} nowuid={product["nowuid"]}')
                     continue
                 try:
                     save_tdata_files(product['nowuid'], project_name, files)
@@ -695,7 +699,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         '1. 按文件名匹配商品名（忽略 emoji）\n'
         '2. 多个候选时可翻页选择\n'
         '3. 确认后再正式上传\n'
-        '4. 和服务器库存重复的账号不会入库，会分类打包回传'
+        '4. 只和当前商品库存比重；同商品重复的账号不会入库，会分类打包回传'
     )
 
 
