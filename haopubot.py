@@ -3385,9 +3385,9 @@ def yhnext(update: Update, context: CallbackContext):
 
     text_list = '\n'.join(text_list) or '这一页没有用户数据'
     keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data='backstart')])
-    query.bot.edit_message_text(text=text_list, chat_id=query.message.chat.id,
-                                message_id=query.message.message_id, reply_markup=InlineKeyboardMarkup(keyboard),
-                                parse_mode='HTML')
+    query.edit_message_text(text=text_list,
+                            reply_markup=InlineKeyboardMarkup(keyboard),
+                            parse_mode='HTML')
 
 
 def tjbaobiao(update: Update, context: CallbackContext):
