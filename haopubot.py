@@ -5674,13 +5674,13 @@ def send_user_home(context, user_id):
 
 
 def build_user_profile_text(user_id, username, creation_time, zgsl, zgje, balance):
-    username = str(username or '').strip()
-    if username:
-        safe_username = html.escape(username, quote=False)
-        username_html = f'<a href="https://t.me/{safe_username}">{safe_username}</a>'
-    else:
-        username_html = '未设置' if get_user_lang(user_id) == 'zh' else 'Not set'
     lang = get_user_lang(user_id)
+    username = str(username or '').strip().lstrip('@')
+    if username:
+        safe_username = html.escape(username, quote=True)
+        username_html = f'<a href="tg://user?id={user_id}">@{safe_username}</a>'
+    else:
+        username_html = '未设置' if lang == 'zh' else 'Not set'
     return get_ui_text(
         'profile_text',
         lang=lang,
