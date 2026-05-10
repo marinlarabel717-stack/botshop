@@ -5622,6 +5622,10 @@ def get_localized_welcome_content(user_id):
     ).strip()
     if custom_en:
         return custom_en, []
+
+    auto_en = translate_text(text, 'en').strip() if text else ''
+    if auto_en and auto_en != text:
+        return auto_en, []
     return DEFAULT_CLONE_WELCOME_TEXT_EN, []
 
 
@@ -7328,6 +7332,10 @@ def textkeyboard(update: Update, context: CallbackContext):
                     welcome_text = stored_text or text
                     shangtext.update_one({"projectname": '欢迎语'}, {"$set": {"text": welcome_text}})
                     shangtext.update_one({"projectname": '欢迎语样式'}, {"$set": {"text": pickle.dumps([])}})
+                    try:
+                        translate_text(welcome_text, 'en')
+                    except Exception:
+                        logging.warning('Warm welcome translation cache failed for text=%r', welcome_text, exc_info=True)
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                     context.bot.send_message(chat_id=user_id, text=f'当前欢迎语为:\n\n{welcome_text}')
                 elif 'okzdycz' in sign:
