@@ -12,6 +12,7 @@ import logging, os, shutil
 from dotenv import load_dotenv, dotenv_values
 import requests
 import urllib.parse
+import html
 from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from multiprocessing import Process
@@ -3321,10 +3322,13 @@ USER_LIST_PROJECTION = {
 
 def _format_user_list_row(index, row):
     df_id = row.get('user_id', 0)
-    df_username = (row.get('username') or '无用户名').replace('<', '').replace('>', '')
-    df_fullname = str(row.get('fullname') or row.get('lastname') or df_username or df_id).replace('<', '').replace('>', '')
+    raw_username = str(row.get('username') or '').strip()
+    raw_fullname = str(row.get('fullname') or row.get('lastname') or raw_username or df_id)
+    df_username = html.escape(raw_username, quote=False) if raw_username else '无用户名'
+    df_fullname = html.escape(raw_fullname, quote=False)
     usdt = row.get('USDT', 0)
-    return f'{index}. <a href="tg://user?id={df_id}">{df_fullname}</a> ID:<code>{df_id}</code>-@{df_username}-余额:{usdt}'
+    username_part = f'@{df_username}' if raw_username else '无用户名'
+    return f'{index}. <a href="tg://user?id={df_id}">{df_fullname}</a> ID:<code>{df_id}</code>-{username_part}-余额:{usdt}'
 
 
 def _fetch_user_page(page):
