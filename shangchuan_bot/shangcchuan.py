@@ -134,10 +134,36 @@ async def edit_rendered(query, text: str, reply_markup=None):
 
 def detect_entry_type(category_name: str, project_name: str) -> Optional[str]:
     text = f'{category_name} {project_name}'.lower()
-    if '协议号' in text:
+    has_protocol = '协议号' in text or 'session' in text
+    has_tdata = '直登号' in text or 'tdata' in text
+    if has_protocol and has_tdata:
+        return '自动识别'
+    if has_protocol:
         return '协议号'
-    if '直登号' in text or 'tdata' in text:
+    if has_tdata:
         return '直登号'
+    return None
+
+
+def detect_zip_entry_type(upload_path: Path) -> Optional[str]:
+    has_protocol = False
+    has_tdata = False
+    with zipfile.ZipFile(upload_path, 'r') as zip_file:
+        for info in zip_file.infolist():
+            if info.is_dir():
+                continue
+            suffix = Path(info.filename).suffix.lower()
+            parts = Path(info.filename).parts
+            if suffix in {'.session', '.json'}:
+                has_protocol = True
+            elif len(parts) >= 2:
+                has_tdata = True
+        if has_protocol and has_tdata:
+            return '混合格式'
+        if has_protocol:
+            return '协议号'
+        if has_tdata:
+            return '直登号'
     return None
 
 
@@ -718,7 +744,7 @@ async def run_upload_task(update: Update, context: ContextTypes.DEFAULT_TYPE, pr
         return
 
     entry_type = product.get('entry_type')
-    if entry_type not in {'协议号', '直登号'}:
+    if entry_type not in {'协议号', '直登号', '自动识别'}:
         await send_rendered(context.bot, chat_id, '这个商品类型暂时还不支持自动上传。当前先支持：协议号 / 直登号。')
         return
 
@@ -750,7 +776,25 @@ async def run_upload_task(update: Update, context: ContextTypes.DEFAULT_TYPE, pr
             UPLOAD_TASKS.update_one({'task_id': task_id}, {'$set': {'state': 'failed', 'reason': 'not_zip'}})
             return
 
-        if entry_type == '协议号':
+        actual_entry_type = detect_zip_entry_type(upload_path)
+        if actual_entry_type == '混合格式':
+            await send_rendered(context.bot, chat_id, '这个压缩包同时包含 session/json 和 tdata 目录，暂不支持混合上传。请拆成两个 zip 再传。')
+            UPLOAD_TASKS.update_one({'task_id': task_id}, {'$set': {'state': 'failed', 'reason': 'mixed_entry_type'}})
+            return
+        if actual_entry_type not in {'协议号', '直登号'}:
+            await send_rendered(context.bot, chat_id, '没识别出可用账号格式。协议号请传 session/json 的 zip；直登号请传 tdata 目录结构的 zip。')
+            UPLOAD_TASKS.update_one({'task_id': task_id}, {'$set': {'state': 'failed', 'reason': 'unknown_entry_type'}})
+            return
+        if entry_type in {'协议号', '直登号'} and actual_entry_type != entry_type:
+            await send_rendered(
+                context.bot,
+                chat_id,
+                f'文件类型和商品类型不一致。\n\n商品类型：{entry_type}\n检测到文件类型：{actual_entry_type}\n\n如果你传的是重复协议号，回传的会是重复 session/json 的 zip 文件。',
+            )
+            UPLOAD_TASKS.update_one({'task_id': task_id}, {'$set': {'state': 'failed', 'reason': f'type_mismatch:{actual_entry_type}'}})
+            return
+
+        if actual_entry_type == '协议号':
             added, duplicated, failed, return_file = process_protocol_zip(upload_path, product, return_zip_path)
         else:
             added, duplicated, failed, return_file = process_tdata_zip(upload_path, product, return_zip_path)
