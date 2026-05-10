@@ -3273,8 +3273,6 @@ def backgmjl(update: Update, context: CallbackContext):
     df_username = df_list['username']
     if df_username is None:
         df_username = df_fullname
-    else:
-        df_username = f'<a href="https://t.me/{df_username}">{df_username}</a>'
     creation_time = df_list['creation_time']
     zgsl = df_list['zgsl']
     zgje = df_list['zgje']
@@ -8129,11 +8127,8 @@ def textkeyboard(update: Update, context: CallbackContext):
                 send_clonebot_prompt(context, user_id)
             elif matches_ui_text(text, 'menu_profile'):
                 del_message(update.message)
-                if username is None:
-                    username = fullname
-                else:
-                    username = f'<a href="https://t.me/{username}">{username}</a>'
-                fstext = build_user_profile_text(user_id, username, creation_time, zgsl, zgje, USDT)
+                profile_username = username or fullname
+                fstext = build_user_profile_text(user_id, profile_username, creation_time, zgsl, zgje, USDT)
                 context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
                                          reply_markup=InlineKeyboardMarkup(build_profile_keyboard(user_id)), disable_web_page_preview=True)
             elif matches_ui_text(text, 'menu_recharge'):
