@@ -1032,7 +1032,19 @@ def ensure_topup_indexes():
         pass
 
 
+def ensure_user_indexes():
+    try:
+        user.create_index([('user_id', 1)], name='uniq_user_id', unique=True)
+    except Exception:
+        pass
+    try:
+        user.create_index([('count_id', 1)], name='user_count_id')
+    except Exception:
+        pass
+
+
 ensure_topup_indexes()
+ensure_user_indexes()
 
 clone_instances = mydb['clone_instances']
 restock_notices = mydb['restock_notices']
@@ -3312,6 +3324,17 @@ def zcfshuo(update: Update, context: CallbackContext):
         query.message.reply_document(open(zip_filename, "rb"))
 
 
+USER_LIST_PAGE_SIZE = 10
+USER_LIST_PROJECTION = {
+    '_id': 0,
+    'user_id': 1,
+    'username': 1,
+    'fullname': 1,
+    'lastname': 1,
+    'USDT': 1,
+}
+
+
 def _format_user_list_row(index, row):
     df_id = row.get('user_id', 0)
     df_username = (row.get('username') or '无用户名').replace('<', '').replace('>', '')
@@ -3320,19 +3343,26 @@ def _format_user_list_row(index, row):
     return f'{index}. <a href="tg://user?id={df_id}">{df_fullname}</a> ID:<code>{df_id}</code>-@{df_username}-余额:{usdt}'
 
 
+def _fetch_user_page(page):
+    page = max(int(page), 0)
+    rows = list(user.find({}, USER_LIST_PROJECTION, sort=[('count_id', 1)], skip=page, limit=USER_LIST_PAGE_SIZE + 1))
+    has_next = len(rows) > USER_LIST_PAGE_SIZE
+    return rows[:USER_LIST_PAGE_SIZE], has_next
+
+
 def yhlist(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
     user_id = query.from_user.id
-    jilu_list = list(user.find({}, sort=[('count_id', 1)], limit=10))
+    jilu_list, has_next = _fetch_user_page(0)
     keyboard = []
     text_list = []
     count = 1
     for i in jilu_list:
         text_list.append(_format_user_list_row(count, i))
         count += 1
-    if user.count_documents({}) > 10:
-        keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}下一页', callback_data=f'yhnext 10:{count}')])
+    if has_next:
+        keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}下一页', callback_data=f'yhnext {USER_LIST_PAGE_SIZE}:{count}')])
 
     keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data='backstart')])
 
@@ -3351,21 +3381,19 @@ def yhnext(update: Update, context: CallbackContext):
     count = max(int(data.split(":")[1]), 1)
     keyboard = []
     text_list = []
-    total_users = user.count_documents({})
-    jilu_list = list(user.find({}, sort=[('count_id', 1)], skip=page, limit=10))
+    jilu_list, has_next = _fetch_user_page(page)
     for i in jilu_list:
         text_list.append(_format_user_list_row(count, i))
         count += 1
 
     has_prev = page > 0
-    has_next = (page + 10) < total_users
     if has_prev and has_next:
-        keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}上一页', callback_data=f'yhnext {max(page - 10, 0)}:{max(count - 20, 1)}'),
-                         InlineKeyboardButton(f'{MOOD_EMOJI_FAST}下一页', callback_data=f'yhnext {page + 10}:{count}')])
+        keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}上一页', callback_data=f'yhnext {max(page - USER_LIST_PAGE_SIZE, 0)}:{max(count - USER_LIST_PAGE_SIZE * 2, 1)}'),
+                         InlineKeyboardButton(f'{MOOD_EMOJI_FAST}下一页', callback_data=f'yhnext {page + USER_LIST_PAGE_SIZE}:{count}')])
     elif has_prev:
-        keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}上一页', callback_data=f'yhnext {max(page - 10, 0)}:{max(count - 20, 1)}')])
+        keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}上一页', callback_data=f'yhnext {max(page - USER_LIST_PAGE_SIZE, 0)}:{max(count - USER_LIST_PAGE_SIZE * 2, 1)}')])
     elif has_next:
-        keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}下一页', callback_data=f'yhnext {page + 10}:{count}')])
+        keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}下一页', callback_data=f'yhnext {page + USER_LIST_PAGE_SIZE}:{count}')])
 
     text_list = '\n'.join(text_list) or '这一页没有用户数据'
     keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data='backstart')])
