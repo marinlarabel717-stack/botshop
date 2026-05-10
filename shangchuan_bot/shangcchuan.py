@@ -2,6 +2,7 @@ import hashlib
 import logging
 import os
 import re
+import sys
 import time
 import unicodedata
 import zipfile
@@ -20,9 +21,15 @@ from telegram.ext import (
     filters,
 )
 
-BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / '.env')
-load_dotenv(BASE_DIR / '.env.local', override=True)
+SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIR.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+load_dotenv(SCRIPT_DIR / '.env')
+load_dotenv(SCRIPT_DIR / '.env.local', override=True)
+if os.getenv('STORE_BOT_TOKEN') and not os.getenv('BOT_TOKEN'):
+    os.environ['BOT_TOKEN'] = os.getenv('STORE_BOT_TOKEN', '')
 
 from mongo import ejfl, fenlei, hb, mydb  # noqa: E402
 from haopubot import (  # noqa: E402
@@ -34,17 +41,18 @@ from haopubot import (  # noqa: E402
 )
 
 UPLOAD_BOT_TOKEN = (os.getenv('UPLOAD_BOT_TOKEN') or os.getenv('SHANGCHUAN_BOT_TOKEN') or '').strip()
-STORE_BOT_TOKEN = (os.getenv('BOT_TOKEN') or '').strip()
+STORE_BOT_TOKEN = (os.getenv('STORE_BOT_TOKEN') or os.getenv('BOT_TOKEN') or '').strip()
 ADMIN_USER_IDS = {
     int(item.strip())
     for item in (os.getenv('UPLOAD_ADMIN_USER_IDS') or os.getenv('ADMIN_USER_IDS') or '').split(',')
     if item.strip().isdigit()
 }
+CANDIDATE_PAGE_SIZE = max(int(os.getenv('UPLOAD_CANDIDATE_PAGE_SIZE', '8') or 8), 1)
 
-TEMP_DIR = BASE_DIR / '上传临时'
-DUP_DIR = BASE_DIR / '重复文件'
-PROTOCOL_DIR = BASE_DIR / '协议号'
-TDATA_DIR = BASE_DIR / '号包'
+TEMP_DIR = SCRIPT_DIR / '上传临时'
+RETURN_DIR = SCRIPT_DIR / '回传文件'
+PROTOCOL_DIR = PROJECT_ROOT / '协议号'
+TDATA_DIR = PROJECT_ROOT / '号包'
 
 UPLOAD_TASKS = mydb['upload_tasks']
 UPLOAD_FINGERPRINTS = mydb['upload_inventory_fingerprints']
@@ -70,7 +78,7 @@ logger = logging.getLogger(__name__)
 
 
 def ensure_dirs() -> None:
-    for folder in [TEMP_DIR, DUP_DIR, PROTOCOL_DIR, TDATA_DIR]:
+    for folder in [TEMP_DIR, RETURN_DIR, PROTOCOL_DIR, TDATA_DIR]:
         folder.mkdir(parents=True, exist_ok=True)
 
 
@@ -95,6 +103,10 @@ def normalize_match_name(text: str) -> str:
     return raw.casefold()
 
 
+def is_admin(user_id: int) -> bool:
+    return int(user_id or 0) in ADMIN_USER_IDS
+
+
 def detect_entry_type(category_name: str, project_name: str) -> Optional[str]:
     text = f'{category_name} {project_name}'.lower()
     if '协议号' in text:
@@ -105,7 +117,10 @@ def detect_entry_type(category_name: str, project_name: str) -> Optional[str]:
 
 
 def list_products() -> List[Dict[str, str]]:
-    categories = {str(item.get('uid')): str(item.get('projectname') or '').strip() for item in fenlei.find({}, {'uid': 1, 'projectname': 1})}
+    categories = {
+        str(item.get('uid')): str(item.get('projectname') or '').strip()
+        for item in fenlei.find({}, {'uid': 1, 'projectname': 1})
+    }
     rows = []
     for item in ejfl.find({}, {'uid': 1, 'nowuid': 1, 'projectname': 1}):
         uid = str(item.get('uid') or '')
@@ -122,6 +137,7 @@ def list_products() -> List[Dict[str, str]]:
             'match_name': normalize_match_name(project_name),
             'entry_type': detect_entry_type(category_name, project_name),
         })
+    rows.sort(key=lambda item: (item['category_name'], item['project_name'], item['nowuid']))
     return rows
 
 
@@ -130,13 +146,13 @@ def match_products(file_name: str) -> List[Dict[str, str]]:
     return [item for item in list_products() if item['match_name'] == target]
 
 
-def build_match_keyboard(products: List[Dict[str, str]]) -> InlineKeyboardMarkup:
-    keyboard = []
-    for product in products:
-        label = f"{product['category_name']} -> {product['project_name']}"
-        keyboard.append([InlineKeyboardButton(label[:60], callback_data=f"pick:{product['nowuid']}")])
-    keyboard.append([InlineKeyboardButton('取消', callback_data='upload:cancel')])
-    return InlineKeyboardMarkup(keyboard)
+def build_confirm_text(file_name: str, product: Dict[str, str]) -> str:
+    return (
+        f'检测到文件名：{Path(file_name).stem}\n'
+        f'匹配分类：{product["category_name"]}\n'
+        f'匹配商品：{product["project_name"]}\n\n'
+        '是否确认上传？'
+    )
 
 
 def build_confirm_keyboard() -> InlineKeyboardMarkup:
@@ -144,6 +160,46 @@ def build_confirm_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton('确认上传', callback_data='upload:confirm')],
         [InlineKeyboardButton('取消', callback_data='upload:cancel')],
     ])
+
+
+def get_candidate_page(products: List[Dict[str, str]], page: int) -> Tuple[List[Dict[str, str]], int]:
+    total_pages = max((len(products) + CANDIDATE_PAGE_SIZE - 1) // CANDIDATE_PAGE_SIZE, 1)
+    page = min(max(page, 0), total_pages - 1)
+    start = page * CANDIDATE_PAGE_SIZE
+    end = start + CANDIDATE_PAGE_SIZE
+    return products[start:end], total_pages
+
+
+def build_candidate_text(file_name: str, products: List[Dict[str, str]], page: int) -> str:
+    page_items, total_pages = get_candidate_page(products, page)
+    lines = [
+        f'检测到文件名：{Path(file_name).stem}',
+        '',
+        '找到多个匹配商品，请选择：',
+        '',
+    ]
+    for idx, item in enumerate(page_items, start=page * CANDIDATE_PAGE_SIZE + 1):
+        lines.append(f'{idx}. {item["category_name"]} -> {item["project_name"]}')
+    lines.extend(['', f'第 {page + 1}/{total_pages} 页'])
+    return '\n'.join(lines)
+
+
+def build_candidate_keyboard(products: List[Dict[str, str]], page: int) -> InlineKeyboardMarkup:
+    page_items, total_pages = get_candidate_page(products, page)
+    keyboard = []
+    for idx, product in enumerate(page_items, start=page * CANDIDATE_PAGE_SIZE + 1):
+        label = f'{idx}. {product["category_name"]} -> {product["project_name"]}'
+        keyboard.append([InlineKeyboardButton(label[:60], callback_data=f'pick:{product["nowuid"]}')])
+
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton('上一页', callback_data=f'pickpage:{page - 1}'))
+    if page + 1 < total_pages:
+        nav.append(InlineKeyboardButton('下一页', callback_data=f'pickpage:{page + 1}'))
+    if nav:
+        keyboard.append(nav)
+    keyboard.append([InlineKeyboardButton('取消', callback_data='upload:cancel')])
+    return InlineKeyboardMarkup(keyboard)
 
 
 def hash_bytes(parts: Iterable[bytes]) -> str:
@@ -207,10 +263,11 @@ def hydrate_fingerprint_index(entry_type: str) -> None:
         project_name = str(row.get('projectname') or '')
         if not nowuid or not project_name:
             continue
-        if entry_type == '协议号':
-            fingerprint = hash_protocol_entry_from_storage(nowuid, project_name)
-        else:
-            fingerprint = hash_tdata_entry_from_storage(nowuid, project_name)
+        fingerprint = (
+            hash_protocol_entry_from_storage(nowuid, project_name)
+            if entry_type == '协议号'
+            else hash_tdata_entry_from_storage(nowuid, project_name)
+        )
         if not fingerprint:
             continue
         try:
@@ -253,7 +310,7 @@ def gen_uid() -> str:
     return str(int(time.time() * 1000))[-8:] + os.urandom(3).hex()
 
 
-def build_result_text(file_name: str, product: Dict[str, str], added: int, duplicated: int, failed: int = 0) -> str:
+def build_result_text(product: Dict[str, str], added: int, duplicated: int, failed: int = 0) -> str:
     now = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
     return (
         '✅ 文件处理完成\n\n'
@@ -278,6 +335,7 @@ async def send_store_restock_notice(nowuid: str, added_count: int) -> None:
     payload = get_product_purchase_payload(nowuid)
     if not payload:
         return
+
     text = build_restock_push_broadcast_text(
         payload['category_name'],
         payload['projectname'],
@@ -295,40 +353,75 @@ async def send_store_restock_notice(nowuid: str, added_count: int) -> None:
             keyboard = InlineKeyboardMarkup([[InlineKeyboardButton('[emoji:5451937962629544243:🛍]购买商品', url=buy_url)]])
     except Exception:
         keyboard = None
+
     try:
         await store_bot.send_message(chat_id=target, text=text, entities=entities, reply_markup=keyboard)
     except Exception as exc:
         logger.warning('restock broadcast failed: %s', exc)
 
 
-def protocol_entries_from_zip(zip_file: zipfile.ZipFile) -> Dict[str, List[Tuple[str, bytes]]]:
+class ReturnBundle:
+    def __init__(self, path: Path):
+        self.path = path
+        self.writer: Optional[zipfile.ZipFile] = None
+        self.counts = {'duplicate': 0, 'failed': 0}
+
+    def __enter__(self):
+        self.writer = zipfile.ZipFile(self.path, 'w', zipfile.ZIP_DEFLATED)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.writer:
+            self.writer.close()
+        if sum(self.counts.values()) == 0 and self.path.exists():
+            self.path.unlink(missing_ok=True)
+
+    def write_bytes(self, rel_path: str, data: bytes) -> None:
+        if not self.writer:
+            raise RuntimeError('return bundle not opened')
+        self.writer.writestr(rel_path, data)
+
+    def add_duplicate(self, reason: str, rel_path: str, data: bytes) -> None:
+        self.counts['duplicate'] += 1
+        self.write_bytes(f'重复文件/{reason}/{rel_path}', data)
+
+    def add_failed(self, reason: str, rel_path: str, data: bytes) -> None:
+        self.counts['failed'] += 1
+        self.write_bytes(f'失败文件/{reason}/{rel_path}', data)
+
+    def add_text_report(self, rel_path: str, text: str) -> None:
+        self.write_bytes(rel_path, text.encode('utf-8'))
+
+
+def protocol_entries_from_zip(bundle: ReturnBundle, zip_file: zipfile.ZipFile) -> Dict[str, List[Tuple[str, bytes]]]:
     entries: Dict[str, List[Tuple[str, bytes]]] = defaultdict(list)
     for info in zip_file.infolist():
         if info.is_dir():
             continue
         suffix = Path(info.filename).suffix.lower()
         if suffix not in {'.session', '.json'}:
+            bundle.add_failed('不支持的文件', f'协议号/{Path(info.filename).name}', zip_file.read(info))
             continue
         stem = Path(info.filename).stem
-        data = zip_file.read(info)
-        entries[stem].append((suffix, data))
+        entries[stem].append((suffix, zip_file.read(info)))
     return entries
 
 
-def tdata_entries_from_zip(zip_file: zipfile.ZipFile) -> Dict[str, List[Tuple[str, bytes]]]:
+def tdata_entries_from_zip(bundle: ReturnBundle, zip_file: zipfile.ZipFile) -> Dict[str, List[Tuple[str, bytes]]]:
     entries: Dict[str, List[Tuple[str, bytes]]] = defaultdict(list)
     for info in zip_file.infolist():
         if info.is_dir():
             continue
         parts = Path(info.filename).parts
-        if not parts:
+        if len(parts) < 2:
+            bundle.add_failed('目录结构不正确', f'直登号/{Path(info.filename).name}', zip_file.read(info))
             continue
         top = parts[0]
         rel_path = '/'.join(parts[1:])
         if not top or not rel_path:
+            bundle.add_failed('目录结构不正确', f'直登号/{Path(info.filename).name}', zip_file.read(info))
             continue
-        data = zip_file.read(info)
-        entries[top].append((rel_path, data))
+        entries[top].append((rel_path, zip_file.read(info)))
     return entries
 
 
@@ -364,14 +457,24 @@ def save_tdata_files(nowuid: str, project_name: str, files: List[Tuple[str, byte
         target.write_bytes(data)
 
 
-def append_duplicate_protocol(writer: zipfile.ZipFile, project_name: str, files: List[Tuple[str, bytes]]) -> None:
+def add_duplicate_protocol(bundle: ReturnBundle, reason: str, project_name: str, files: List[Tuple[str, bytes]]) -> None:
     for suffix, data in files:
-        writer.writestr(f'重复文件/协议号/{project_name}{suffix}', data)
+        bundle.add_duplicate(reason, f'协议号/{project_name}{suffix}', data)
 
 
-def append_duplicate_tdata(writer: zipfile.ZipFile, project_name: str, files: List[Tuple[str, bytes]]) -> None:
+def add_duplicate_tdata(bundle: ReturnBundle, reason: str, project_name: str, files: List[Tuple[str, bytes]]) -> None:
     for rel_path, data in files:
-        writer.writestr(f'重复文件/直登号/{project_name}/{rel_path}', data)
+        bundle.add_duplicate(reason, f'直登号/{project_name}/{rel_path}', data)
+
+
+def add_failed_protocol(bundle: ReturnBundle, reason: str, project_name: str, files: List[Tuple[str, bytes]]) -> None:
+    for suffix, data in files:
+        bundle.add_failed(reason, f'协议号/{project_name}{suffix}', data)
+
+
+def add_failed_tdata(bundle: ReturnBundle, reason: str, project_name: str, files: List[Tuple[str, bytes]]) -> None:
+    for rel_path, data in files:
+        bundle.add_failed(reason, f'直登号/{project_name}/{rel_path}', data)
 
 
 def create_hb_record(product: Dict[str, str], project_name: str, entry_type: str) -> str:
@@ -388,68 +491,90 @@ def create_hb_record(product: Dict[str, str], project_name: str, entry_type: str
     return hbid
 
 
-def process_protocol_zip(upload_path: Path, product: Dict[str, str], duplicate_zip_path: Path) -> Tuple[int, int, int, Optional[Path]]:
+def process_protocol_zip(upload_path: Path, product: Dict[str, str], return_zip_path: Path) -> Tuple[int, int, int, Optional[Path]]:
     added = 0
     duplicated = 0
     failed = 0
     seen = set()
-    duplicate_written = False
-    with zipfile.ZipFile(upload_path, 'r') as zip_file, zipfile.ZipFile(duplicate_zip_path, 'w', zipfile.ZIP_DEFLATED) as dup_zip:
-        for project_name, files in protocol_entries_from_zip(zip_file).items():
-            if not files:
-                continue
-            fingerprint = fingerprint_protocol_bundle(files)
-            is_dup = fingerprint in seen or duplicate_exists('协议号', fingerprint)
-            if is_dup:
-                duplicated += 1
-                append_duplicate_protocol(dup_zip, project_name, files)
-                duplicate_written = True
-                continue
-            try:
-                save_protocol_files(product['nowuid'], project_name, files)
-                hbid = create_hb_record(product, project_name, '协议号')
-                store_fingerprint('协议号', fingerprint, product['nowuid'], project_name, hbid)
-                seen.add(fingerprint)
-                added += 1
-            except Exception:
-                logger.exception('save protocol failed: %s', project_name)
+
+    with ReturnBundle(return_zip_path) as bundle:
+        with zipfile.ZipFile(upload_path, 'r') as zip_file:
+            entries = protocol_entries_from_zip(bundle, zip_file)
+            if not entries:
+                bundle.add_text_report('失败文件/处理报告.txt', '未找到可用的协议号文件（.session / .json）。')
                 failed += 1
-    if not duplicate_written and duplicate_zip_path.exists():
-        duplicate_zip_path.unlink(missing_ok=True)
-        return added, duplicated, failed, None
-    return added, duplicated, failed, duplicate_zip_path if duplicate_written else None
+            for project_name, files in entries.items():
+                if not files:
+                    failed += 1
+                    continue
+                fingerprint = fingerprint_protocol_bundle(files)
+                if fingerprint in seen:
+                    duplicated += 1
+                    add_duplicate_protocol(bundle, '当前批次重复', project_name, files)
+                    continue
+                if duplicate_exists('协议号', fingerprint):
+                    duplicated += 1
+                    add_duplicate_protocol(bundle, '服务器库存重复', project_name, files)
+                    continue
+                try:
+                    save_protocol_files(product['nowuid'], project_name, files)
+                    hbid = create_hb_record(product, project_name, '协议号')
+                    store_fingerprint('协议号', fingerprint, product['nowuid'], project_name, hbid)
+                    seen.add(fingerprint)
+                    added += 1
+                except Exception:
+                    logger.exception('save protocol failed: %s', project_name)
+                    failed += 1
+                    add_failed_protocol(bundle, '保存失败', project_name, files)
+        bundle.add_text_report(
+            '处理报告.txt',
+            f'新增: {added}\n重复: {duplicated}\n失败: {failed}\n商品: {product["category_name"]}/{product["project_name"]}\n',
+        )
+
+    return added, duplicated, failed, return_zip_path if return_zip_path.exists() else None
 
 
-def process_tdata_zip(upload_path: Path, product: Dict[str, str], duplicate_zip_path: Path) -> Tuple[int, int, int, Optional[Path]]:
+def process_tdata_zip(upload_path: Path, product: Dict[str, str], return_zip_path: Path) -> Tuple[int, int, int, Optional[Path]]:
     added = 0
     duplicated = 0
     failed = 0
     seen = set()
-    duplicate_written = False
-    with zipfile.ZipFile(upload_path, 'r') as zip_file, zipfile.ZipFile(duplicate_zip_path, 'w', zipfile.ZIP_DEFLATED) as dup_zip:
-        for project_name, files in tdata_entries_from_zip(zip_file).items():
-            if not files:
-                continue
-            fingerprint = fingerprint_tdata_bundle(files)
-            is_dup = fingerprint in seen or duplicate_exists('直登号', fingerprint)
-            if is_dup:
-                duplicated += 1
-                append_duplicate_tdata(dup_zip, project_name, files)
-                duplicate_written = True
-                continue
-            try:
-                save_tdata_files(product['nowuid'], project_name, files)
-                hbid = create_hb_record(product, project_name, '直登号')
-                store_fingerprint('直登号', fingerprint, product['nowuid'], project_name, hbid)
-                seen.add(fingerprint)
-                added += 1
-            except Exception:
-                logger.exception('save tdata failed: %s', project_name)
+
+    with ReturnBundle(return_zip_path) as bundle:
+        with zipfile.ZipFile(upload_path, 'r') as zip_file:
+            entries = tdata_entries_from_zip(bundle, zip_file)
+            if not entries:
+                bundle.add_text_report('失败文件/处理报告.txt', '未找到可用的直登号目录结构。')
                 failed += 1
-    if not duplicate_written and duplicate_zip_path.exists():
-        duplicate_zip_path.unlink(missing_ok=True)
-        return added, duplicated, failed, None
-    return added, duplicated, failed, duplicate_zip_path if duplicate_written else None
+            for project_name, files in entries.items():
+                if not files:
+                    failed += 1
+                    continue
+                fingerprint = fingerprint_tdata_bundle(files)
+                if fingerprint in seen:
+                    duplicated += 1
+                    add_duplicate_tdata(bundle, '当前批次重复', project_name, files)
+                    continue
+                if duplicate_exists('直登号', fingerprint):
+                    duplicated += 1
+                    add_duplicate_tdata(bundle, '服务器库存重复', project_name, files)
+                    continue
+                try:
+                    save_tdata_files(product['nowuid'], project_name, files)
+                    hbid = create_hb_record(product, project_name, '直登号')
+                    store_fingerprint('直登号', fingerprint, product['nowuid'], project_name, hbid)
+                    seen.add(fingerprint)
+                    added += 1
+                except Exception:
+                    logger.exception('save tdata failed: %s', project_name)
+                    failed += 1
+                    add_failed_tdata(bundle, '保存失败', project_name, files)
+        bundle.add_text_report(
+            '处理报告.txt',
+            f'新增: {added}\n重复: {duplicated}\n失败: {failed}\n商品: {product["category_name"]}/{product["project_name"]}\n',
+        )
+
+    return added, duplicated, failed, return_zip_path if return_zip_path.exists() else None
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -460,21 +585,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         '把 zip 文件直接发给我就行。\n\n'
         '规则：\n'
         '1. 按文件名匹配商品名（忽略 emoji）\n'
-        '2. 匹配成功后先让你确认\n'
-        '3. 和服务器库存重复的账号不会入库，会打包回传'
+        '2. 多个候选时可翻页选择\n'
+        '3. 确认后再正式上传\n'
+        '4. 和服务器库存重复的账号不会入库，会分类打包回传'
     )
 
 
-def is_admin(user_id: int) -> bool:
-    return int(user_id or 0) in ADMIN_USER_IDS
-
-
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user = update.effective_user
+    tg_user = update.effective_user
     message = update.effective_message
-    if not user or not message or not message.document:
+    if not tg_user or not message or not message.document:
         return
-    if not is_admin(user.id):
+    if not is_admin(tg_user.id):
         await message.reply_text('你没有使用权限。')
         return
 
@@ -490,24 +612,20 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         'file_id': message.document.file_id,
         'file_name': file_name,
         'products': {item['nowuid']: item for item in matched},
+        'product_order': [item['nowuid'] for item in matched],
+        'page': 0,
     }
 
     if len(matched) > 1:
-        lines = ['检测到多个匹配商品，请手动选择：', '']
-        for idx, item in enumerate(matched, start=1):
-            lines.append(f'{idx}. {item["category_name"]} -> {item["project_name"]}')
-        await message.reply_text('\n'.join(lines), reply_markup=build_match_keyboard(matched))
+        await message.reply_text(
+            build_candidate_text(file_name, matched, 0),
+            reply_markup=build_candidate_keyboard(matched, 0),
+        )
         return
 
     product = matched[0]
     context.user_data['pending_upload']['selected_nowuid'] = product['nowuid']
-    await message.reply_text(
-        f'检测到文件名：{Path(file_name).stem}\n'
-        f'匹配分类：{product["category_name"]}\n'
-        f'匹配商品：{product["project_name"]}\n\n'
-        '是否确认上传？',
-        reply_markup=build_confirm_keyboard(),
-    )
+    await message.reply_text(build_confirm_text(file_name, product), reply_markup=build_confirm_keyboard())
 
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -515,32 +633,47 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if not query:
         return
     await query.answer()
+
     pending = context.user_data.get('pending_upload') or {}
+    product_map = pending.get('products') or {}
+    product_order = pending.get('product_order') or []
+    products = [product_map[nowuid] for nowuid in product_order if nowuid in product_map]
+
     if query.data == 'upload:cancel':
         context.user_data.pop('pending_upload', None)
         await query.edit_message_text('已取消本次上传。')
         return
 
+    if query.data.startswith('pickpage:'):
+        if not products:
+            await query.edit_message_text('候选商品已失效，请重新发送文件。')
+            return
+        page = int(query.data.split(':', 1)[1])
+        pending['page'] = page
+        context.user_data['pending_upload'] = pending
+        await query.edit_message_text(
+            build_candidate_text(str(pending.get('file_name') or ''), products, page),
+            reply_markup=build_candidate_keyboard(products, page),
+        )
+        return
+
     if query.data.startswith('pick:'):
         nowuid = query.data.split(':', 1)[1]
-        product = (pending.get('products') or {}).get(nowuid)
+        product = product_map.get(nowuid)
         if not product:
             await query.edit_message_text('候选商品已失效，请重新发送文件。')
             return
         pending['selected_nowuid'] = nowuid
         context.user_data['pending_upload'] = pending
         await query.edit_message_text(
-            f'检测到文件名：{Path(pending.get("file_name") or "").stem}\n'
-            f'匹配分类：{product["category_name"]}\n'
-            f'匹配商品：{product["project_name"]}\n\n'
-            '是否确认上传？',
+            build_confirm_text(str(pending.get('file_name') or ''), product),
             reply_markup=build_confirm_keyboard(),
         )
         return
 
     if query.data == 'upload:confirm':
         selected_nowuid = pending.get('selected_nowuid')
-        product = (pending.get('products') or {}).get(selected_nowuid)
+        product = product_map.get(selected_nowuid)
         if not product:
             await query.edit_message_text('没有找到待确认的商品，请重新发送文件。')
             return
@@ -553,6 +686,7 @@ async def run_upload_task(update: Update, context: ContextTypes.DEFAULT_TYPE, pr
     chat_id = update.effective_chat.id if update.effective_chat else None
     if not chat_id:
         return
+
     entry_type = product.get('entry_type')
     if entry_type not in {'协议号', '直登号'}:
         await context.bot.send_message(chat_id=chat_id, text='这个商品类型暂时还不支持自动上传。当前先支持：协议号 / 直登号。')
@@ -567,8 +701,8 @@ async def run_upload_task(update: Update, context: ContextTypes.DEFAULT_TYPE, pr
     tg_file = await context.bot.get_file(file_id)
     task_id = gen_uid()
     upload_path = TEMP_DIR / f'{task_id}_{Path(file_name).name}'
-    duplicate_zip_path = DUP_DIR / f'duplicate_{task_id}.zip'
-    previous_stock = hb.count_documents({'nowuid': product['nowuid'], 'state': 0})
+    return_zip_path = RETURN_DIR / f'处理回包_{Path(file_name).stem}_{task_id}.zip'
+
     UPLOAD_TASKS.insert_one({
         'task_id': task_id,
         'user_id': update.effective_user.id if update.effective_user else 0,
@@ -581,33 +715,42 @@ async def run_upload_task(update: Update, context: ContextTypes.DEFAULT_TYPE, pr
 
     try:
         await tg_file.download_to_drive(custom_path=str(upload_path))
-        if zipfile.is_zipfile(upload_path):
-            if entry_type == '协议号':
-                added, duplicated, failed, duplicate_file = process_protocol_zip(upload_path, product, duplicate_zip_path)
-            else:
-                added, duplicated, failed, duplicate_file = process_tdata_zip(upload_path, product, duplicate_zip_path)
-        else:
+        if not zipfile.is_zipfile(upload_path):
             await context.bot.send_message(chat_id=chat_id, text='目前只支持 zip 批量上传。')
             UPLOAD_TASKS.update_one({'task_id': task_id}, {'$set': {'state': 'failed', 'reason': 'not_zip'}})
             return
 
+        if entry_type == '协议号':
+            added, duplicated, failed, return_file = process_protocol_zip(upload_path, product, return_zip_path)
+        else:
+            added, duplicated, failed, return_file = process_tdata_zip(upload_path, product, return_zip_path)
+
         UPLOAD_TASKS.update_one(
             {'task_id': task_id},
-            {'$set': {'state': 'done', 'added': added, 'duplicated': duplicated, 'failed': failed, 'finished_at': int(time.time())}},
+            {'$set': {
+                'state': 'done',
+                'added': added,
+                'duplicated': duplicated,
+                'failed': failed,
+                'finished_at': int(time.time()),
+            }},
         )
-        await context.bot.send_message(chat_id=chat_id, text=build_result_text(file_name, product, added, duplicated, failed))
-        if duplicate_file and duplicate_file.exists():
+        await context.bot.send_message(chat_id=chat_id, text=build_result_text(product, added, duplicated, failed))
+        if return_file and return_file.exists():
             await context.bot.send_document(
                 chat_id=chat_id,
-                document=InputFile(str(duplicate_file)),
-                filename=f'重复文件_{Path(file_name).stem}.zip',
-                caption='重复文件已打包返回，请查收。',
+                document=InputFile(str(return_file)),
+                filename=return_file.name,
+                caption='重复文件 / 失败文件 已按分类打包回传，请查收。',
             )
         if added > 0:
             await send_store_restock_notice(product['nowuid'], added)
     except Exception as exc:
         logger.exception('upload task failed')
-        UPLOAD_TASKS.update_one({'task_id': task_id}, {'$set': {'state': 'failed', 'reason': str(exc), 'finished_at': int(time.time())}})
+        UPLOAD_TASKS.update_one(
+            {'task_id': task_id},
+            {'$set': {'state': 'failed', 'reason': str(exc), 'finished_at': int(time.time())}},
+        )
         await context.bot.send_message(chat_id=chat_id, text=f'处理失败：{exc}')
     finally:
         upload_path.unlink(missing_ok=True)
