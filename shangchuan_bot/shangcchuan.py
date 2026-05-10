@@ -26,7 +26,9 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-load_dotenv(SCRIPT_DIR / '.env')
+load_dotenv(PROJECT_ROOT / '.env')
+load_dotenv(PROJECT_ROOT / '.env.local', override=False)
+load_dotenv(SCRIPT_DIR / '.env', override=True)
 load_dotenv(SCRIPT_DIR / '.env.local', override=True)
 if os.getenv('STORE_BOT_TOKEN') and not os.getenv('BOT_TOKEN'):
     os.environ['BOT_TOKEN'] = os.getenv('STORE_BOT_TOKEN', '')
