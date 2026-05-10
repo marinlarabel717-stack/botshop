@@ -8206,12 +8206,14 @@ def textkeyboard(update: Update, context: CallbackContext):
                     file_type = key_list['file_type']
                     file_id = key_list['file_id']
                     entities = safe_pickle_loads(key_list['entities'])
-                    keyboard = [[InlineKeyboardButton("关闭", callback_data=f'close {user_id}')]]
+                    keyboard = safe_pickle_loads(key_list.get('keyboard')) or []
                     if context.bot.username in ['TelergamKFbot', 'Tclelgnam_bot']:
                         pass
                     else:
                         if print_text == '' and file_id == '':
-                            context.bot.send_message(chat_id=user_id, text=localize_dynamic_text(text, user_id=user_id))
+                            fallback_text = localize_dynamic_text(key_list.get('projectname') or text, user_id=user_id, lang=lang)
+                            send_key_content_preview(context, user_id, text=fallback_text, file_type='text',
+                                                     entities=[], keyboard=keyboard)
                         else:
                             localized_preview_text = localize_dynamic_text(print_text, user_id=user_id) if print_text else print_text
                             localized_entities = entities if localized_preview_text == print_text else []
