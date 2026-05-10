@@ -171,8 +171,8 @@ TRANSLATION_UI_TEXTS = {
     'out_of_stock_button': {'zh': '⚠️暂无库存', 'en': '⚠️ Out of Stock'},
     'restock_notice_button': {'zh': '[emoji:5397916757333654639:➕]提醒补货', 'en': '[emoji:5397916757333654639:➕] Restock Alert'},
     'profile_text': {
-        'zh': '[emoji:5929391996408959380:🏞] 您的ID: <code>{user_id}</code>\n\n[emoji:6323075330189826977:😃] 您的用户名: {username_html}\n\n[emoji:5028418466000930064:📆] 注册日期: {creation_time}\n\n[emoji:6273995106810863535:🌑] 总购数量: {zgsl}\n\n[emoji:5028746137645876535:📈] 总购金额: {zgje} USDT\n\n[emoji:4972482444025398275:👛] 您的余额: {USDT} USDT',
-        'en': '[emoji:5929391996408959380:🏞] Your ID: <code>{user_id}</code>\n\n[emoji:6323075330189826977:😃] Username: {username_html}\n\n[emoji:5028418466000930064:📆] Joined: {creation_time}\n\n[emoji:6273995106810863535:🌑] Total Purchases: {zgsl}\n\n[emoji:5028746137645876535:📈] Total Spent: {zgje} USDT\n\n[emoji:4972482444025398275:👛] Balance: {USDT} USDT'
+        'zh': '<b>[emoji:5929391996408959380:🏞] 您的ID: <code>{user_id}</code>\n\n[emoji:6323075330189826977:😃] 您的用户名: {username_html}\n\n[emoji:5028418466000930064:📆] 注册日期: {creation_time}\n\n[emoji:6273995106810863535:🌑] 总购数量: {zgsl}\n\n[emoji:5028746137645876535:📈] 总购金额: {zgje} USDT\n\n[emoji:4972482444025398275:👛] 您的余额: {USDT} USDT</b>',
+        'en': '<b>[emoji:5929391996408959380:🏞] Your ID: <code>{user_id}</code>\n\n[emoji:6323075330189826977:😃] Username: {username_html}\n\n[emoji:5028418466000930064:📆] Joined: {creation_time}\n\n[emoji:6273995106810863535:🌑] Total Purchases: {zgsl}\n\n[emoji:5028746137645876535:📈] Total Spent: {zgje} USDT\n\n[emoji:4972482444025398275:👛] Balance: {USDT} USDT</b>'
     },
     'category_list_text': {
         'zh': '<b>🛒这是商品列表  选择你需要的商品：\n\n❗️没使用过的本店商品的，请先少量购买测试，以免造成不必要的争执！谢谢合作！\n\n❗️账户放久难免会死，有差异，请联系客服售后！望理解！</b>',
