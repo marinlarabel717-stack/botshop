@@ -5677,8 +5677,8 @@ def build_user_profile_text(user_id, username, creation_time, zgsl, zgje, balanc
     lang = get_user_lang(user_id)
     username = str(username or '').strip().lstrip('@')
     if username:
-        safe_username = html.escape(username, quote=True)
-        username_html = f'<a href="tg://user?id={user_id}">@{safe_username}</a>'
+        safe_username = html.escape(username, quote=False)
+        username_html = f'@{safe_username}'
     else:
         username_html = '未设置' if lang == 'zh' else 'Not set'
     return get_ui_text(
