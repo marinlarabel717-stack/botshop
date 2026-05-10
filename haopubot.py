@@ -3076,7 +3076,7 @@ def cattu(update: Update, context: CallbackContext):
     file_text = fqdtw_list['text']
     file_type = fqdtw_list['send_type']
     key_text = fqdtw_list['key_text']
-    keyboard = safe_pickle_loads(fqdtw_list['keyboard'])
+    keyboard = safe_pickle_loads(fqdtw_list['keyboard']) or []
     keyboard.append([InlineKeyboardButton('✅已读（点击销毁此消息）', callback_data=f'close {user_id}')])
     if fqdtw_list['text'] == '' and fqdtw_list['file_id'] == '':
         message_id = context.bot.send_message(chat_id=user_id, text='请设置图文后点击')
@@ -3084,28 +3084,12 @@ def cattu(update: Update, context: CallbackContext):
         del_message(message_id)
     else:
         try:
-            context.bot.send_message(chat_id=user_id, text=key_text)
+            if key_text:
+                send_key_content_preview(context, user_id, text=key_text, file_type='text')
         except:
             pass
-        if file_type == 'text':
-            try:
-                message_id = context.bot.send_message(chat_id=user_id, text=file_text,
-                                                      reply_markup=InlineKeyboardMarkup(keyboard))
-            except:
-                message_id = context.bot.send_message(chat_id=user_id, text=file_text)
-        else:
-            if file_type == 'photo':
-                try:
-                    message_id = context.bot.send_photo(chat_id=user_id, caption=file_text, photo=file_id,
-                                                        reply_markup=InlineKeyboardMarkup(keyboard))
-                except:
-                    message_id = context.bot.send_photo(chat_id=user_id, caption=file_text, photo=file_id)
-            else:
-                try:
-                    message_id = context.bot.sendAnimation(chat_id=user_id, caption=file_text, animation=file_id,
-                                                           reply_markup=InlineKeyboardMarkup(keyboard))
-                except:
-                    message_id = context.bot.sendAnimation(chat_id=user_id, caption=file_text, animation=file_id)
+        message_id = send_key_content_preview(context, user_id, text=file_text, file_type=file_type,
+                                              file_id=file_id, keyboard=keyboard)
         time.sleep(3)
         del_message(message_id)
 
