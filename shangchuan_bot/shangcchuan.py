@@ -38,6 +38,7 @@ from haopubot import (  # noqa: E402
     InlineKeyboardButton,
     build_custom_emoji_text_entities,
     build_product_purchase_deep_link,
+    build_restock_push_broadcast_message,
     build_restock_push_broadcast_text,
     get_product_purchase_payload,
     get_restock_push_target,
@@ -399,14 +400,13 @@ async def send_store_restock_notice(nowuid: str, added_count: int, task_id: str 
         log_task(task_id, f'跳过补货通知：未找到商品 payload nowuid={nowuid}', logging.WARNING)
         return False
 
-    text = build_restock_push_broadcast_text(
+    text, entities = build_restock_push_broadcast_message(
         payload['category_name'],
         payload['projectname'],
         payload['money'],
         added_count,
         payload['stock_count'],
     )
-    text, entities = build_custom_emoji_text_entities(text)
     store_bot = Bot(STORE_BOT_TOKEN)
     keyboard = None
     bot_username = ''

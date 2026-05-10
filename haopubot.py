@@ -5631,6 +5631,14 @@ def build_restock_push_broadcast_text(category_name, projectname, money, added_c
     )
 
 
+def build_restock_push_broadcast_message(category_name, projectname, money, added_count, stock_count):
+    text = build_restock_push_broadcast_text(category_name, projectname, money, added_count, stock_count)
+    text, entities = build_custom_emoji_text_entities(text)
+    if text:
+        entities = [MessageEntity(type='bold', offset=0, length=utf16_len(text))] + list(entities or [])
+    return text, entities
+
+
 def notify_restock_broadcast(context, nowuid, added_count=0):
     if int(added_count or 0) <= 0:
         return
@@ -5644,8 +5652,7 @@ def notify_restock_broadcast(context, nowuid, added_count=0):
     category_name = payload['category_name']
     money = payload['money']
     stock_count = payload['stock_count']
-    text = build_restock_push_broadcast_text(category_name, projectname, money, added_count, stock_count)
-    text, entities = build_custom_emoji_text_entities(text)
+    text, entities = build_restock_push_broadcast_message(category_name, projectname, money, added_count, stock_count)
     keyboard = None
     bot_username = str(getattr(context.bot, 'username', '') or '').strip()
     buy_url = build_product_purchase_deep_link(bot_username, nowuid)
