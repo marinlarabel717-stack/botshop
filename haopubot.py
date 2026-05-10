@@ -3081,7 +3081,7 @@ def cattu(update: Update, context: CallbackContext):
     file_text = fqdtw_list['text']
     file_type = fqdtw_list['send_type']
     key_text = fqdtw_list['key_text']
-    keyboard = safe_pickle_loads(fqdtw_list['keyboard']) or []
+    keyboard = load_saved_inline_keyboard(fqdtw_list.get('keyboard'), fqdtw_list.get('key_text'))
     keyboard.append([InlineKeyboardButton('✅已读（点击销毁此消息）', callback_data=f'close {user_id}')])
     if fqdtw_list['text'] == '' and fqdtw_list['file_id'] == '':
         message_id = context.bot.send_message(chat_id=user_id, text='请设置图文后点击')
@@ -3144,7 +3144,7 @@ def usersifa(context: CallbackContext):
     file_text = fqdtw_list['text']
     file_type = fqdtw_list['send_type']
     key_text = fqdtw_list['key_text']
-    keyboard = safe_pickle_loads(fqdtw_list['keyboard'])
+    keyboard = load_saved_inline_keyboard(fqdtw_list.get('keyboard'), fqdtw_list.get('key_text'))
     
     
     keyboard.append([InlineKeyboardButton('✅已读（点击销毁此消息）', callback_data=f'close 12321')])
@@ -4112,7 +4112,7 @@ def settuwenset(update: Update, context: CallbackContext):
     file_type = key_list['file_type']
     file_id = key_list['file_id']
     entities = safe_pickle_loads(key_list['entities'])
-    keyboard = safe_pickle_loads(key_list['keyboard'])
+    keyboard = load_saved_inline_keyboard(key_list.get('keyboard'), key_list.get('key_text'))
     if text == '' and file_id == '':
         pass
     else:
@@ -4143,7 +4143,7 @@ def cattuwenset(update: Update, context: CallbackContext):
     file_type = key_list['file_type']
     file_id = key_list['file_id']
     entities = safe_pickle_loads(key_list['entities'])
-    keyboard = safe_pickle_loads(key_list['keyboard'])
+    keyboard = load_saved_inline_keyboard(key_list.get('keyboard'), key_list.get('key_text'))
     if text == '' and file_id == '':
         message_id = context.bot.send_message(chat_id=user_id, text='请设置图文后点击')
         timer11 = Timer(3, del_message, args=[message_id])
@@ -8206,7 +8206,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                     file_type = key_list['file_type']
                     file_id = key_list['file_id']
                     entities = safe_pickle_loads(key_list['entities'])
-                    keyboard = safe_pickle_loads(key_list.get('keyboard')) or []
+                    keyboard = load_saved_inline_keyboard(key_list.get('keyboard'), key_list.get('key_text'))
                     if context.bot.username in ['TelergamKFbot', 'Tclelgnam_bot']:
                         pass
                     else:
@@ -8575,6 +8575,18 @@ def parse_url(content):
 def create_keyboard(title, url=None, callback_data=None, inline_query=None):
     return [InlineKeyboardButton(title, url=url, callback_data=callback_data,
                                  switch_inline_query_current_chat=inline_query)]
+
+
+def load_saved_inline_keyboard(raw_keyboard=None, key_text=''):
+    key_text = str(key_text or '').strip()
+    if key_text:
+        try:
+            rebuilt_keyboard = parse_urls(key_text)
+            if rebuilt_keyboard:
+                return rebuilt_keyboard
+        except Exception:
+            logging.warning('Failed to rebuild inline keyboard from key_text=%r', key_text, exc_info=True)
+    return safe_pickle_loads(raw_keyboard) or []
 
 
 def parse_urls(content, maxurl=99):
