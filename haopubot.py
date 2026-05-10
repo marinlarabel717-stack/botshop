@@ -8492,25 +8492,13 @@ def cha(update: Update, context: CallbackContext):
                 df_username = df_list['username']
                 if df_username is None:
                     df_username = df_fullname
-                else:
-                    df_username = f'<a href="https://t.me/{df_username}">{df_username}</a>'
                 creation_time = df_list['creation_time']
                 zgsl = df_list['zgsl']
                 zgje = df_list['zgje']
                 USDT = df_list['USDT']
-                fstext = f'''
-<b>[emoji:6321041414067068140:👤] 用户ID:</b>  <code>{df_id}</code>
-<b>[emoji:6323075330189826977:😃] 用户名:</b>  {df_username}
-<b>[emoji:5217818964612108191:✨] 注册日期:</b>  {creation_time}
-
-<b>[emoji:5220064167356025824:⭐️] 总购数量:</b>  {zgsl}
-
-<b>[emoji:5028746137645876535:📈] 总购金额:</b>  {standard_num(zgje)} USDT
-
-<b>[emoji:4972482444025398275:👛] 您的余额:</b>  {USDT} USDT
-                '''
+                fstext = build_user_profile_text(df_id, df_username, creation_time, zgsl, zgje, USDT)
                 keyboard = [[InlineKeyboardButton('🛒购买记录', callback_data=f'gmaijilu {df_id}')],
-                            [InlineKeyboardButton('关闭', callback_data=f'close {df_id}')]]
+                            [InlineKeyboardButton('关闭', callback_data=f'close {user_id}')]]
                 context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
                                          reply_markup=InlineKeyboardMarkup(keyboard), disable_web_page_preview=True)
 
