@@ -1042,6 +1042,10 @@ def ensure_user_indexes():
         user.create_index([('count_id', 1)], name='user_count_id')
     except Exception:
         pass
+    try:
+        user.create_index([('USDT', -1), ('count_id', 1)], name='user_balance_rank')
+    except Exception:
+        pass
 
 
 ensure_topup_indexes()
@@ -3333,7 +3337,7 @@ def _format_user_list_row(index, row):
 
 def _fetch_user_page(page):
     page = max(int(page), 0)
-    rows = list(user.find({}, USER_LIST_PROJECTION, sort=[('count_id', 1)], skip=page, limit=USER_LIST_PAGE_SIZE + 1))
+    rows = list(user.find({}, USER_LIST_PROJECTION, sort=[('USDT', -1), ('count_id', 1)], skip=page, limit=USER_LIST_PAGE_SIZE + 1))
     has_next = len(rows) > USER_LIST_PAGE_SIZE
     return rows[:USER_LIST_PAGE_SIZE], has_next
 
