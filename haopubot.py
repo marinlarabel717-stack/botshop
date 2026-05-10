@@ -7332,10 +7332,23 @@ def textkeyboard(update: Update, context: CallbackContext):
                     welcome_text = stored_text or text
                     shangtext.update_one({"projectname": '欢迎语'}, {"$set": {"text": welcome_text}})
                     shangtext.update_one({"projectname": '欢迎语样式'}, {"$set": {"text": pickle.dumps([])}})
+                    translated_welcome_en = ''
                     try:
-                        translate_text(welcome_text, 'en')
+                        translated_welcome_en = str(translate_text(welcome_text, 'en') or '').strip()
                     except Exception:
                         logging.warning('Warm welcome translation cache failed for text=%r', welcome_text, exc_info=True)
+                    if translated_welcome_en and translated_welcome_en != welcome_text:
+                        shangtext.update_one(
+                            {"projectname": '欢迎语英文'},
+                            {"$set": {"projectname": '欢迎语英文', "text": translated_welcome_en}},
+                            upsert=True
+                        )
+                    else:
+                        shangtext.update_one(
+                            {"projectname": '欢迎语英文'},
+                            {"$set": {"projectname": '欢迎语英文', "text": ''}},
+                            upsert=True
+                        )
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                     context.bot.send_message(chat_id=user_id, text=f'当前欢迎语为:\n\n{welcome_text}')
                 elif 'okzdycz' in sign:
