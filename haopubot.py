@@ -5977,6 +5977,7 @@ TOPUP_STATE_PENDING = 0
 TOPUP_STATE_PAID = 1
 TOPUP_STATE_EXPIRED = 2
 TOPUP_STATE_CANCELED = 3
+TOPUP_STATE_PROCESSING = 4
 
 
 def current_ts_ms():
@@ -5985,6 +5986,14 @@ def current_ts_ms():
 
 def build_topup_expire_ts_ms(created_ts_ms, minutes=10):
     return int(created_ts_ms) + int(minutes * 60 * 1000)
+
+
+def build_topup_order_id(prefix, user_id):
+    return f"{prefix}{current_ts_ms()}{user_id}{uuid.uuid4().hex[:6].upper()}"
+
+
+def parse_decimal_amount(value, places='0.01'):
+    return Decimal(str(value)).quantize(Decimal(places))
 
 
 def allocate_trc20_pay_amount(base_amount, user_id):
@@ -6156,6 +6165,8 @@ def okpay_mark_deposit_paid(payload):
         return False, 'order_not_found'
     if order.get('state') == TOPUP_STATE_PAID:
         return True, 'already_paid'
+    if order.get('state') == TOPUP_STATE_PROCESSING:
+        return False, 'order_processing'
     if order.get('state') != TOPUP_STATE_PENDING:
         return False, 'order_expired'
 
@@ -6164,31 +6175,94 @@ def okpay_mark_deposit_paid(payload):
         topup.update_one({'bianhao': unique_id, 'state': TOPUP_STATE_PENDING}, {'$set': {'state': TOPUP_STATE_EXPIRED, 'expired_timer': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()), 'status': -1}})
         return False, 'order_expired'
 
+    expected_coin = str(order.get('coin') or 'USDT').strip().upper()
+    paid_coin = str(coin or expected_coin).strip().upper()
+    if paid_coin != expected_coin:
+        return False, 'coin_mismatch'
+
+    try:
+        expected_amount = parse_decimal_amount(order.get('money', 0))
+        paid_amount = parse_decimal_amount(amount)
+    except Exception:
+        return False, 'invalid_amount'
+
+    if expected_amount <= 0 or paid_amount <= 0:
+        return False, 'invalid_amount'
+    if paid_amount != expected_amount:
+        return False, 'amount_mismatch'
+
     user_id = order['user_id']
-    money = float(amount or order['money'])
-    user_list = user.find_one({'user_id': user_id})
-    if user_list is None:
+    if user.find_one({'user_id': user_id}, {'_id': 1}) is None:
         return False, 'user_not_found'
 
-    now_money = standard_num(float(user_list.get('USDT', 0)) + money)
-    now_money = float(now_money) if str(now_money).count('.') > 0 else int(now_money)
     timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-    user.update_one({'user_id': user_id}, {'$set': {'USDT': now_money}})
-    topup.update_one({'bianhao': unique_id}, {'$set': {
+    paid_amount_float = float(paid_amount)
+    claimed_order = topup.find_one_and_update(
+        {'_id': order['_id'], 'state': TOPUP_STATE_PENDING},
+        {'$set': {
+            'state': TOPUP_STATE_PROCESSING,
+            'processing_timer': timer,
+            'processing_amount': paid_amount_float,
+            'processing_coin': paid_coin,
+            'processing_order_id': order_id,
+            'processing_pay_user_id': pay_user_id
+        }},
+        return_document=ReturnDocument.BEFORE
+    )
+    if claimed_order is None:
+        latest_order = topup.find_one({'_id': order['_id']}, {'state': 1}) or {}
+        latest_state = latest_order.get('state')
+        if latest_state == TOPUP_STATE_PAID:
+            return True, 'already_paid'
+        if latest_state == TOPUP_STATE_PROCESSING:
+            return False, 'order_processing'
+        return False, 'order_expired'
+
+    updated_user = user.find_one_and_update(
+        {'user_id': user_id},
+        {'$inc': {'USDT': paid_amount_float}},
+        return_document=ReturnDocument.AFTER
+    )
+    if updated_user is None:
+        topup.update_one(
+            {'_id': order['_id'], 'state': TOPUP_STATE_PROCESSING},
+            {'$set': {'state': TOPUP_STATE_PENDING}, '$unset': {
+                'processing_timer': '',
+                'processing_amount': '',
+                'processing_coin': '',
+                'processing_order_id': '',
+                'processing_pay_user_id': ''
+            }}
+        )
+        return False, 'user_not_found'
+
+    now_money = standard_num(updated_user.get('USDT', 0))
+    now_money = float(now_money) if str(now_money).count('.') > 0 else int(now_money)
+    finalize_result = topup.update_one({'_id': order['_id'], 'state': TOPUP_STATE_PROCESSING}, {'$set': {
         'state': TOPUP_STATE_PAID,
         'status': 1,
         'paid_timer': timer,
         'paid_ts_ms': current_ts_ms(),
         'okpay_order_id': order_id,
         'pay_user_id': pay_user_id,
-        'coin': coin,
-        'paid_amount': money
+        'coin': paid_coin,
+        'paid_amount': paid_amount_float
+    }, '$unset': {
+        'processing_timer': '',
+        'processing_amount': '',
+        'processing_coin': '',
+        'processing_order_id': '',
+        'processing_pay_user_id': ''
     }})
-    user_logging(unique_id, 'OKPay充值', user_id, money, timer)
+    if finalize_result.modified_count != 1:
+        logging.error('OKPay订单状态落库失败，订单进入processing保护态: %s', unique_id)
+        return False, 'order_finalize_failed'
+
+    user_logging(unique_id, 'OKPay充值', user_id, paid_amount_float, timer)
 
     if OKPAY_BOT is not None:
         try:
-            notify_text = f'<b>✅ OKPay充值到账：{money} {coin}\n\n💳 当前余额：{now_money} USDT</b>'
+            notify_text = f'<b>✅ OKPay充值到账：{paid_amount_float} {paid_coin}\n\n💳 当前余额：{now_money} USDT</b>'
             if get_user_lang(user_id) == 'en':
                 notify_text = translate_text(notify_text, 'en')
             OKPAY_BOT.send_message(
@@ -6209,13 +6283,15 @@ def okpay_normalize_check_deposit_result(result):
     order_id = data.get('order_id') or result.get('order_id') if isinstance(result, dict) else None
     amount = data.get('amount') or result.get('amount') if isinstance(result, dict) else None
     status = str(data.get('status') or result.get('status') or '') if isinstance(result, dict) else ''
+    coin = data.get('coin') or result.get('coin') if isinstance(result, dict) else None
+    pay_type = data.get('type') or result.get('type') if isinstance(result, dict) else None
     return {
         'unique_id': unique_id,
         'order_id': order_id,
         'amount': amount,
         'status': status,
-        'coin': 'USDT',
-        'type': 'deposit',
+        'coin': coin or 'USDT',
+        'type': pay_type or 'deposit',
     }
 
 
@@ -6305,7 +6381,7 @@ def create_trc20_deposit_order(context, user_id, amount):
     expire_ts_ms = build_topup_expire_ts_ms(created_ts_ms, minutes=10)
     created_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(created_ts_ms / 1000))
     deadline_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(expire_ts_ms / 1000))
-    bianhao = 'TRC20' + time.strftime('%Y%m%d%H%M%S', time.localtime()) + str(user_id)
+    bianhao = build_topup_order_id('TRC20', user_id)
     topup.update_many({'user_id': user_id, 'type': 'trc20', 'state': TOPUP_STATE_PENDING}, {'$set': {'state': TOPUP_STATE_CANCELED, 'canceled_timer': created_time, 'cancel_reason': 'recreated'}})
 
     reserved_id = None
@@ -6405,7 +6481,7 @@ def create_okpay_deposit_order(context, user_id, amount):
     created_ts_ms = current_ts_ms()
     expire_ts_ms = build_topup_expire_ts_ms(created_ts_ms, minutes=10)
     topup.update_many({'user_id': user_id, 'type': 'okpay', 'state': TOPUP_STATE_PENDING}, {'$set': {'state': TOPUP_STATE_CANCELED, 'canceled_timer': timer, 'cancel_reason': 'recreated'}})
-    bianhao = 'OKPAY' + time.strftime('%Y%m%d%H%M%S', time.localtime()) + str(user_id)
+    bianhao = build_topup_order_id('OKPAY', user_id)
     try:
         result = okpay_pay_link(bianhao, amount, 'USDT', bot=context.bot)
     except Exception as exc:
@@ -7068,6 +7144,15 @@ def okpay_paid(update: Update, context: CallbackContext):
         return
     if msg == 'order_expired':
         context.bot.send_message(chat_id=user_id, text=translate_text('这笔OKPay订单已超时失效，请重新创建订单', lang))
+        return
+    if msg == 'amount_mismatch':
+        context.bot.send_message(chat_id=user_id, text=translate_text('检测到OKPay实际到账金额与订单金额不一致，系统已拒绝入账，请联系管理员核对。', lang))
+        return
+    if msg == 'coin_mismatch':
+        context.bot.send_message(chat_id=user_id, text=translate_text('检测到OKPay到账币种与订单不一致，系统已拒绝入账，请联系管理员核对。', lang))
+        return
+    if msg in ('order_processing', 'order_finalize_failed'):
+        context.bot.send_message(chat_id=user_id, text=translate_text('这笔OKPay订单正在处理中，请稍后再查看余额；如长时间未到账请联系管理员。', lang))
         return
 
     context.bot.send_message(
