@@ -3312,28 +3312,31 @@ def zcfshuo(update: Update, context: CallbackContext):
         query.message.reply_document(open(zip_filename, "rb"))
 
 
+def _format_user_list_row(index, row):
+    df_id = row.get('user_id', 0)
+    df_username = (row.get('username') or '无用户名').replace('<', '').replace('>', '')
+    df_fullname = str(row.get('fullname') or row.get('lastname') or df_username or df_id).replace('<', '').replace('>', '')
+    usdt = row.get('USDT', 0)
+    return f'{index}. <a href="tg://user?id={df_id}">{df_fullname}</a> ID:<code>{df_id}</code>-@{df_username}-余额:{usdt}'
+
+
 def yhlist(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
     user_id = query.from_user.id
-    jilu_list = list(user.find({}, limit=10))
+    jilu_list = list(user.find({}, sort=[('count_id', 1)], limit=10))
     keyboard = []
     text_list = []
     count = 1
     for i in jilu_list:
-        df_id = i['user_id']
-        df_username = i['username']
-        df_fullname = i['fullname'].replace('<', '').replace('>', '')
-        USDT = i['USDT']
-        text_list.append(
-            f'{count}. <a href="tg://user?id={df_id}">{df_fullname}</a> ID:<code>{df_id}</code>-@{df_username}-余额:{USDT}')
+        text_list.append(_format_user_list_row(count, i))
         count += 1
-    if len(list(user.find({}))) > 10:
+    if user.count_documents({}) > 10:
         keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}下一页', callback_data=f'yhnext 10:{count}')])
 
     keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data='backstart')])
 
-    text_list = '\n'.join(text_list)
+    text_list = '\n'.join(text_list) or '暂无用户数据'
     try:
         query.edit_message_text(text=text_list, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
     except:
@@ -3344,30 +3347,28 @@ def yhnext(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
     data = query.data.replace('yhnext ', '')
-    page = data.split(":")[0]
-    count = int(data.split(":")[1])
+    page = max(int(data.split(":")[0]), 0)
+    count = max(int(data.split(":")[1]), 1)
     keyboard = []
     text_list = []
-    jilu_list = list(user.find({}, skip=int(page), limit=10))
+    total_users = user.count_documents({})
+    jilu_list = list(user.find({}, sort=[('count_id', 1)], skip=page, limit=10))
     for i in jilu_list:
-        df_id = i['user_id']
-        df_username = i['username']
-        df_fullname = i['fullname'].replace('<', '').replace('>', '')
-        USDT = i['USDT']
-        text_list.append(
-            f'{count}. <a href="tg://user?id={df_id}">{df_fullname}</a> ID:<code>{df_id}</code>-@{df_username}-余额:{USDT}')
+        text_list.append(_format_user_list_row(count, i))
         count += 1
-    if len(list(user.find({}, skip=int(page)))) > 10:
-        if int(page) == 0:
-            keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}下一页', callback_data=f'yhnext {int(page) + 10}:{count}')])
-        else:
-            keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}上一页', callback_data=f'yhnext {int(page) - 10}:{count - 20}'),
-                             InlineKeyboardButton(f'{MOOD_EMOJI_FAST}下一页', callback_data=f'yhnext {int(page) + 10}:{count}')])
-    else:
-        keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}上一页', callback_data=f'yhnext {int(page) - 10}:{count - 20}')])
 
-    text_list = '\n'.join(text_list)
-    keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data=f'backstart')])
+    has_prev = page > 0
+    has_next = (page + 10) < total_users
+    if has_prev and has_next:
+        keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}上一页', callback_data=f'yhnext {max(page - 10, 0)}:{max(count - 20, 1)}'),
+                         InlineKeyboardButton(f'{MOOD_EMOJI_FAST}下一页', callback_data=f'yhnext {page + 10}:{count}')])
+    elif has_prev:
+        keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}上一页', callback_data=f'yhnext {max(page - 10, 0)}:{max(count - 20, 1)}')])
+    elif has_next:
+        keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}下一页', callback_data=f'yhnext {page + 10}:{count}')])
+
+    text_list = '\n'.join(text_list) or '这一页没有用户数据'
+    keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data='backstart')])
     query.bot.edit_message_text(text=text_list, chat_id=query.message.chat.id,
                                 message_id=query.message.message_id, reply_markup=InlineKeyboardMarkup(keyboard),
                                 parse_mode='HTML')
