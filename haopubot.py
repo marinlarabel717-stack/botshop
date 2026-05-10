@@ -4731,21 +4731,7 @@ def startupdate(update: Update, context: CallbackContext):
         context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
         return
 
-    current_zh = str(get_text_config('欢迎语', DEFAULT_CLONE_WELCOME_TEXT) or '').strip()
-    current_en = str(
-        get_text_config('欢迎语英文', '')
-        or get_text_config('英文欢迎语', '')
-        or get_text_config('欢迎语:en', '')
-        or get_text_config('欢迎语:en-US', '')
-        or ''
-    ).strip()
-    preview_zh = current_zh[:60] + ('…' if len(current_zh) > 60 else '') if current_zh else '未设置'
-    preview_en = current_en[:60] + ('…' if len(current_en) > 60 else '') if current_en else '未设置'
-    text = (
-        '请选择要修改的欢迎语版本：\n\n'
-        f'中文当前：{preview_zh}\n'
-        f'英文当前：{preview_en}'
-    )
+    text = '请选择要修改的欢迎语版本：'
     keyboard = [
         [InlineKeyboardButton('🇨🇳 中文欢迎语', callback_data='startupdate_zh'),
          InlineKeyboardButton('🇺🇸 英文欢迎语', callback_data='startupdate_en')],
