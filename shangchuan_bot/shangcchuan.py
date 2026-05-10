@@ -433,36 +433,51 @@ async def send_store_restock_notice(nowuid: str, added_count: int, task_id: str 
 
 
 class ReturnBundle:
-    def __init__(self, path: Path):
-        self.path = path
-        self.writer: Optional[zipfile.ZipFile] = None
+    def __init__(self, duplicate_path: Path, failed_path: Path):
+        self.duplicate_path = duplicate_path
+        self.failed_path = failed_path
+        self.duplicate_writer: Optional[zipfile.ZipFile] = None
+        self.failed_writer: Optional[zipfile.ZipFile] = None
         self.counts = {'duplicate': 0, 'failed': 0}
 
     def __enter__(self):
-        self.writer = zipfile.ZipFile(self.path, 'w', zipfile.ZIP_DEFLATED)
+        self.duplicate_writer = zipfile.ZipFile(self.duplicate_path, 'w', zipfile.ZIP_DEFLATED)
+        self.failed_writer = zipfile.ZipFile(self.failed_path, 'w', zipfile.ZIP_DEFLATED)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.writer:
-            self.writer.close()
-        if sum(self.counts.values()) == 0 and self.path.exists():
-            self.path.unlink(missing_ok=True)
+        if self.duplicate_writer:
+            self.duplicate_writer.close()
+        if self.failed_writer:
+            self.failed_writer.close()
+        if self.counts['duplicate'] == 0 and self.duplicate_path.exists():
+            self.duplicate_path.unlink(missing_ok=True)
+        if self.counts['failed'] == 0 and self.failed_path.exists():
+            self.failed_path.unlink(missing_ok=True)
 
-    def write_bytes(self, rel_path: str, data: bytes) -> None:
-        if not self.writer:
-            raise RuntimeError('return bundle not opened')
-        self.writer.writestr(rel_path, data)
+    def write_duplicate(self, rel_path: str, data: bytes) -> None:
+        if not self.duplicate_writer:
+            raise RuntimeError('duplicate bundle not opened')
+        self.duplicate_writer.writestr(rel_path, data)
+
+    def write_failed(self, rel_path: str, data: bytes) -> None:
+        if not self.failed_writer:
+            raise RuntimeError('failed bundle not opened')
+        self.failed_writer.writestr(rel_path, data)
 
     def add_duplicate(self, reason: str, rel_path: str, data: bytes) -> None:
         self.counts['duplicate'] += 1
-        self.write_bytes(f'重复文件/{reason}/{rel_path}', data)
+        self.write_duplicate(f'duplicate/{reason}/{rel_path}', data)
 
     def add_failed(self, reason: str, rel_path: str, data: bytes) -> None:
         self.counts['failed'] += 1
-        self.write_bytes(f'失败文件/{reason}/{rel_path}', data)
+        self.write_failed(f'failed/{reason}/{rel_path}', data)
 
-    def add_text_report(self, rel_path: str, text: str) -> None:
-        self.write_bytes(rel_path, text.encode('utf-8'))
+    def add_duplicate_report(self, text: str) -> None:
+        self.write_duplicate('duplicate_report.txt', text.encode('utf-8'))
+
+    def add_failed_report(self, text: str) -> None:
+        self.write_failed('failed_report.txt', text.encode('utf-8'))
 
 
 def protocol_entries_from_zip(bundle: ReturnBundle, zip_file: zipfile.ZipFile) -> Dict[str, List[Tuple[str, bytes]]]:
@@ -563,18 +578,18 @@ def create_hb_record(product: Dict[str, str], project_name: str, entry_type: str
     return hbid
 
 
-def process_protocol_zip(upload_path: Path, product: Dict[str, str], return_zip_path: Path, task_id: str) -> Tuple[int, int, int, Optional[Path]]:
+def process_protocol_zip(upload_path: Path, product: Dict[str, str], duplicate_zip_path: Path, failed_zip_path: Path, task_id: str) -> Tuple[int, int, int, Optional[Path], Optional[Path]]:
     added = 0
     duplicated = 0
     failed = 0
     seen = set()
 
-    with ReturnBundle(return_zip_path) as bundle:
+    with ReturnBundle(duplicate_zip_path, failed_zip_path) as bundle:
         with zipfile.ZipFile(upload_path, 'r') as zip_file:
             entries = protocol_entries_from_zip(bundle, zip_file)
             log_task(task_id, f'识别到协议号候选 {len(entries)} 个')
             if not entries:
-                bundle.add_text_report('失败文件/处理报告.txt', '未找到可用的协议号文件（.session / .json）。')
+                bundle.add_failed_report('未找到可用的协议号文件（.session / .json）。')
                 failed += 1
             for project_name, files in entries.items():
                 if not files:
@@ -584,12 +599,12 @@ def process_protocol_zip(upload_path: Path, product: Dict[str, str], return_zip_
                 fingerprint = fingerprint_protocol_bundle(files)
                 if fingerprint in seen:
                     duplicated += 1
-                    add_duplicate_protocol(bundle, '当前批次重复', project_name, files)
+                    add_duplicate_protocol(bundle, 'batch_duplicate', project_name, files)
                     log_task(task_id, f'命中当前批次重复：{project_name}')
                     continue
                 if duplicate_exists('协议号', fingerprint):
                     duplicated += 1
-                    add_duplicate_protocol(bundle, '服务器库存重复', project_name, files)
+                    add_duplicate_protocol(bundle, 'server_duplicate', project_name, files)
                     log_task(task_id, f'命中服务器库存重复：{project_name}')
                     continue
                 try:
@@ -602,28 +617,32 @@ def process_protocol_zip(upload_path: Path, product: Dict[str, str], return_zip_
                 except Exception as exc:
                     logger.exception('save protocol failed: %s', project_name)
                     failed += 1
-                    add_failed_protocol(bundle, '保存失败', project_name, files)
+                    add_failed_protocol(bundle, 'save_failed', project_name, files)
                     log_task(task_id, f'协议号入库失败：{project_name} error={exc}', logging.WARNING)
-        bundle.add_text_report(
-            '处理报告.txt',
-            f'新增: {added}\n重复: {duplicated}\n失败: {failed}\n商品: {product["category_name"]}/{product["project_name"]}\n',
-        )
+        if duplicated > 0:
+            bundle.add_duplicate_report(
+                f'added={added}\nduplicated={duplicated}\nfailed={failed}\nproduct={product["category_name"]}/{product["project_name"]}\n'
+            )
+        if failed > 0:
+            bundle.add_failed_report(
+                f'added={added}\nduplicated={duplicated}\nfailed={failed}\nproduct={product["category_name"]}/{product["project_name"]}\n'
+            )
 
-    return added, duplicated, failed, return_zip_path if return_zip_path.exists() else None
+    return added, duplicated, failed, duplicate_zip_path if duplicate_zip_path.exists() else None, failed_zip_path if failed_zip_path.exists() else None
 
 
-def process_tdata_zip(upload_path: Path, product: Dict[str, str], return_zip_path: Path, task_id: str) -> Tuple[int, int, int, Optional[Path]]:
+def process_tdata_zip(upload_path: Path, product: Dict[str, str], duplicate_zip_path: Path, failed_zip_path: Path, task_id: str) -> Tuple[int, int, int, Optional[Path], Optional[Path]]:
     added = 0
     duplicated = 0
     failed = 0
     seen = set()
 
-    with ReturnBundle(return_zip_path) as bundle:
+    with ReturnBundle(duplicate_zip_path, failed_zip_path) as bundle:
         with zipfile.ZipFile(upload_path, 'r') as zip_file:
             entries = tdata_entries_from_zip(bundle, zip_file)
             log_task(task_id, f'识别到直登号候选 {len(entries)} 个')
             if not entries:
-                bundle.add_text_report('失败文件/处理报告.txt', '未找到可用的直登号目录结构。')
+                bundle.add_failed_report('未找到可用的直登号目录结构。')
                 failed += 1
             for project_name, files in entries.items():
                 if not files:
@@ -633,12 +652,12 @@ def process_tdata_zip(upload_path: Path, product: Dict[str, str], return_zip_pat
                 fingerprint = fingerprint_tdata_bundle(files)
                 if fingerprint in seen:
                     duplicated += 1
-                    add_duplicate_tdata(bundle, '当前批次重复', project_name, files)
+                    add_duplicate_tdata(bundle, 'batch_duplicate', project_name, files)
                     log_task(task_id, f'命中当前批次重复：{project_name}')
                     continue
                 if duplicate_exists('直登号', fingerprint):
                     duplicated += 1
-                    add_duplicate_tdata(bundle, '服务器库存重复', project_name, files)
+                    add_duplicate_tdata(bundle, 'server_duplicate', project_name, files)
                     log_task(task_id, f'命中服务器库存重复：{project_name}')
                     continue
                 try:
@@ -651,14 +670,18 @@ def process_tdata_zip(upload_path: Path, product: Dict[str, str], return_zip_pat
                 except Exception as exc:
                     logger.exception('save tdata failed: %s', project_name)
                     failed += 1
-                    add_failed_tdata(bundle, '保存失败', project_name, files)
+                    add_failed_tdata(bundle, 'save_failed', project_name, files)
                     log_task(task_id, f'直登号入库失败：{project_name} error={exc}', logging.WARNING)
-        bundle.add_text_report(
-            '处理报告.txt',
-            f'新增: {added}\n重复: {duplicated}\n失败: {failed}\n商品: {product["category_name"]}/{product["project_name"]}\n',
-        )
+        if duplicated > 0:
+            bundle.add_duplicate_report(
+                f'added={added}\nduplicated={duplicated}\nfailed={failed}\nproduct={product["category_name"]}/{product["project_name"]}\n'
+            )
+        if failed > 0:
+            bundle.add_failed_report(
+                f'added={added}\nduplicated={duplicated}\nfailed={failed}\nproduct={product["category_name"]}/{product["project_name"]}\n'
+            )
 
-    return added, duplicated, failed, return_zip_path if return_zip_path.exists() else None
+    return added, duplicated, failed, duplicate_zip_path if duplicate_zip_path.exists() else None, failed_zip_path if failed_zip_path.exists() else None
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -794,7 +817,8 @@ async def run_upload_task(update: Update, context: ContextTypes.DEFAULT_TYPE, pr
     task_id = gen_uid()
     log_task(task_id, f'开始处理上传：user_id={update.effective_user.id if update.effective_user else 0} file={file_name} 商品={product["category_name"]}/{product["project_name"]} 商品类型={entry_type}')
     upload_path = TEMP_DIR / f'{task_id}_{Path(file_name).name}'
-    return_zip_path = RETURN_DIR / f'处理回包_{Path(file_name).stem}_{task_id}.zip'
+    duplicate_zip_path = RETURN_DIR / f'duplicate_files_{task_id}.zip'
+    failed_zip_path = RETURN_DIR / f'failed_files_{task_id}.zip'
 
     UPLOAD_TASKS.insert_one({
         'task_id': task_id,
@@ -835,11 +859,11 @@ async def run_upload_task(update: Update, context: ContextTypes.DEFAULT_TYPE, pr
             return
 
         if actual_entry_type == '协议号':
-            added, duplicated, failed, return_file = process_protocol_zip(upload_path, product, return_zip_path, task_id)
+            added, duplicated, failed, duplicate_file, failed_file = process_protocol_zip(upload_path, product, duplicate_zip_path, failed_zip_path, task_id)
         else:
-            added, duplicated, failed, return_file = process_tdata_zip(upload_path, product, return_zip_path, task_id)
+            added, duplicated, failed, duplicate_file, failed_file = process_tdata_zip(upload_path, product, duplicate_zip_path, failed_zip_path, task_id)
 
-        log_task(task_id, f'处理完成统计：新增={added} 重复={duplicated} 失败={failed} 回包={return_file if return_file else "无"}')
+        log_task(task_id, f'处理完成统计：新增={added} 重复={duplicated} 失败={failed} 重复包={duplicate_file if duplicate_file else "无"} 失败包={failed_file if failed_file else "无"}')
 
         UPLOAD_TASKS.update_one(
             {'task_id': task_id},
@@ -852,18 +876,31 @@ async def run_upload_task(update: Update, context: ContextTypes.DEFAULT_TYPE, pr
             }},
         )
         await send_rendered(context.bot, chat_id, build_result_text(product, added, duplicated, failed))
-        if return_file and return_file.exists():
-            return_size = return_file.stat().st_size if return_file.exists() else 0
-            log_task(task_id, f'开始回传处理包：file={return_file.name} size={return_size}')
-            await context.bot.send_document(
-                chat_id=chat_id,
-                document=InputFile(str(return_file)),
-                filename=return_file.name,
-                caption='重复文件 / 失败文件 已按分类打包回传，请查收。',
-            )
-            log_task(task_id, '处理包回传完成')
+        if duplicate_file and duplicate_file.exists():
+            duplicate_size = duplicate_file.stat().st_size if duplicate_file.exists() else 0
+            log_task(task_id, f'开始回传重复文件包：file={duplicate_file.name} size={duplicate_size}')
+            with duplicate_file.open('rb') as fh:
+                await context.bot.send_document(
+                    chat_id=chat_id,
+                    document=InputFile(fh, filename='duplicate_files.zip'),
+                    caption='重复文件 zip 已回传，请查收。',
+                )
+            log_task(task_id, '重复文件包回传完成')
         else:
-            log_task(task_id, '无重复/失败文件需要回传')
+            log_task(task_id, '无重复文件需要回传')
+
+        if failed_file and failed_file.exists():
+            failed_size = failed_file.stat().st_size if failed_file.exists() else 0
+            log_task(task_id, f'开始回传失败文件包：file={failed_file.name} size={failed_size}')
+            with failed_file.open('rb') as fh:
+                await context.bot.send_document(
+                    chat_id=chat_id,
+                    document=InputFile(fh, filename='failed_files.zip'),
+                    caption='失败文件 zip 已回传，请查收。',
+                )
+            log_task(task_id, '失败文件包回传完成')
+        else:
+            log_task(task_id, '无失败文件需要回传')
         if added > 0:
             await send_store_restock_notice(product['nowuid'], added, task_id=task_id)
         else:
