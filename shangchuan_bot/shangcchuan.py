@@ -210,20 +210,13 @@ def match_products(file_name: str) -> List[Dict[str, str]]:
     return [item for item in list_products() if item['match_name'] == target]
 
 
-def build_confirm_text(file_name: str, product: Dict[str, str]) -> str:
+def build_auto_upload_text(file_name: str, product: Dict[str, str]) -> str:
     return (
         f'检测到文件名：{Path(file_name).stem}\n'
         f'匹配分类：{product["category_name"]}\n'
         f'匹配商品：{product["project_name"]}\n\n'
-        '是否确认上传？'
+        '已自动开始上传，请稍等…'
     )
-
-
-def build_confirm_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton('确认上传', callback_data='upload:confirm')],
-        [InlineKeyboardButton('取消', callback_data='upload:cancel')],
-    ])
 
 
 def get_candidate_page(products: List[Dict[str, str]], page: int) -> Tuple[List[Dict[str, str]], int]:
@@ -699,7 +692,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         '规则：\n'
         '1. 按文件名匹配商品名（忽略 emoji）\n'
         '2. 多个候选时可翻页选择\n'
-        '3. 确认后再正式上传\n'
+        '3. 唯一匹配时直接自动上传\n'
         '4. 只和当前商品库存比重；同商品重复的账号不会入库，会分类打包回传'
     )
 
@@ -742,8 +735,9 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     product = matched[0]
     logger.info('文件唯一匹配成功：file_name=%s category=%s project=%s entry_type=%s nowuid=%s', file_name, product['category_name'], product['project_name'], product['entry_type'], product['nowuid'])
-    context.user_data['pending_upload']['selected_nowuid'] = product['nowuid']
-    await reply_rendered(message, build_confirm_text(file_name, product), reply_markup=build_confirm_keyboard())
+    await reply_rendered(message, build_auto_upload_text(file_name, product))
+    await run_upload_task(update, context, product, context.user_data['pending_upload'])
+    context.user_data.pop('pending_upload', None)
 
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -782,24 +776,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if not product:
             await edit_rendered(query, '候选商品已失效，请重新发送文件。')
             return
-        pending['selected_nowuid'] = nowuid
-        context.user_data['pending_upload'] = pending
-        await edit_rendered(
-            query,
-            build_confirm_text(str(pending.get('file_name') or ''), product),
-            reply_markup=build_confirm_keyboard(),
-        )
+        await edit_rendered(query, build_auto_upload_text(str(pending.get('file_name') or ''), product))
+        await run_upload_task(update, context, product, pending)
+        context.user_data.pop('pending_upload', None)
         return
 
     if query.data == 'upload:confirm':
-        selected_nowuid = pending.get('selected_nowuid')
-        product = product_map.get(selected_nowuid)
-        if not product:
-            await edit_rendered(query, '没有找到待确认的商品，请重新发送文件。')
-            return
-        await edit_rendered(query, '开始处理文件，请稍等…')
-        await run_upload_task(update, context, product, pending)
-        context.user_data.pop('pending_upload', None)
+        await edit_rendered(query, '这个确认入口已经取消了，请重新发送文件，或在候选列表里直接点商品。')
 
 
 async def run_upload_task(update: Update, context: ContextTypes.DEFAULT_TYPE, product: Dict[str, str], pending: Dict[str, object]) -> None:
