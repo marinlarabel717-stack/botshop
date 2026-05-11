@@ -795,7 +795,7 @@ def build_agent_account_check_progress_text(config: AgentRuntimeConfig, total_co
             f'Checked: {checked_count} / {total_count}'
         )
     return (
-        '[emoji:6237934454019461140:🧠]正在登录账号并校验 24 个月未登录自动删除设置，请稍候...\n\n'
+        '[emoji:6237934454019461140:🧠]正在检测账号状态 请稍等\n\n'
         f'已检测：{checked_count} / {total_count}'
     )
 
