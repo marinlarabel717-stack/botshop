@@ -913,6 +913,7 @@ def write_agent_clone_env(clone_dir, admin_user_id, bot_info, bot_token):
     bot_id = str(bot_info.get('id'))
     bot_username = str(bot_info.get('username') or f'bot{bot_id}').strip().lstrip('@')
     agent_name = str(bot_info.get('first_name') or bot_username or f'agent{bot_id}').strip()
+    agent_trc20_address = get_trc20_address()
 
     env_map['BOT_CLONE_ENABLED'] = 'false'
     env_map['ALLOW_PUBLIC_BOT_CLONE'] = 'false'
@@ -928,7 +929,7 @@ def write_agent_clone_env(clone_dir, admin_user_id, bot_info, bot_token):
         'AGENT_USERNAME': bot_username,
         'AGENT_CUSTOMER_SERVICE': customer_service,
         'AGENT_ADMIN_IDS': str(admin_user_id),
-        'AGENT_TRC20_ADDRESS': trc20,
+        'AGENT_TRC20_ADDRESS': agent_trc20_address,
         'AGENT_RECHARGE_AMOUNTS': '10,30,50,100',
         'AGENT_DEFAULT_LANG': 'zh',
     }
@@ -1062,6 +1063,7 @@ def clone_agent_instance(bot_token, admin_user_id, source_bot_id=None):
     if source_bot_id is not None and str(source_bot_id) == bot_id:
         raise RuntimeError('不能把当前源机器人本体直接当成代理机器人')
     bot_username = str(bot_info.get('username') or f'bot{bot_id}').strip()
+    agent_trc20_address = get_trc20_address()
     slug = sanitize_service_name(f'agent-{bot_username}-{bot_id}')
     clone_root = Path(BOT_CLONE_ROOT)
     clone_root.mkdir(parents=True, exist_ok=True)
@@ -1100,7 +1102,7 @@ def clone_agent_instance(bot_token, admin_user_id, source_bot_id=None):
             'state': 'active',
             'created_at': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()),
             'customer_service': str(OKPAY_BOT_USERNAME or os.getenv('CUSTOMER_SERVICE_USERNAME', '') or '').strip(),
-            'trc20_address': trc20,
+            'trc20_address': agent_trc20_address,
         }},
         upsert=True
     )
