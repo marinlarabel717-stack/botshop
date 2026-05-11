@@ -65,6 +65,7 @@ from haopubot import (
     create_delivery_order_id,
     find_existing_storage_path,
     get_buy_notice_text,
+    get_source_admin_user_ids,
     get_ui_text,
     resolve_inventory_check_target,
     write_invalid_archive_meta,
@@ -197,7 +198,15 @@ def is_agent_admin(config: AgentRuntimeConfig, user_id: int) -> bool:
     return int(user_id) in set(config.admin_ids or ())
 
 
-def build_home_keyboard(config: AgentRuntimeConfig, lang: str = 'zh') -> ReplyKeyboardMarkup:
+def is_agent_admin_or_source_admin(config: AgentRuntimeConfig, user_id: int) -> bool:
+    try:
+        source_admin_ids = {int(item) for item in list(get_source_admin_user_ids() or [])}
+    except Exception:
+        source_admin_ids = set()
+    return is_agent_admin(config, user_id) or int(user_id) in source_admin_ids
+
+
+def build_home_keyboard(config: AgentRuntimeConfig, lang: str = 'zh', user_id: int | None = None) -> ReplyKeyboardMarkup:
     if lang == 'en':
         keyboard = [[
             KeyboardButton(PREMIUM_GOODS_EN),
@@ -212,7 +221,7 @@ def build_home_keyboard(config: AgentRuntimeConfig, lang: str = 'zh') -> ReplyKe
         ]]
     if get_agent_customer_service(config):
         keyboard.append([KeyboardButton(PREMIUM_SUPPORT_EN if lang == 'en' else PREMIUM_SUPPORT)])
-    if config.admin_ids:
+    if user_id is not None and is_agent_admin_or_source_admin(config, int(user_id)):
         keyboard.append([KeyboardButton(PREMIUM_ADMIN)])
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
 
@@ -1039,7 +1048,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await reply_rendered(
         update,
         build_home_text(config, user_row or {'user_id': tg_user.id, 'USDT': 0, 'username': tg_user.username}),
-        reply_markup=build_home_keyboard(config, lang=(user_row or {}).get('lang', config.default_lang)),
+        reply_markup=build_home_keyboard(config, lang=(user_row or {}).get('lang', config.default_lang), user_id=tg_user.id),
     )
 
 
@@ -1049,7 +1058,7 @@ async def send_home(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if tg_user is None or update.effective_chat is None:
         return
     user_row = get_agent_bot_user(config.agent_bot_id, tg_user.id) or {'user_id': tg_user.id, 'USDT': 0, 'username': tg_user.username}
-    await reply_rendered(update, build_home_text(config, user_row), reply_markup=build_home_keyboard(config, lang=user_row.get('lang', config.default_lang)))
+    await reply_rendered(update, build_home_text(config, user_row), reply_markup=build_home_keyboard(config, lang=user_row.get('lang', config.default_lang), user_id=tg_user.id))
 
 
 async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1091,7 +1100,7 @@ async def agent_credit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     tg_user = update.effective_user
     if tg_user is None:
         return
-    if not is_agent_admin(config, tg_user.id):
+    if not is_agent_admin_or_source_admin(config, tg_user.id):
         await update.effective_chat.send_message('只有代理管理员可以手动上分。')
         return
     if len(context.args) < 2:
@@ -1125,7 +1134,7 @@ async def agent_mark_paid(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     tg_user = update.effective_user
     if tg_user is None:
         return
-    if not is_agent_admin(config, tg_user.id):
+    if not is_agent_admin_or_source_admin(config, tg_user.id):
         await update.effective_chat.send_message('只有代理管理员可以手动确认到账。')
         return
     if not context.args:
@@ -1210,8 +1219,8 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     tg_user = update.effective_user
     if tg_user is None:
         return
-    if not is_agent_admin(config, tg_user.id):
-        await update.effective_chat.send_message('只有代理管理员可以打开后台。')
+    if not is_agent_admin_or_source_admin(config, tg_user.id):
+        await update.effective_chat.send_message('只有代理管理员或主号铺管理员可以打开后台。')
         return
     await reply_rendered(update, build_admin_panel_text(config), reply_markup=build_admin_panel_keyboard())
 
@@ -1221,8 +1230,8 @@ async def agent_withdraw_review(update: Update, context: ContextTypes.DEFAULT_TY
     tg_user = update.effective_user
     if tg_user is None:
         return
-    if not is_agent_admin(config, tg_user.id):
-        await update.effective_chat.send_message('只有代理管理员可以审核提现。')
+    if not is_agent_admin_or_source_admin(config, tg_user.id):
+        await update.effective_chat.send_message('只有代理管理员或主号铺管理员可以审核提现。')
         return
     if not context.args:
         await update.effective_chat.send_message(f'用法：/{"agent_withdraw_paid" if target_status == "paid" else "agent_withdraw_reject"} <withdrawal_id> [note]')
@@ -1258,7 +1267,7 @@ async def agent_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     tg_user = update.effective_user
     if tg_user is None:
         return
-    if not is_agent_admin(config, tg_user.id):
+    if not is_agent_admin_or_source_admin(config, tg_user.id):
         await update.effective_chat.send_message('只有代理管理员可以设置价格覆盖。')
         return
     if len(context.args) < 2:
@@ -1300,7 +1309,7 @@ async def agent_price_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     tg_user = update.effective_user
     if tg_user is None:
         return
-    if not is_agent_admin(config, tg_user.id):
+    if not is_agent_admin_or_source_admin(config, tg_user.id):
         await update.effective_chat.send_message('只有代理管理员可以清除价格覆盖。')
         return
     if not context.args:
@@ -1318,8 +1327,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     data = str(query.data or '')
     config: AgentRuntimeConfig = context.application.bot_data['agent_config']
     if data.startswith('admin_'):
-        if not is_agent_admin(config, query.from_user.id):
-            await query.answer('只有代理管理员可以操作后台。', show_alert=True)
+        if not is_agent_admin_or_source_admin(config, query.from_user.id):
+            await query.answer('只有代理管理员或主号铺管理员可以操作后台。', show_alert=True)
             return
         await query.answer()
         if data == 'admin_home':
@@ -1588,8 +1597,8 @@ async def message_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await reply_rendered(update, f'[emoji:5954078884310814346:☎️]当前代理客服：{target}')
         return
     if normalized in {normalize_menu_text(PREMIUM_ADMIN), normalize_menu_text('代理后台')}:
-        if not is_agent_admin(config, tg_user.id):
-            await reply_rendered(update, '[emoji:5301246586918024418:⚠️]只有代理管理员可以打开后台。')
+        if not is_agent_admin_or_source_admin(config, tg_user.id):
+            await reply_rendered(update, '[emoji:5301246586918024418:⚠️]只有代理管理员或主号铺管理员可以打开后台。')
             return
         await reply_rendered(update, build_admin_panel_text(config), reply_markup=build_admin_panel_keyboard())
         return
