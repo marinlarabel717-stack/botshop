@@ -15,8 +15,7 @@ PARENT_DIR = CURRENT_DIR.parent
 if str(PARENT_DIR) not in sys.path:
     sys.path.insert(0, str(PARENT_DIR))
 
-from telegram import InlineKeyboardMarkup, ReplyKeyboardMarkup, Update
-from telegram.constants import ParseMode
+from telegram import InlineKeyboardMarkup, MessageEntity, ReplyKeyboardMarkup, Update
 from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from config import AgentRuntimeConfig, load_agent_env
@@ -110,8 +109,48 @@ USER_SIGN_APPLY_WITHDRAW = 'user_apply_withdraw'
 AGENT_WITHDRAW_MIN_AMOUNT = 10.0
 
 
+RICH_TEXT_TOKEN_RE = re.compile(r'\[emoji:(\d+):(.*?)\]|<code>(.*?)</code>', re.S)
+
+
+def utf16_len(text) -> int:
+    if not isinstance(text, str):
+        text = str(text or '')
+    return len(text.encode('utf-16-le')) // 2
+
+
 def render_text(text: str):
     return build_custom_emoji_text_entities(str(text or ''))
+
+
+def render_rich_text(text: str):
+    text = str(text or '')
+    if not text:
+        return '', []
+    plain_parts = []
+    entities = []
+    last = 0
+    utf16_offset = 0
+    for m in RICH_TEXT_TOKEN_RE.finditer(text):
+        prefix = text[last:m.start()]
+        if prefix:
+            plain_parts.append(prefix)
+            utf16_offset += utf16_len(prefix)
+        custom_emoji_id = m.group(1)
+        if custom_emoji_id is not None:
+            alt = m.group(2) or '?'
+            plain_parts.append(alt)
+            entities.append(MessageEntity(type='custom_emoji', offset=utf16_offset, length=utf16_len(alt), custom_emoji_id=str(custom_emoji_id)))
+            utf16_offset += utf16_len(alt)
+        else:
+            code_text = m.group(3) or ''
+            plain_parts.append(code_text)
+            entities.append(MessageEntity(type='code', offset=utf16_offset, length=utf16_len(code_text)))
+            utf16_offset += utf16_len(code_text)
+        last = m.end()
+    tail = text[last:]
+    if tail:
+        plain_parts.append(tail)
+    return ''.join(plain_parts), entities
 
 
 def format_usdt_2(value) -> str:
@@ -274,11 +313,13 @@ async def reply_html(update: Update, html_text: str, reply_markup=None):
     message = update.effective_message
     if message is None:
         return None
-    return await message.reply_text(text=html_text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+    rendered_text, entities = render_rich_text(html_text)
+    return await message.reply_text(text=rendered_text, entities=entities, reply_markup=reply_markup)
 
 
 async def edit_html(query, html_text: str, reply_markup=None):
-    return await query.edit_message_text(text=html_text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+    rendered_text, entities = render_rich_text(html_text)
+    return await query.edit_message_text(text=rendered_text, entities=entities, reply_markup=reply_markup)
 
 
 def is_agent_admin(config: AgentRuntimeConfig, user_id: int) -> bool:
@@ -356,7 +397,7 @@ def build_admin_panel_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton('[emoji:5397916757333654639:➕]配置差价', callback_data='admin_price_delta'),
         ],
         [
-            InlineKeyboardButton('[emoji:5445353829304387411:💳]利润提款', callback_data='admin_withdraws:0'),
+            InlineKeyboardButton('[emoji:5445353829304387411:💳]利润提款', callback_data='admin_profit_withdraw'),
             InlineKeyboardButton('[emoji:5954078884310814346:☎️]客服配置', callback_data='admin_customer_service'),
         ],
         [
@@ -441,13 +482,13 @@ def build_withdraw_bind_text(config: AgentRuntimeConfig, user_id: int) -> str:
     )
 
 
-def build_withdraw_bind_keyboard(config: AgentRuntimeConfig, user_id: int) -> InlineKeyboardMarkup:
+def build_withdraw_bind_keyboard(config: AgentRuntimeConfig, user_id: int, back_callback: str = 'agent_home') -> InlineKeyboardMarkup:
     keyboard = [
         [InlineKeyboardButton('[emoji:5443127283898405358:📥]绑定利润地址', callback_data='user_withdraw_bind')],
     ]
     if get_user_withdraw_address(config, user_id):
         keyboard.append([InlineKeyboardButton('[emoji:5445353829304387411:💳]申请利润提款', callback_data='user_withdraw_apply')])
-    keyboard.append([InlineKeyboardButton('[emoji:5954227490179255253:🔵]返回首页', callback_data='agent_home')])
+    keyboard.append([InlineKeyboardButton('[emoji:5954227490179255253:🔵]返回首页', callback_data=back_callback)])
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -617,13 +658,13 @@ def upsert_agent_bot_runtime(config: AgentRuntimeConfig) -> None:
 
 def build_welcome_text(config: AgentRuntimeConfig, user_row: dict) -> str:
     username = str(user_row.get('username') or '').strip().lstrip('@')
-    username_text = f'@{html.escape(username, quote=False)}' if username else '未设置'
+    username_text = f'@{username}' if username else '未设置'
     return (
-        f'🌸欢迎来到 {html.escape(str(config.agent_name or ""), quote=False)}\n\n'
-        f'🏞你的ID：<code>{user_row.get("user_id")}</code>\n'
-        f'⭐️您的用户名：{username_text}\n'
-        f'👛当前余额：{format_usdt_2(user_row.get("USDT", 0))} USDT\n\n'
-        f'🔵/start 启动主菜单'
+        f'[emoji:5222044641200720562:🌸]欢迎来到 {str(config.agent_name or "")}\n\n'
+        f'[emoji:5929391996408959380:🏞]你的ID：<code>{user_row.get("user_id")}</code>\n'
+        f'[emoji:5220064167356025824:⭐️]您的用户名：{username_text}\n'
+        f'[emoji:4972482444025398275:👛]当前余额：{format_usdt_2(user_row.get("USDT", 0))} USDT\n\n'
+        f'[emoji:5954227490179255253:🔵]/start 启动主菜单'
     )
 
 
@@ -1665,6 +1706,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             set_agent_sign(config.agent_bot_id, query.from_user.id, ADMIN_SIGN_PURCHASE_NOTICE)
             await edit_rendered(query, build_admin_purchase_notice_text(config), reply_markup=build_admin_config_keyboard('admin_home'))
             return
+        if data == 'admin_profit_withdraw':
+            await edit_rendered(query, build_withdraw_bind_text(config, query.from_user.id), reply_markup=build_withdraw_bind_keyboard(config, query.from_user.id, back_callback='admin_home'))
+            return
         if data.startswith('admin_withdraws:'):
             page = int(data.split(':', 1)[1]) if data.split(':', 1)[1].isdigit() else 0
             text, rows, total = build_admin_withdraw_list_text(config, page)
@@ -1697,7 +1741,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 await query.answer('只有代理管理员或主号铺管理员可以设置利润提款地址。', show_alert=True)
                 return
             set_agent_sign(config.agent_bot_id, query.from_user.id, USER_SIGN_BIND_WITHDRAW)
-            await edit_rendered(query, '[emoji:5443127283898405358:📥]请发送你的利润提款 TRC20 地址', reply_markup=build_admin_config_keyboard('agent_home'))
+            await edit_rendered(query, '[emoji:5443127283898405358:📥]请发送你的利润提款 TRC20 地址', reply_markup=build_admin_config_keyboard('admin_home'))
             return
         if data == 'user_withdraw_apply':
             if not is_agent_admin_or_source_admin(config, query.from_user.id):
@@ -1707,7 +1751,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 await query.answer('请先绑定利润提款 TRC20 地址。', show_alert=True)
                 return
             set_agent_sign(config.agent_bot_id, query.from_user.id, USER_SIGN_APPLY_WITHDRAW)
-            await edit_rendered(query, f'[emoji:5445353829304387411:💳]请输入利润提款金额\n\n最低提款：{standard_num(AGENT_WITHDRAW_MIN_AMOUNT)} USDT\n可提利润：{standard_num(get_agent_profit_stats(config).get("available_profit", 0))} USDT\n当前地址：{get_user_withdraw_address(config, query.from_user.id)}', reply_markup=build_admin_config_keyboard('agent_home'))
+            await edit_rendered(query, f'[emoji:5445353829304387411:💳]请输入利润提款金额\n\n最低提款：{standard_num(AGENT_WITHDRAW_MIN_AMOUNT)} USDT\n可提利润：{standard_num(get_agent_profit_stats(config).get("available_profit", 0))} USDT\n当前地址：{get_user_withdraw_address(config, query.from_user.id)}', reply_markup=build_admin_config_keyboard('admin_home'))
             return
     if data == 'agent_noop':
         await query.answer('这部分下一步继续接', show_alert=False)
@@ -1886,7 +1930,7 @@ async def message_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             return
         set_agent_sign(config.agent_bot_id, tg_user.id, 0)
         get_agent_bot_user_collection(config.agent_bot_id).update_one({'user_id': tg_user.id}, {'$set': {'withdraw_address': address, 'last_contact_time': beijing_now_str()}})
-        await reply_rendered(update, f'[emoji:5312028599803460968:🆗]已绑定利润提款地址\n\n{address}', reply_markup=build_withdraw_bind_keyboard(config, tg_user.id))
+        await reply_rendered(update, f'[emoji:5312028599803460968:🆗]已绑定利润提款地址\n\n{address}', reply_markup=build_withdraw_bind_keyboard(config, tg_user.id, back_callback='admin_home' if is_agent_admin_or_source_admin(config, tg_user.id) else 'agent_home'))
         return
     if sign == USER_SIGN_APPLY_WITHDRAW:
         try:
@@ -1908,7 +1952,7 @@ async def message_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await update.effective_chat.send_message('利润提款申请失败，请稍后重试。')
             return
         set_agent_sign(config.agent_bot_id, tg_user.id, 0)
-        await reply_rendered(update, f'[emoji:5312028599803460968:🆗]利润提款申请已提交\n\n单号：{withdrawal.get("withdrawal_id") or ""}\n金额：{standard_num(withdrawal.get("amount", 0))} USDT\n地址：{get_user_withdraw_address(config, tg_user.id)}', reply_markup=build_withdraw_bind_keyboard(config, tg_user.id))
+        await reply_rendered(update, f'[emoji:5312028599803460968:🆗]利润提款申请已提交\n\n单号：{withdrawal.get("withdrawal_id") or ""}\n金额：{standard_num(withdrawal.get("amount", 0))} USDT\n地址：{get_user_withdraw_address(config, tg_user.id)}', reply_markup=build_withdraw_bind_keyboard(config, tg_user.id, back_callback='admin_home' if is_agent_admin_or_source_admin(config, tg_user.id) else 'agent_home'))
         return
     if sign.startswith('gmqq '):
         nowuid = sign.replace('gmqq ', '', 1).strip()
