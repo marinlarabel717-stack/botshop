@@ -98,6 +98,7 @@ PREMIUM_ADMIN = '[emoji:5341715473882955310:⚙️]代理后台'
 ADMIN_SIGN_PRICE_DELTA = 'admin_set_price_delta'
 ADMIN_SIGN_CUSTOMER_SERVICE = 'admin_set_customer_service'
 ADMIN_SIGN_RESTOCK_TARGET = 'admin_set_restock_target'
+ADMIN_SIGN_PURCHASE_NOTICE = 'admin_set_purchase_notice'
 USER_SIGN_BIND_WITHDRAW = 'user_bind_withdraw_address'
 USER_SIGN_APPLY_WITHDRAW = 'user_apply_withdraw'
 AGENT_WITHDRAW_MIN_AMOUNT = 10.0
@@ -155,6 +156,19 @@ def get_agent_price_delta(config: AgentRuntimeConfig) -> float:
         return float(row.get('price_delta', 0) or 0)
     except Exception:
         return 0.0
+
+
+def get_agent_purchase_notice(config: AgentRuntimeConfig) -> str:
+    row = get_agent_runtime_doc(config)
+    return str(row.get('purchase_notice') or '').strip()
+
+
+def build_agent_notice_preview(notice_text: str, empty_text: str = '未配置') -> str:
+    notice_text = str(notice_text or '').strip()
+    if not notice_text:
+        return empty_text
+    preview = notice_text.replace('\r', '\n').replace('\n', ' / ')
+    return preview[:48] + ('...' if len(preview) > 48 else '')
 
 
 def update_agent_runtime_settings(config: AgentRuntimeConfig, **fields) -> dict:
@@ -244,6 +258,7 @@ def build_admin_panel_text(config: AgentRuntimeConfig) -> str:
     stats = get_agent_stats(config.agent_bot_id)
     customer_service = get_agent_customer_service(config) or '未配置'
     restock_target = get_agent_restock_target(config) or '未配置'
+    purchase_notice = build_agent_notice_preview(get_agent_purchase_notice(config))
     price_delta = get_agent_price_delta(config)
     pending_withdraws = int(agent_bots.database['agent_withdrawals'].count_documents({'agent_bot_id': config.agent_bot_id, 'state': 'pending'}))
     return (
@@ -254,6 +269,7 @@ def build_admin_panel_text(config: AgentRuntimeConfig) -> str:
         f'[emoji:5397916757333654639:➕]全局差价：{standard_num(price_delta)} USDT\n'
         f'[emoji:5954078884310814346:☎️]客服：{customer_service}\n'
         f'[emoji:5220214598585568818:🚨]补货通知：{restock_target}\n'
+        f'[emoji:5235511932064129087:🎁]购买后通知：{purchase_notice}\n'
         f'[emoji:5445353829304387411:💳]待审提款：{pending_withdraws}\n\n'
         '点下面按钮进入对应管理。'
     )
@@ -271,6 +287,9 @@ def build_admin_panel_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton('[emoji:5220214598585568818:🚨]补货通知配置', callback_data='admin_restock_target'),
+            InlineKeyboardButton('[emoji:5235511932064129087:🎁]购买后通知', callback_data='admin_purchase_notice'),
+        ],
+        [
             InlineKeyboardButton('[emoji:5954227490179255253:🔵]返回首页', callback_data='agent_home'),
         ],
     ])
@@ -319,6 +338,20 @@ def build_admin_price_delta_text(config: AgentRuntimeConfig) -> str:
 
 def build_admin_config_keyboard(back='admin_home') -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[InlineKeyboardButton('[emoji:5954227490179255253:🔵]返回代理后台', callback_data=back)]])
+
+
+def build_admin_purchase_notice_text(config: AgentRuntimeConfig) -> str:
+    current = get_agent_purchase_notice(config)
+    current_text = current or '未配置'
+    return (
+        '[emoji:5235511932064129087:🎁]购买后通知配置\n\n'
+        f'当前内容：\n{current_text}\n\n'
+        '请直接发送新的购买后通知内容。\n'
+        '支持会员表情格式，例如：\n'
+        '[emoji:5193209274452425995:🎉]购买成功后请先查看文件\n'
+        '[emoji:5954078884310814346:☎️]有问题联系客服 @support\n\n'
+        '如果要清空，直接发送：关闭'
+    )
 
 
 def build_withdraw_bind_text(config: AgentRuntimeConfig, user_id: int) -> str:
@@ -488,6 +521,7 @@ def upsert_agent_bot_runtime(config: AgentRuntimeConfig) -> None:
             'agent_username': config.agent_username,
             'customer_service': str(current.get('customer_service') or config.customer_service or '').strip(),
             'restock_target': str(current.get('restock_target') or '').strip(),
+            'purchase_notice': str(current.get('purchase_notice') or '').strip(),
             'price_delta': float(current.get('price_delta', 0) or 0),
             'default_lang': config.default_lang,
             'admin_ids': list(config.admin_ids or ()),
@@ -726,13 +760,13 @@ def build_purchase_result_text(config: AgentRuntimeConfig, order: dict, user_id:
     if lang == 'en':
         return (
             '[emoji:5193209274452425995:🎉]Purchase Successful\n\n'
-            f'Deducted from Balance: {deducted_text} USDT\n'
-            f'Remaining Balance: {remaining_text} USDT'
+            f'[emoji:4965219701572503640:💰]Deducted from Balance: {deducted_text} USDT\n'
+            f'[emoji:5954227490179255253:🔵]Remaining Balance: {remaining_text} USDT'
         )
     return (
         '[emoji:5193209274452425995:🎉]购买成功\n\n'
-        f'已从余额中扣除：{deducted_text} USDT\n'
-        f'当前余额：{remaining_text} USDT'
+        f'[emoji:4965219701572503640:💰]已从余额中扣除：{deducted_text} USDT\n'
+        f'[emoji:5954227490179255253:🔵]当前余额：{remaining_text} USDT'
     )
 
 
@@ -773,24 +807,24 @@ def build_agent_delivery_result_text(config: AgentRuntimeConfig, order: dict, to
     lines.append('')
     if lang == 'en':
         lines.extend([
-            f'Total Accounts: {total_count}',
-            f'Valid Accounts: {alive_count}',
-            f'Invalid Accounts: {invalid_count}',
-            f'Frozen Accounts: {frozen_count}',
+            f'[emoji:5352625743081775722:🎚️]Total Accounts: {total_count}',
+            f'[emoji:5260463209562776385:✅]Valid Accounts: {alive_count}',
+            f'[emoji:5273914604752216432:❌]Invalid Accounts: {invalid_count}',
+            f'[emoji:5449449325434266744:❄️]Frozen Accounts: {frozen_count}',
         ])
     else:
         lines.extend([
-            f'总账号数：{total_count}',
-            f'有效账号：{alive_count}',
-            f'无效账号：{invalid_count}',
-            f'冻结账号：{frozen_count}',
+            f'[emoji:5352625743081775722:🎚️]总账号数：{total_count}',
+            f'[emoji:5260463209562776385:✅]有效账号：{alive_count}',
+            f'[emoji:5273914604752216432:❌]无效账号：{invalid_count}',
+            f'[emoji:5449449325434266744:❄️]冻结账号：{frozen_count}',
         ])
     if timeout_count:
-        lines.append(f'Timed-out Accounts: {timeout_count}' if lang == 'en' else f'超时账号：{timeout_count}')
-    lines.append(f'Deducted from Balance: {charged_amount} USDT' if lang == 'en' else f'已从余额中扣除：{charged_amount} USDT')
+        lines.append(f'[emoji:5382194935057372936:⏱️]Timed-out Accounts: {timeout_count}' if lang == 'en' else f'[emoji:5382194935057372936:⏱️]超时账号：{timeout_count}')
+    lines.append(f'[emoji:4965219701572503640:💰]Deducted from Balance: {charged_amount} USDT' if lang == 'en' else f'[emoji:4965219701572503640:💰]已从余额中扣除：{charged_amount} USDT')
     if refund_amount:
-        lines.append(f'Refunded to Balance: {refund_text} USDT' if lang == 'en' else f'已退款回余额：{refund_text} USDT')
-    lines.append(f'Remaining Balance: {remaining_text} USDT' if lang == 'en' else f'当前余额：{remaining_text} USDT')
+        lines.append(f'[emoji:5235511932064129087:🎁]Refunded to Balance: {refund_text} USDT' if lang == 'en' else f'[emoji:5235511932064129087:🎁]已退款回余额：{refund_text} USDT')
+    lines.append(f'[emoji:5954227490179255253:🔵]Remaining Balance: {remaining_text} USDT' if lang == 'en' else f'[emoji:5954227490179255253:🔵]当前余额：{remaining_text} USDT')
     if timeout_count:
         lines.extend([
             '',
@@ -869,7 +903,8 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
         return
     leixing = str((selected_docs[0] or {}).get('leixing') or '')
     product = ejfl.find_one({'nowuid': nowuid}) or {}
-    notice_text = str(get_buy_notice_text(product.get('text', '')) or '').strip()
+    agent_notice_text = get_agent_purchase_notice(config)
+    notice_text = agent_notice_text or str(get_buy_notice_text(product.get('text', '')) or '').strip()
     total_count = len(selected_docs)
     update_tenant_order(config.agent_bot_id, order_id, {'state': 'delivering', 'delivery_started_at': beijing_now_str(), 'delivery_type': leixing})
 
@@ -941,7 +976,10 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
         with open(delivery_file, 'rb') as fp:
             await context.bot.send_document(chat_id=user_id, document=fp)
     if notice_text:
-        await context.bot.send_message(chat_id=user_id, text=notice_text, parse_mode='HTML', disable_web_page_preview=True)
+        if agent_notice_text:
+            await send_rendered(context.bot, user_id, notice_text)
+        else:
+            await context.bot.send_message(chat_id=user_id, text=notice_text, parse_mode='HTML', disable_web_page_preview=True)
 
     final_state = 'delivered'
     if refund_amount > 0 and len(alive_items) + len(timeout_items) == 0:
@@ -1372,6 +1410,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             set_agent_sign(config.agent_bot_id, query.from_user.id, ADMIN_SIGN_RESTOCK_TARGET)
             await edit_rendered(query, f'[emoji:5220214598585568818:🚨]当前补货通知：{get_agent_restock_target(config) or "未配置"}\n\n请发送新的补货通知目标，例如：@channel 或 -100xxxx', reply_markup=build_admin_config_keyboard('admin_home'))
             return
+        if data == 'admin_purchase_notice':
+            set_agent_sign(config.agent_bot_id, query.from_user.id, ADMIN_SIGN_PURCHASE_NOTICE)
+            await edit_rendered(query, build_admin_purchase_notice_text(config), reply_markup=build_admin_config_keyboard('admin_home'))
+            return
         if data.startswith('admin_withdraws:'):
             page = int(data.split(':', 1)[1]) if data.split(':', 1)[1].isdigit() else 0
             text, rows, total = build_admin_withdraw_list_text(config, page)
@@ -1553,6 +1595,15 @@ async def message_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         set_agent_sign(config.agent_bot_id, tg_user.id, 0)
         update_agent_runtime_settings(config, restock_target=target)
         await reply_rendered(update, f'[emoji:5312028599803460968:🆗]已更新补货通知目标：{target}', reply_markup=build_admin_panel_keyboard())
+        return
+    if sign == ADMIN_SIGN_PURCHASE_NOTICE:
+        notice_text = text.strip()
+        if notice_text in {'关闭', '清空', 'none', 'NONE'}:
+            notice_text = ''
+        set_agent_sign(config.agent_bot_id, tg_user.id, 0)
+        update_agent_runtime_settings(config, purchase_notice=notice_text)
+        preview = build_agent_notice_preview(notice_text)
+        await reply_rendered(update, f'[emoji:5312028599803460968:🆗]已更新购买后通知：{preview}', reply_markup=build_admin_panel_keyboard())
         return
     if sign == USER_SIGN_BIND_WITHDRAW:
         address = text.strip()
