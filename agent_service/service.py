@@ -1255,16 +1255,11 @@ async def process_agent_topups(context: ContextTypes.DEFAULT_TYPE) -> None:
             logger.warning('send agent topup success failed: tenant=%s user=%s order=%s', config.agent_bot_id, user_id, order.get('order_id'), exc_info=True)
 
 
-async def agent_orders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    config: AgentRuntimeConfig = context.application.bot_data['agent_config']
-    tg_user = update.effective_user
-    if tg_user is None or update.effective_chat is None:
-        return
-    rows = list(tenant_orders.find({'tenant_id': config.agent_bot_id, 'user_id': tg_user.id}, sort=[('created_ts_ms', -1)], limit=10))
+def build_agent_orders_text(config: AgentRuntimeConfig, user_id: int) -> str:
+    rows = list(tenant_orders.find({'tenant_id': config.agent_bot_id, 'user_id': user_id}, sort=[('created_ts_ms', -1)], limit=10))
     if not rows:
-        await reply_rendered(update, '[emoji:5312361253610475399:🛒]当前还没有代理订单记录。')
-        return
-    lines = ['[emoji:5312361253610475399:🛒]最近代理订单']
+        return '[emoji:5312361253610475399:🛒]当前还没有购买记录。'
+    lines = ['[emoji:5312361253610475399:🛒]购买记录']
     for row in rows:
         lines.extend([
             '',
@@ -1273,7 +1268,23 @@ async def agent_orders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             f'金额：{standard_num(row.get("total_amount", 0))} USDT',
             f'状态：{row.get("state") or ""}',
         ])
-    await reply_rendered(update, '\n'.join(lines))
+    return '\n'.join(lines)
+
+
+def build_profile_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[InlineKeyboardButton('[emoji:5312361253610475399:🛒]购买记录', callback_data='agent_profile_orders')]])
+
+
+def build_agent_orders_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[InlineKeyboardButton('[emoji:5954227490179255253:🔵]返回个人中心', callback_data='agent_profile')]])
+
+
+async def agent_orders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    config: AgentRuntimeConfig = context.application.bot_data['agent_config']
+    tg_user = update.effective_user
+    if tg_user is None or update.effective_chat is None:
+        return
+    await reply_rendered(update, build_agent_orders_text(config, tg_user.id), reply_markup=build_agent_orders_keyboard())
 
 
 async def send_catalog(chat_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1312,22 +1323,22 @@ async def send_home(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await reply_rendered(update, build_home_text(config, user_row), reply_markup=build_home_keyboard(config, lang=user_row.get('lang', config.default_lang), user_id=tg_user.id))
 
 
+def build_profile_text(user_id: int, user_row: dict) -> str:
+    return (
+        f'[emoji:5929391996408959380:🏞]您的ID：{user_id}\n\n'
+        f'[emoji:4972482444025398275:👛]您的余额：{standard_num(user_row.get("USDT", 0))} USDT\n\n'
+        f'[emoji:6273995106810863535:🌑]总购数量：{user_row.get("zgsl", 0)}\n\n'
+        f'[emoji:5028746137645876535:📈]总购金额：{standard_num(user_row.get("zgje", 0))} USDT'
+    )
+
+
 async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     config: AgentRuntimeConfig = context.application.bot_data['agent_config']
     tg_user = update.effective_user
     if tg_user is None or update.effective_chat is None:
         return
     user_row = get_agent_bot_user(config.agent_bot_id, tg_user.id) or {}
-    text = (
-        f'[emoji:5929391996408959380:🏞]代理个人中心\n\n'
-        f'[emoji:5954227490179255253:🔵]代理标识：{config.agent_bot_id}\n'
-        f'[emoji:5929391996408959380:🏞]用户ID：{tg_user.id}\n'
-        f'[emoji:4972482444025398275:👛]余额：{standard_num(user_row.get("USDT", 0))} USDT\n'
-        f'[emoji:5443127283898405358:📥]提款地址：{get_user_withdraw_address(config, tg_user.id) or "未绑定"}\n'
-        f'[emoji:6273995106810863535:🌑]总购数量：{user_row.get("zgsl", 0)}\n'
-        f'[emoji:5028746137645876535:📈]总购金额：{standard_num(user_row.get("zgje", 0))} USDT'
-    )
-    await reply_rendered(update, text)
+    await reply_rendered(update, build_profile_text(tg_user.id, user_row), reply_markup=build_profile_keyboard())
 
 
 async def send_recharge_menu(chat_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1673,6 +1684,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if data == 'agent_home':
         user_row = get_agent_bot_user(config.agent_bot_id, query.from_user.id) or {'user_id': query.from_user.id, 'USDT': 0, 'username': query.from_user.username}
         await edit_rendered(query, build_home_text(config, user_row))
+        return
+    if data == 'agent_profile':
+        user_row = get_agent_bot_user(config.agent_bot_id, query.from_user.id) or {}
+        await edit_rendered(query, build_profile_text(query.from_user.id, user_row), reply_markup=build_profile_keyboard())
+        return
+    if data == 'agent_profile_orders':
+        await edit_rendered(query, build_agent_orders_text(config, query.from_user.id), reply_markup=build_agent_orders_keyboard())
         return
     if data == 'agent_recharge_menu':
         await edit_rendered(query, build_recharge_menu_text(config), reply_markup=build_recharge_menu_keyboard(config))
