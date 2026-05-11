@@ -380,14 +380,23 @@ def build_product_list_text(category_name: str, products: list[dict]) -> str:
 
 
 def build_agent_product_purchase_text(config: AgentRuntimeConfig, payload: dict, user_id: int) -> str:
-    return strip_basic_html(get_agent_ui_text(
-        config,
-        'product_purchase_text',
-        user_id=user_id,
-        projectname=str(payload.get('projectname') or '商品'),
-        money=standard_num(payload.get('price', 0)),
-        stock_count=int(payload.get('stock', 0) or 0),
-    ))
+    projectname = str(payload.get('projectname') or '商品')
+    price_text = standard_num(payload.get('price', 0))
+    stock_count = int(payload.get('stock', 0) or 0)
+    lang = get_agent_lang(config, user_id=user_id)
+    if lang == 'en':
+        return (
+            f'[emoji:5260463209562776385:✅] You are buying: {projectname}\n\n'
+            f'[emoji:4965219701572503640:💰] Price: {price_text} USDT\n\n'
+            f'[emoji:5282843764451195532:🖥] Stock: {stock_count}\n\n'
+            '[emoji:5301246586918024418:⚠️] If this is your first purchase of this item, please test with a small quantity first to avoid unnecessary disputes. Thank you.'
+        )
+    return (
+        f'[emoji:5260463209562776385:✅] 您正在购买： {projectname}\n\n'
+        f'[emoji:4965219701572503640:💰] 价格： {price_text} USDT\n\n'
+        f'[emoji:5282843764451195532:🖥] 库存： {stock_count}\n\n'
+        '[emoji:5301246586918024418:⚠️] 未使用过该商品的，请先少量购买测试，以免造成不必要的争执！谢谢合作！'
+    )
 
 
 def build_agent_product_purchase_keyboard(config: AgentRuntimeConfig, nowuid: str, uid: str, user_id: int, stock_count: int | None = None) -> InlineKeyboardMarkup:
@@ -1107,14 +1116,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if int(payload.get('stock', 0) or 0) <= 0:
             await query.answer(build_purchase_status_text(config, 'stock', query.from_user.id), show_alert=True)
             return
-        user_row = get_agent_bot_user(config.agent_bot_id, query.from_user.id) or {'user_id': query.from_user.id, 'USDT': 0}
-        if float(user_row.get('USDT', 0) or 0) < float(payload.get('price', 0) or 0):
-            await query.answer(build_purchase_status_text(config, 'balance', query.from_user.id), show_alert=True)
-            return
         set_agent_sign(config.agent_bot_id, query.from_user.id, f'gmqq {nowuid}')
         prompt = get_agent_ui_text(config, 'enter_quantity_prompt', user_id=query.from_user.id)
         await query.answer()
-        await query.message.reply_text(prompt, parse_mode='HTML')
+        await reply_rendered(update, prompt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_agent_ui_text(config, 'cancel_purchase', user_id=query.from_user.id), callback_data='agent_home')]]))
         return
     if data.startswith('agent_buy_confirm:'):
         data_parts = data.split(':')
