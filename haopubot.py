@@ -706,7 +706,7 @@ def localize_button_label(source_text, user_id=None, lang=None):
 
     emoji_id, alt, emoji_style, rest = parse_dynamic_emoji_prefix(body_text)
     if emoji_id:
-        translated_body = strip_button_label_decoration(get_ui_text(fixed_key, lang=lang)) if fixed_key else localize_dynamic_text_fast(rest, user_id=user_id, lang=lang)
+        translated_body = strip_button_label_decoration(get_ui_text(fixed_key, lang=lang)) if fixed_key else localize_dynamic_text(rest, user_id=user_id, lang=lang)
         emoji_prefix = f'[emoji:{emoji_id}:{alt}'
         if emoji_style:
             emoji_prefix += f':{emoji_style}'
@@ -716,7 +716,7 @@ def localize_button_label(source_text, user_id=None, lang=None):
 
     known_emoji_id, emoji_text, clean_text = extract_known_button_icon(body_text)
     if emoji_text:
-        translated_body = strip_button_label_decoration(get_ui_text(fixed_key, lang=lang)) if fixed_key else localize_dynamic_text_fast(clean_text, user_id=user_id, lang=lang)
+        translated_body = strip_button_label_decoration(get_ui_text(fixed_key, lang=lang)) if fixed_key else localize_dynamic_text(clean_text, user_id=user_id, lang=lang)
         if body_text.strip().startswith(emoji_text):
             result = f'{style_prefix}{emoji_text}{translated_body}'.strip()
             return cache_localized_button_result(cache_key, original_text, result, lang, fixed_key=fixed_key)
@@ -727,7 +727,7 @@ def localize_button_label(source_text, user_id=None, lang=None):
     if fixed_key:
         result = f'{style_prefix}{get_ui_text(fixed_key, lang=lang)}'.strip()
         return cache_localized_button_result(cache_key, original_text, result, lang, fixed_key=fixed_key)
-    result = f'{style_prefix}{localize_dynamic_text_fast(body_text, user_id=user_id, lang=lang)}'.strip()
+    result = f'{style_prefix}{localize_dynamic_text(body_text, user_id=user_id, lang=lang)}'.strip()
     return cache_localized_button_result(cache_key, original_text, result, lang, fixed_key=fixed_key)
 
 
@@ -1852,15 +1852,21 @@ def inline_query(update: Update, context: CallbackContext):
         update.inline_query.answer(results=[], cache_time=0)
         return
 
-    yh_list = update['inline_query']['from_user']
-    user_id = yh_list['id']
-    fullname = yh_list['full_name']
+    inline_user = update.inline_query.from_user
+    user_id = inline_user.id
+    username = inline_user.username
+    fullname = (inline_user.full_name or '').replace('<', '').replace('>', '')
+    lastname = inline_user.last_name
+    user_list = ensure_user_exists(user_id, username, fullname, lastname, getattr(inline_user, 'language_code', None))
+    if user_list is None:
+        logging.error('inline_query failed to ensure user exists: user_id=%s username=%r', user_id, username)
+        update.inline_query.answer(results=[], cache_time=0)
+        return
 
     if is_number(query):
         money = query
         money = float(money) if str(money).count('.') > 0 else int(money)
-        user_list = user.find_one({'user_id': user_id})
-        USDT = user_list['USDT']
+        USDT = user_list.get('USDT', 0)
         if USDT >= money:
             if money <= 0:
                 url = helpers.create_deep_linked_url(context.bot.username, str(user_id))
