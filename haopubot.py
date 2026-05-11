@@ -290,7 +290,7 @@ def parse_admin_user_ids(value):
 
 
 def build_admin_dashboard_keyboard(user_id):
-    buttons = [
+    base_buttons = [
         InlineKeyboardButton(f'{ADMIN_EMOJI_USERLIST}用户列表', callback_data='yhlist'),
         InlineKeyboardButton(f'{ADMIN_EMOJI_DM}对话用户私发', callback_data='sifa'),
         InlineKeyboardButton(f'{ADMIN_EMOJI_TRC20}充值地址设置', callback_data='settrc20'),
@@ -301,17 +301,22 @@ def build_admin_dashboard_keyboard(user_id):
         InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}菜单按钮', callback_data='addzdykey'),
         InlineKeyboardButton(f'{ADMIN_EMOJI_RESTOCK}补货通知', callback_data='restockpushcfg'),
     ]
-    if BOT_CLONE_ENABLED:
-        buttons.extend([
-            InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}一键克隆同款', callback_data='clonebot'),
-            InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}创建代理Bot', callback_data='cloneagent'),
-            InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE_LIST}克隆列表', callback_data='clonelist 0'),
-        ])
-    buttons.append(InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}'))
 
     keyboard = []
-    for index in range(0, len(buttons), 3):
-        keyboard.append(buttons[index:index + 3])
+    for index in range(0, len(base_buttons), 3):
+        keyboard.append(base_buttons[index:index + 3])
+
+    if BOT_CLONE_ENABLED:
+        keyboard.append([
+            InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}一键克隆同款', callback_data='clonebot'),
+            InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE_LIST}克隆列表', callback_data='clonelist 0'),
+        ])
+        keyboard.append([
+            InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}创建代理Bot', callback_data='cloneagent'),
+            InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE_LIST}代理列表', callback_data='agentlist 0'),
+        ])
+
+    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
     return keyboard
 
 
@@ -4784,6 +4789,114 @@ def clonelist(update: Update, context: CallbackContext):
         context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
+def agentlist(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
+    user_list = user.find_one({'user_id': user_id}) or {}
+    if str(user_list.get('state')) != '4' and user_id not in get_source_admin_user_ids():
+        context.bot.send_message(chat_id=user_id, text='只有源机器人管理员可以查看代理列表')
+        return
+    data = str(query.data or '').replace('agentlist', '', 1).strip()
+    try:
+        page = max(int(data), 0) if data else 0
+    except Exception:
+        page = 0
+    keyboard, total = build_agent_list_keyboard(user_id, page)
+    text = f'''
+<b>{ADMIN_EMOJI_CLONE_LIST}代理列表</b>
+
+活跃代理数：<code>{total}</code>
+
+点下面代理可查看销售数据、用户列表、重启或删除。
+    '''
+    try:
+        query.edit_message_text(text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
+    except Exception:
+        context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+def agentinfo(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
+    user_list = user.find_one({'user_id': user_id}) or {}
+    if str(user_list.get('state')) != '4' and user_id not in get_source_admin_user_ids():
+        context.bot.send_message(chat_id=user_id, text='只有源机器人管理员可以查看代理详情')
+        return
+    bot_id = str(query.data.replace('agentinfo ', '', 1)).strip()
+    row = clone_instances.find_one({'bot_id': bot_id, 'clone_kind': 'agent', 'state': {'$ne': 'deleted'}})
+    if row is None:
+        context.bot.send_message(chat_id=user_id, text='未找到这个代理实例')
+        return
+    runtime = agent_bots.find_one({'agent_bot_id': bot_id}) or {}
+    stats = build_agent_runtime_stats(bot_id)
+    requester_user_id = row.get('requester_user_id')
+    requester_name = str(row.get('requester_name') or requester_user_id or '')
+    requester_username = str(row.get('requester_username') or '').strip()
+    service_name = str(row.get('service_name') or '').strip()
+    service_state = get_systemd_unit_state(f'{service_name}.service') if service_name else 'unknown'
+    text = f'''
+<b>{ADMIN_EMOJI_CLONE}代理详情</b>
+
+机器人：@{row.get('bot_username')}
+代理ID：<code>{bot_id}</code>
+管理员：<code>{requester_user_id}</code>
+用户：{requester_name} @{requester_username}
+创建时间：<code>{row.get('created_at', '')}</code>
+服务：<code>{service_name}.service</code>
+状态：<code>{service_state}</code>
+
+累计销售额：<code>{standard_num(stats.get('total_spent', 0))} USDT</code>
+累计销售件数：<code>{stats.get('total_items', 0)}</code>
+订单数：<code>{stats.get('order_count', 0)}</code>
+发货完成：<code>{stats.get('delivered_count', 0)}</code>
+部分退款：<code>{stats.get('partial_refund_count', 0)}</code>
+全额退款：<code>{stats.get('refunded_count', 0)}</code>
+用户数：<code>{stats.get('user_count', 0)}</code>
+代理总余额：<code>{standard_num(stats.get('total_balance', 0))} USDT</code>
+待充值：<code>{stats.get('pending_topups', 0)}</code>
+已到账：<code>{stats.get('paid_topups', 0)}</code>
+待提现：<code>{stats.get('pending_withdrawals', 0)}</code>
+已打款：<code>{stats.get('paid_withdrawals', 0)}</code>
+
+目录：<code>{row.get('clone_dir', '')}</code>
+客服：<code>{runtime.get('customer_service', '')}</code>
+    '''
+    keyboard = [
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_USERLIST}查看代理用户列表', callback_data=f'agentusers {bot_id}:0')],
+        [InlineKeyboardButton(f'{MOOD_EMOJI_FAST}重启代理机器人', callback_data=f'agentrestart {bot_id}')],
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除代理机器人', callback_data=f'agentdelete {bot_id}')],
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE_LIST}返回代理列表', callback_data='agentlist 0')],
+    ]
+    try:
+        query.edit_message_text(text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
+    except Exception:
+        context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+def agentusers(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
+    user_list = user.find_one({'user_id': user_id}) or {}
+    if str(user_list.get('state')) != '4' and user_id not in get_source_admin_user_ids():
+        context.bot.send_message(chat_id=user_id, text='只有源机器人管理员可以查看代理用户列表')
+        return
+    data = str(query.data.replace('agentusers ', '', 1)).strip()
+    bot_id, _, page_text = data.partition(':')
+    try:
+        page = max(int(page_text or '0'), 0)
+    except Exception:
+        page = 0
+    text, total = build_agent_users_text(bot_id, page)
+    keyboard = build_agent_users_keyboard(user_id, bot_id, page, total)
+    try:
+        query.edit_message_text(text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
+    except Exception:
+        context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
+
+
 def cloneinfo(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
@@ -4931,6 +5044,178 @@ def clonerestart(update: Update, context: CallbackContext):
     except Exception:
         pass
     threading.Thread(target=finish_clone_restart_in_background, args=(context, user_id, bot_id), daemon=True).start()
+
+
+def finish_agent_restart_in_background(context, user_id, bot_id):
+    row = clone_instances.find_one({'bot_id': str(bot_id), 'clone_kind': 'agent', 'state': {'$ne': 'deleted'}}) or {}
+    if not row:
+        try:
+            context.bot.send_message(chat_id=user_id, text='未找到这个代理实例，可能已经删除了')
+        except Exception:
+            pass
+        return
+    service_name = str(row.get('service_name') or '').strip()
+    bot_username = str(row.get('bot_username') or '').strip()
+    display_bot = f'@{bot_username}' if bot_username else str(bot_id)
+    try:
+        if not service_name:
+            raise RuntimeError('未找到代理服务名')
+        refresh_clone_service_files(row)
+        restart_systemd_unit(f'{service_name}.service', label='代理 Bot 服务', wait_seconds=120)
+    except Exception as exc:
+        try:
+            context.bot.send_message(chat_id=user_id, text=f'重启代理失败：{exc}')
+        except Exception:
+            pass
+        return
+    text = f'[emoji:5312028599803460968:🆗] 已重启代理机器人\n\n[emoji:5287684458881756303:🤖] 机器人：{display_bot}'
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE_LIST}返回代理详情', callback_data=f'agentinfo {bot_id}')]])
+    try:
+        context.bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
+    except Exception:
+        pass
+
+
+def agentrestart(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    try:
+        query.answer('正在重启代理，请稍候...')
+    except Exception:
+        pass
+    user_list = user.find_one({'user_id': user_id}) or {}
+    if str(user_list.get('state')) != '4' and user_id not in get_source_admin_user_ids():
+        context.bot.send_message(chat_id=user_id, text='只有源机器人管理员可以重启代理实例')
+        return
+    bot_id = str(query.data.replace('agentrestart ', '', 1)).strip()
+    row = clone_instances.find_one({'bot_id': bot_id, 'clone_kind': 'agent', 'state': {'$ne': 'deleted'}}) or {}
+    if not row:
+        context.bot.send_message(chat_id=user_id, text='未找到这个代理实例，可能已经删除了')
+        return
+    bot_username = str(row.get('bot_username') or '').strip()
+    waiting_text = f'[emoji:5220195537520711716:⚡️] 正在重启代理机器人，请稍候…\n\n[emoji:5287684458881756303:🤖] 机器人：@{bot_username}' if bot_username else f'[emoji:5220195537520711716:⚡️] 正在重启代理机器人，请稍候…\n\n[emoji:5287684458881756303:🤖] 机器人：<code>{bot_id}</code>'
+    try:
+        query.edit_message_text(text=waiting_text, parse_mode='HTML')
+    except Exception:
+        pass
+    threading.Thread(target=finish_agent_restart_in_background, args=(context, user_id, bot_id), daemon=True).start()
+
+
+def remove_agent_instance(bot_id):
+    record = clone_instances.find_one({'bot_id': str(bot_id), 'clone_kind': 'agent', 'state': {'$ne': 'deleted'}})
+    if record is None:
+        raise RuntimeError('未找到这个代理实例')
+
+    for service_name in [record.get('service_name'), record.get('listener_service_name')]:
+        if not service_name:
+            continue
+        service_unit = f'{service_name}.service'
+        try:
+            run_system_command(['systemctl', 'disable', '--now', service_unit], timeout=25)
+        except Exception:
+            try:
+                run_system_command(['systemctl', 'stop', service_unit], timeout=20)
+            except Exception:
+                pass
+        service_path = Path('/etc/systemd/system') / service_unit
+        try:
+            if service_path.exists():
+                service_path.unlink()
+        except Exception:
+            pass
+        try:
+            run_system_command(['systemctl', 'reset-failed', service_unit], timeout=15)
+        except Exception:
+            pass
+    try:
+        run_system_command(['systemctl', 'daemon-reload'], timeout=20)
+    except Exception:
+        pass
+
+    clone_dir = str(record.get('clone_dir') or '').strip()
+    if clone_dir:
+        shutil.rmtree(clone_dir, ignore_errors=True)
+
+    tenant_id = normalize_tenant_id(record.get('bot_id'))
+    agent_bots.delete_one({'agent_bot_id': tenant_id})
+    agent_product_prices.delete_many({'agent_bot_id': tenant_id})
+    agent_orders.delete_many({'agent_bot_id': tenant_id})
+    agent_withdrawals.delete_many({'agent_bot_id': tenant_id})
+    tenant_orders.delete_many({'tenant_id': tenant_id})
+    topup_orders.delete_many({'tenant_id': tenant_id})
+    refund_records.delete_many({'tenant_id': tenant_id})
+    settlement_ledger.delete_many({'tenant_id': tenant_id})
+    tenant_wallets.delete_many({'tenant_id': tenant_id})
+    wallet_ledger.delete_many({'tenant_id': tenant_id})
+    tenant_products.delete_many({'tenant_id': tenant_id})
+    tenant_users.delete_many({'tenant_id': tenant_id})
+    for coll in [get_agent_bot_user_collection(tenant_id), get_agent_bot_topup_collection(tenant_id), get_agent_bot_gmjlu_collection(tenant_id)]:
+        try:
+            coll.drop()
+        except Exception:
+            pass
+
+    clone_instances.delete_one({'_id': record['_id']})
+    return record
+
+
+def finish_agent_delete_in_background(context, user_id, bot_id):
+    try:
+        record = remove_agent_instance(bot_id)
+    except Exception as exc:
+        clone_instances.update_one(
+            {'bot_id': str(bot_id), 'clone_kind': 'agent', 'state': 'deleting'},
+            {'$set': {'state': 'active'}, '$unset': {'deleting_at': ''}}
+        )
+        try:
+            context.bot.send_message(chat_id=user_id, text=f'删除代理失败：{exc}')
+        except Exception:
+            pass
+        return
+    requester_user_id = record.get('requester_user_id')
+    bot_username = str(record.get('bot_username') or '').strip()
+    display_bot = f'@{bot_username}' if bot_username else str(record.get('bot_id'))
+    text = f'[emoji:5312028599803460968:🆗] 已删除代理机器人\n\n[emoji:5287684458881756303:🤖] 机器人：{display_bot}\n[emoji:6321041414067068140:👤] 管理员：{requester_user_id}'
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE_LIST}返回代理列表', callback_data='agentlist 0')]])
+    try:
+        context.bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
+    except Exception:
+        pass
+
+
+def agentdelete(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    try:
+        query.answer('正在删除代理，请稍候...')
+    except Exception:
+        pass
+    user_list = user.find_one({'user_id': user_id}) or {}
+    if str(user_list.get('state')) != '4' and user_id not in get_source_admin_user_ids():
+        context.bot.send_message(chat_id=user_id, text='只有源机器人管理员可以删除代理实例')
+        return
+    bot_id = str(query.data.replace('agentdelete ', '', 1)).strip()
+    preview_record = clone_instances.find_one({'bot_id': bot_id, 'clone_kind': 'agent', 'state': {'$ne': 'deleted'}}) or {}
+    if not preview_record:
+        context.bot.send_message(chat_id=user_id, text='未找到这个代理实例，可能已经删除了')
+        return
+    if str(preview_record.get('state') or '') == 'deleting':
+        context.bot.send_message(chat_id=user_id, text='这个代理实例正在删除中，请稍候查看结果')
+        return
+    bot_username = str(preview_record.get('bot_username') or '').strip()
+    claimed = clone_instances.update_one(
+        {'_id': preview_record['_id'], 'state': {'$nin': ['deleted', 'deleting']}},
+        {'$set': {'state': 'deleting', 'deleting_at': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}}
+    )
+    if claimed.modified_count == 0:
+        context.bot.send_message(chat_id=user_id, text='这个代理实例正在删除中，请稍候查看结果')
+        return
+    waiting_text = f'[emoji:5220195537520711716:⚡️] 正在删除代理机器人，请稍候…\n\n[emoji:5287684458881756303:🤖] 机器人：@{bot_username}' if bot_username else f'[emoji:5220195537520711716:⚡️] 正在删除代理机器人，请稍候…\n\n[emoji:5287684458881756303:🤖] 机器人：<code>{bot_id}</code>'
+    try:
+        query.edit_message_text(text=waiting_text, parse_mode='HTML')
+    except Exception:
+        pass
+    threading.Thread(target=finish_agent_delete_in_background, args=(context, user_id, bot_id), daemon=True).start()
 
 
 def setcloneprice(update: Update, context: CallbackContext):
@@ -6125,7 +6410,8 @@ def notify_source_admins(context, text, reply_markup=None, exclude_user_ids=None
 
 
 def build_clone_list_keyboard(user_id, page=0, page_size=8):
-    rows = list(clone_instances.find({'state': {'$ne': 'deleted'}}, sort=[('created_at', -1)], skip=page * page_size, limit=page_size))
+    query = {'state': {'$ne': 'deleted'}, 'clone_kind': {'$ne': 'agent'}}
+    rows = list(clone_instances.find(query, sort=[('created_at', -1)], skip=page * page_size, limit=page_size))
     keyboard = []
     for row in rows:
         bot_id = row.get('bot_id')
@@ -6135,7 +6421,7 @@ def build_clone_list_keyboard(user_id, page=0, page_size=8):
         if requester_user_id:
             keyboard[-1].append(InlineKeyboardButton(f'{ADMIN_EMOJI_USERLIST}{requester_user_id}', callback_data=f'cloneinfo {bot_id}'))
 
-    total = clone_instances.count_documents({'state': {'$ne': 'deleted'}})
+    total = clone_instances.count_documents(query)
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}上一页', callback_data=f'clonelist {page - 1}'))
@@ -6147,6 +6433,87 @@ def build_clone_list_keyboard(user_id, page=0, page_size=8):
     keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data='backstart'),
                      InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
     return keyboard, total
+
+
+def build_agent_runtime_stats(agent_bot_id):
+    tenant_id = normalize_tenant_id(agent_bot_id)
+    base_stats = get_agent_stats(tenant_id)
+    order_query = {'tenant_id': tenant_id}
+    return {
+        'user_count': int(base_stats.get('user_count', 0) or 0),
+        'total_balance': float(base_stats.get('total_balance', 0) or 0),
+        'total_spent': float(base_stats.get('total_spent', 0) or 0),
+        'total_items': int(base_stats.get('total_orders', 0) or 0),
+        'purchase_records': int(base_stats.get('purchase_records', 0) or 0),
+        'pending_topups': int(topup_orders.count_documents({'tenant_id': tenant_id, 'state': 'pending'})),
+        'paid_topups': int(topup_orders.count_documents({'tenant_id': tenant_id, 'state': 'paid'})),
+        'order_count': int(tenant_orders.count_documents(order_query)),
+        'delivered_count': int(tenant_orders.count_documents(dict(order_query, state='delivered'))),
+        'partial_refund_count': int(tenant_orders.count_documents(dict(order_query, state='partial_refunded'))),
+        'refunded_count': int(tenant_orders.count_documents(dict(order_query, state='refunded'))),
+        'pending_withdrawals': int(agent_withdrawals.count_documents({'agent_bot_id': tenant_id, 'state': 'pending'})),
+        'paid_withdrawals': int(agent_withdrawals.count_documents({'agent_bot_id': tenant_id, 'state': 'paid'})),
+    }
+
+
+def build_agent_list_keyboard(user_id, page=0, page_size=8):
+    query = {'state': {'$ne': 'deleted'}, 'clone_kind': 'agent'}
+    rows = list(clone_instances.find(query, sort=[('created_at', -1)], skip=page * page_size, limit=page_size))
+    keyboard = []
+    for row in rows:
+        bot_id = str(row.get('bot_id') or '')
+        bot_username = str(row.get('bot_username') or f'bot{bot_id}')
+        stats = build_agent_runtime_stats(bot_id)
+        keyboard.append([
+            InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}@{bot_username}', callback_data=f'agentinfo {bot_id}'),
+            InlineKeyboardButton(f'{ADMIN_EMOJI_GOODS}{standard_num(stats.get("total_spent", 0))}', callback_data=f'agentinfo {bot_id}'),
+        ])
+
+    total = clone_instances.count_documents(query)
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}上一页', callback_data=f'agentlist {page - 1}'))
+    if (page + 1) * page_size < total:
+        nav.append(InlineKeyboardButton(f'{MOOD_EMOJI_FAST}下一页', callback_data=f'agentlist {page + 1}'))
+    if nav:
+        keyboard.append(nav)
+    keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data='backstart'), InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
+    return keyboard, total
+
+
+def build_agent_users_text(agent_bot_id, page=0, page_size=12):
+    coll = get_agent_bot_user_collection(agent_bot_id)
+    rows = list(coll.find({}, sort=[('USDT', -1), ('count_id', 1), ('user_id', 1)], skip=page * page_size, limit=page_size))
+    total = coll.count_documents({})
+    lines = [f'<b>{ADMIN_EMOJI_USERLIST}代理用户列表</b>', '', f'代理ID：<code>{agent_bot_id}</code>', f'总用户数：<code>{total}</code>']
+    if not rows:
+        lines.extend(['', '暂无用户'])
+    for row in rows:
+        username = str(row.get('username') or '').strip()
+        username_text = f'@{html.escape(username, quote=False)}' if username else '未设置'
+        lines.extend([
+            '',
+            f'ID：<code>{row.get("user_id")}</code>',
+            f'用户名：{username_text}',
+            f'余额：<code>{standard_num(row.get("USDT", 0))} USDT</code>',
+            f'累计件数：<code>{int(row.get("zgsl", 0) or 0)}</code>',
+            f'累计消费：<code>{standard_num(row.get("zgje", 0))} USDT</code>',
+        ])
+    return '\n'.join(lines), total
+
+
+def build_agent_users_keyboard(user_id, bot_id, page, total, page_size=12):
+    keyboard = []
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}上一页', callback_data=f'agentusers {bot_id}:{page - 1}'))
+    if (page + 1) * page_size < total:
+        nav.append(InlineKeyboardButton(f'{MOOD_EMOJI_FAST}下一页', callback_data=f'agentusers {bot_id}:{page + 1}'))
+    if nav:
+        keyboard.append(nav)
+    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE_LIST}返回代理详情', callback_data=f'agentinfo {bot_id}')])
+    keyboard.append([InlineKeyboardButton('⬅️返回主界面', callback_data='backstart'), InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')])
+    return keyboard
 
 
 def send_clone_success_notice(context, requester_user_id, result, fee_paid='0'):
@@ -8995,7 +9362,7 @@ def main():
         application.add_handler(CommandHandler(command_name, sync_handler(callback)))
 
     callback_handlers = [
-        ('startupdate', startupdate), ('clonebot', clonebot), ('cloneagent', cloneagent), ('clonepay', clonepay), ('clonelist', clonelist), ('cloneinfo ', cloneinfo), ('clonerestart ', clonerestart), ('clonedelete ', clonedelete), ('setcloneprice', setcloneprice), ('restockpushcfg', restockpushcfg), ('buynoticecfg', buynoticecfg), ('setbuynotice', setbuynotice), ('setrestocktarget', setrestocktarget), ('restockrequestarea ', restockrequestarea), ('nostock ', nostock), ('okpaycfg', okpaycfg), ('setokpayid', setokpayid), ('setokpaytoken', setokpaytoken), ('setokpayname', setokpayname), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
+        ('startupdate', startupdate), ('clonebot', clonebot), ('cloneagent', cloneagent), ('clonepay', clonepay), ('clonelist', clonelist), ('agentlist', agentlist), ('cloneinfo ', cloneinfo), ('agentinfo ', agentinfo), ('agentusers ', agentusers), ('clonerestart ', clonerestart), ('agentrestart ', agentrestart), ('clonedelete ', clonedelete), ('agentdelete ', agentdelete), ('setcloneprice', setcloneprice), ('restockpushcfg', restockpushcfg), ('buynoticecfg', buynoticecfg), ('setbuynotice', setbuynotice), ('setrestocktarget', setrestocktarget), ('restockrequestarea ', restockrequestarea), ('nostock ', nostock), ('okpaycfg', okpaycfg), ('setokpayid', setokpayid), ('setokpaytoken', setokpaytoken), ('setokpayname', setokpayname), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
         ('backstart', backstart), ('paixurow', paixurow), ('addzdykey', addzdykey),
         ('qrscdelrow ', qrscdelrow), ('addhangkey ', addhangkey), ('delhangkey ', delhangkey),
         ('qrdelliekey ', qrdelliekey), ('keyxq ', keyxq), ('setkeyname ', setkeyname),
