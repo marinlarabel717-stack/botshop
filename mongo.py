@@ -507,18 +507,6 @@ def create_agent_withdrawal_request(tenant_id, user_id, amount, currency='USDT',
     amount = float(standard_num(amount))
     if amount <= 0:
         return None, 'invalid_amount'
-    debit_result = debit_tenant_wallet(
-        tenant_id,
-        user_id,
-        amount,
-        currency=currency,
-        biz_type='withdraw_hold',
-        ref_id='',
-        description='agent_withdraw_hold',
-        meta={'address': str(address or '').strip(), 'note': str(note or '').strip()},
-    )
-    if debit_result is None:
-        return None, 'insufficient_balance'
     withdrawal_id = build_agent_withdrawal_id(tenant_id, user_id)
     created_at = beijing_now_str()
     agent_withdrawals.insert_one({
@@ -532,7 +520,6 @@ def create_agent_withdrawal_request(tenant_id, user_id, amount, currency='USDT',
         'note': str(note or '').strip(),
         'state': 'pending',
         'created_at': created_at,
-        'balance_after_hold': float(debit_result.get('balance_after', 0)),
     })
     settlement_ledger.insert_one({
         'tenant_id': tenant_id,
@@ -568,17 +555,6 @@ def update_agent_withdrawal_status(tenant_id, withdrawal_id, status, operator_us
         f'{status}_at': now_str,
     }
     if status == 'rejected':
-        credit_result = credit_tenant_wallet(
-            tenant_id,
-            int(withdrawal.get('user_id')),
-            float(withdrawal.get('amount', 0) or 0),
-            currency=str(withdrawal.get('currency') or 'USDT').upper(),
-            biz_type='withdraw_reject_refund',
-            ref_id=str(withdrawal_id),
-            description='agent_withdraw_rejected',
-            meta={'operator_user_id': int(operator_user_id) if operator_user_id else 0, 'note': str(note or '').strip()},
-        )
-        updates['balance_after_refund'] = float(credit_result.get('balance_after', 0))
         settlement_ledger.update_one(
             {'tenant_id': tenant_id, 'ref_id': str(withdrawal_id), 'type': 'withdraw_request'},
             {'$set': {'state': 'rejected', 'updated_at': now_str}}

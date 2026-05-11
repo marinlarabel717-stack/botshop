@@ -163,6 +163,42 @@ def get_agent_price_delta(config: AgentRuntimeConfig) -> float:
         return 0.0
 
 
+def get_agent_profit_stats(config: AgentRuntimeConfig) -> dict:
+    stats = get_agent_stats(config.agent_bot_id)
+    price_delta = max(0.0, float(get_agent_price_delta(config) or 0))
+    total_items = int(stats.get('total_orders', 0) or 0)
+    total_profit = float(standard_num(total_items * price_delta))
+    rows = list(agent_bots.database['agent_withdrawals'].aggregate([
+        {'$match': {'agent_bot_id': config.agent_bot_id}},
+        {'$group': {'_id': '$state', 'amount': {'$sum': '$amount'}, 'count': {'$sum': 1}}},
+    ]))
+    pending_amount = 0.0
+    pending_count = 0
+    paid_amount = 0.0
+    paid_count = 0
+    for row in rows:
+        state = str(row.get('_id') or '').strip().lower()
+        amount = float(row.get('amount', 0) or 0)
+        count = int(row.get('count', 0) or 0)
+        if state == 'pending':
+            pending_amount = amount
+            pending_count = count
+        elif state == 'paid':
+            paid_amount = amount
+            paid_count = count
+    available_profit = max(0.0, float(standard_num(total_profit - pending_amount - paid_amount)))
+    return {
+        'total_items': total_items,
+        'price_delta': price_delta,
+        'total_profit': total_profit,
+        'available_profit': available_profit,
+        'pending_amount': float(standard_num(pending_amount)),
+        'pending_count': pending_count,
+        'paid_amount': float(standard_num(paid_amount)),
+        'paid_count': paid_count,
+    }
+
+
 def get_agent_purchase_notice(config: AgentRuntimeConfig) -> str:
     row = get_agent_runtime_doc(config)
     return str(row.get('purchase_notice') or '').strip()
@@ -264,18 +300,19 @@ def build_admin_panel_text(config: AgentRuntimeConfig) -> str:
     customer_service = get_agent_customer_service(config) or '未配置'
     restock_target = get_agent_restock_target(config) or '未配置'
     purchase_notice = build_agent_notice_preview(get_agent_purchase_notice(config))
-    price_delta = get_agent_price_delta(config)
-    pending_withdraws = int(agent_bots.database['agent_withdrawals'].count_documents({'agent_bot_id': config.agent_bot_id, 'state': 'pending'}))
+    profit_stats = get_agent_profit_stats(config)
     return (
         f'[emoji:5341715473882955310:⚙️]{config.agent_name} 代理管理后台\n\n'
         f'[emoji:5954227490179255253:🔵]代理ID：{config.agent_bot_id}\n'
         f'[emoji:6321041414067068140:👤]用户数：{stats.get("user_count", 0)}\n'
         f'[emoji:5028746137645876535:📈]累计销售：{standard_num(stats.get("total_spent", 0))} USDT\n'
-        f'[emoji:5397916757333654639:➕]全局差价：{standard_num(price_delta)} USDT\n'
+        f'[emoji:5397916757333654639:➕]当前差价：{standard_num(profit_stats.get("price_delta", 0))} USDT/个\n'
+        f'[emoji:4965219701572503640:💰]累计利润：{standard_num(profit_stats.get("total_profit", 0))} USDT\n'
+        f'[emoji:5312028599803460968:🆗]可提利润：{standard_num(profit_stats.get("available_profit", 0))} USDT\n'
         f'[emoji:5954078884310814346:☎️]客服：{customer_service}\n'
         f'[emoji:5220214598585568818:🚨]补货通知：{restock_target}\n'
         f'[emoji:5235511932064129087:🎁]购买后通知：{purchase_notice}\n'
-        f'[emoji:5445353829304387411:💳]待审提款：{pending_withdraws}\n\n'
+        f'[emoji:5445353829304387411:💳]待审利润提款：{profit_stats.get("pending_count", 0)} 笔 / {standard_num(profit_stats.get("pending_amount", 0))} USDT\n\n'
         '点下面按钮进入对应管理。'
     )
 
@@ -287,7 +324,7 @@ def build_admin_panel_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton('[emoji:5397916757333654639:➕]配置差价', callback_data='admin_price_delta'),
         ],
         [
-            InlineKeyboardButton('[emoji:5445353829304387411:💳]提款申请', callback_data='admin_withdraws:0'),
+            InlineKeyboardButton('[emoji:5445353829304387411:💳]利润提款', callback_data='admin_withdraws:0'),
             InlineKeyboardButton('[emoji:5954078884310814346:☎️]客服配置', callback_data='admin_customer_service'),
         ],
         [
@@ -335,9 +372,9 @@ def build_admin_users_keyboard(page: int, total: int, page_size: int = 10) -> In
 
 def build_admin_price_delta_text(config: AgentRuntimeConfig) -> str:
     return (
-        '[emoji:5397916757333654639:➕]全局差价配置\n\n'
-        f'当前差价：{standard_num(get_agent_price_delta(config))} USDT\n\n'
-        '说明：设置 +0.2，表示主号铺所有商品原价统一 +0.2 作为代理售价。'
+        '[emoji:5397916757333654639:➕]代理利润差价配置\n\n'
+        f'当前差价：{standard_num(get_agent_price_delta(config))} USDT/个\n\n'
+        '说明：这里设置的差价，就是代理每卖出 1 个商品的利润。\n例如：设置 +0.2，表示主号铺原价基础上统一加 0.2 USDT。'
     )
 
 
@@ -361,21 +398,23 @@ def build_admin_purchase_notice_text(config: AgentRuntimeConfig) -> str:
 
 
 def build_withdraw_bind_text(config: AgentRuntimeConfig, user_id: int) -> str:
+    profit_stats = get_agent_profit_stats(config)
     address = get_user_withdraw_address(config, user_id) or '未绑定'
     return (
-        '[emoji:5445353829304387411:💳]提款申请\n\n'
+        '[emoji:5445353829304387411:💳]利润提款\n\n'
         f'最低提款：{standard_num(AGENT_WITHDRAW_MIN_AMOUNT)} USDT\n'
+        f'当前可提利润：{standard_num(profit_stats.get("available_profit", 0))} USDT\n'
         f'当前绑定地址：{address}\n\n'
-        '请先绑定 TRC20 地址，再提交提款金额。'
+        '请先绑定 TRC20 地址，再提交利润提款金额。'
     )
 
 
 def build_withdraw_bind_keyboard(config: AgentRuntimeConfig, user_id: int) -> InlineKeyboardMarkup:
     keyboard = [
-        [InlineKeyboardButton('[emoji:5443127283898405358:📥]绑定TRC20地址', callback_data='user_withdraw_bind')],
+        [InlineKeyboardButton('[emoji:5443127283898405358:📥]绑定利润地址', callback_data='user_withdraw_bind')],
     ]
     if get_user_withdraw_address(config, user_id):
-        keyboard.append([InlineKeyboardButton('[emoji:5445353829304387411:💳]申请提款', callback_data='user_withdraw_apply')])
+        keyboard.append([InlineKeyboardButton('[emoji:5445353829304387411:💳]申请利润提款', callback_data='user_withdraw_apply')])
     keyboard.append([InlineKeyboardButton('[emoji:5954227490179255253:🔵]返回首页', callback_data='agent_home')])
     return InlineKeyboardMarkup(keyboard)
 
@@ -383,9 +422,9 @@ def build_withdraw_bind_keyboard(config: AgentRuntimeConfig, user_id: int) -> In
 def build_admin_withdraw_list_text(config: AgentRuntimeConfig, page: int = 0, page_size: int = 8) -> tuple[str, list[dict], int]:
     rows = list(agent_bots.database['agent_withdrawals'].find({'agent_bot_id': config.agent_bot_id}, sort=[('created_at', -1)], skip=page * page_size, limit=page_size))
     total = agent_bots.database['agent_withdrawals'].count_documents({'agent_bot_id': config.agent_bot_id})
-    lines = [f'[emoji:5445353829304387411:💳]提款申请列表', '', f'总申请数：{total}']
+    lines = [f'[emoji:5445353829304387411:💳]利润提款列表', '', f'总申请数：{total}']
     if not rows:
-        lines.extend(['', '暂无提款申请'])
+        lines.extend(['', '暂无利润提款申请'])
     for row in rows:
         lines.extend([
             '',
@@ -415,7 +454,7 @@ def build_admin_withdraw_list_keyboard(rows: list[dict], page: int, total: int, 
 
 def build_admin_withdraw_detail_text(row: dict) -> str:
     return (
-        '[emoji:5445353829304387411:💳]提款申请详情\n\n'
+        '[emoji:5445353829304387411:💳]利润提款详情\n\n'
         f'单号：{row.get("withdrawal_id") or ""}\n'
         f'用户ID：{row.get("user_id") or ""}\n'
         f'金额：{standard_num(row.get("amount", 0))} USDT\n'
@@ -434,7 +473,7 @@ def build_admin_withdraw_detail_keyboard(row: dict) -> InlineKeyboardMarkup:
             InlineKeyboardButton('[emoji:5312028599803460968:🆗]确认已打款', callback_data=f'admin_withdraw_paid:{withdrawal_id}'),
             InlineKeyboardButton('[emoji:5210952531676504517:❌]驳回并退回', callback_data=f'admin_withdraw_reject:{withdrawal_id}'),
         ])
-    keyboard.append([InlineKeyboardButton('[emoji:5954227490179255253:🔵]返回提款列表', callback_data='admin_withdraws:0')])
+    keyboard.append([InlineKeyboardButton('[emoji:5954227490179255253:🔵]返回利润提款列表', callback_data='admin_withdraws:0')])
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -444,7 +483,7 @@ def build_admin_withdraw_notice_keyboard(withdrawal_id: str) -> InlineKeyboardMa
             InlineKeyboardButton('[emoji:5312028599803460968:🆗]确认已打款', callback_data=f'admin_withdraw_paid:{withdrawal_id}'),
             InlineKeyboardButton('[emoji:5210952531676504517:❌]驳回并退回', callback_data=f'admin_withdraw_reject:{withdrawal_id}'),
         ],
-        [InlineKeyboardButton('[emoji:5445353829304387411:💳]打开提款列表', callback_data='admin_withdraws:0')],
+        [InlineKeyboardButton('[emoji:5445353829304387411:💳]打开利润提款列表', callback_data='admin_withdraws:0')],
     ])
 
 
@@ -452,6 +491,9 @@ async def submit_agent_withdraw_request(config: AgentRuntimeConfig, context: Con
     amount = float(amount)
     if amount < AGENT_WITHDRAW_MIN_AMOUNT:
         return None, 'min_amount'
+    profit_stats = get_agent_profit_stats(config)
+    if amount > float(profit_stats.get('available_profit', 0) or 0):
+        return None, 'insufficient_profit'
     wallet_address = get_user_withdraw_address(config, user_id)
     if not is_valid_trc20_address(wallet_address):
         return None, 'address_missing'
@@ -459,7 +501,7 @@ async def submit_agent_withdraw_request(config: AgentRuntimeConfig, context: Con
     if status != 'pending':
         return withdrawal, status
     notice_text = (
-        '[emoji:5220214598585568818:🚨]新的提款申请\n\n'
+        '[emoji:5220214598585568818:🚨]新的利润提款申请\n\n'
         f'用户ID：{user_id}\n'
         f'单号：{withdrawal.get("withdrawal_id") or ""}\n'
         f'金额：{standard_num(withdrawal.get("amount", 0))} USDT\n'
@@ -1372,8 +1414,11 @@ async def agent_withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     tg_user = update.effective_user
     if tg_user is None:
         return
+    if not is_agent_admin_or_source_admin(config, tg_user.id):
+        await update.effective_chat.send_message('只有代理管理员或主号铺管理员可以申请利润提款。')
+        return
     if len(context.args) < 1:
-        await update.effective_chat.send_message('用法：/agent_withdraw <amount> [note]\n先用 /bindtrc20 绑定地址，或走 /withdraw 按钮流程。')
+        await update.effective_chat.send_message('用法：/agent_withdraw <amount> [note]\n先用 /bindtrc20 绑定利润地址，或走 /withdraw 按钮流程。')
         return
     try:
         amount = float(context.args[0])
@@ -1383,17 +1428,20 @@ async def agent_withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     note = ' '.join(context.args[1:]).strip()
     withdrawal, status = await submit_agent_withdraw_request(config, context, tg_user.id, amount, note=note)
     if status == 'min_amount':
-        await update.effective_chat.send_message(f'最低提款 {standard_num(AGENT_WITHDRAW_MIN_AMOUNT)} USDT。')
+        await update.effective_chat.send_message(f'最低利润提款 {standard_num(AGENT_WITHDRAW_MIN_AMOUNT)} USDT。')
+        return
+    if status == 'insufficient_profit':
+        await update.effective_chat.send_message(f'可提利润不足，当前最多可提 {standard_num(get_agent_profit_stats(config).get("available_profit", 0))} USDT。')
         return
     if status == 'address_missing':
-        await update.effective_chat.send_message('请先绑定 TRC20 地址。可发送 /withdraw 走按钮流程，或先用 /bindtrc20 <地址>。')
+        await update.effective_chat.send_message('请先绑定利润提款 TRC20 地址。可发送 /withdraw 走按钮流程，或先用 /bindtrc20 <地址>。')
         return
     if status != 'pending':
-        await update.effective_chat.send_message('申请失败：余额不足或金额非法。')
+        await update.effective_chat.send_message('申请失败：利润不足或金额非法。')
         return
     wallet_address = get_user_withdraw_address(config, tg_user.id)
     await update.effective_chat.send_message(
-        f'提现申请已提交\n单号：<code>{html.escape(str(withdrawal.get("withdrawal_id") or ""), quote=False)}</code>\n金额：<code>{standard_num(withdrawal.get("amount", 0))} USDT</code>\n地址：<code>{html.escape(wallet_address, quote=False)}</code>\n状态：<code>pending</code>',
+        f'利润提款申请已提交\n单号：<code>{html.escape(str(withdrawal.get("withdrawal_id") or ""), quote=False)}</code>\n金额：<code>{standard_num(withdrawal.get("amount", 0))} USDT</code>\n地址：<code>{html.escape(wallet_address, quote=False)}</code>\n状态：<code>pending</code>',
         parse_mode='HTML'
     )
 
@@ -1403,22 +1451,28 @@ async def bind_trc20(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     tg_user = update.effective_user
     if tg_user is None:
         return
+    if not is_agent_admin_or_source_admin(config, tg_user.id):
+        await update.effective_chat.send_message('只有代理管理员或主号铺管理员可以设置利润提款地址。')
+        return
     if context.args:
         address = str(context.args[0]).strip()
         if not is_valid_trc20_address(address):
             await update.effective_chat.send_message('TRC20 地址格式不对，请检查后重试。')
             return
         get_agent_bot_user_collection(config.agent_bot_id).update_one({'user_id': tg_user.id}, {'$set': {'withdraw_address': address, 'last_contact_time': beijing_now_str()}})
-        await update.effective_chat.send_message(f'已绑定提款地址：<code>{html.escape(address, quote=False)}</code>', parse_mode='HTML')
+        await update.effective_chat.send_message(f'已绑定利润提款地址：<code>{html.escape(address, quote=False)}</code>', parse_mode='HTML')
         return
     set_agent_sign(config.agent_bot_id, tg_user.id, USER_SIGN_BIND_WITHDRAW)
-    await reply_rendered(update, '[emoji:5443127283898405358:📥]请发送你的 TRC20 地址', reply_markup=build_admin_config_keyboard('agent_home'))
+    await reply_rendered(update, '[emoji:5443127283898405358:📥]请发送你的利润提款 TRC20 地址', reply_markup=build_admin_config_keyboard('agent_home'))
 
 
 async def withdraw_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     config: AgentRuntimeConfig = context.application.bot_data['agent_config']
     tg_user = update.effective_user
     if tg_user is None:
+        return
+    if not is_agent_admin_or_source_admin(config, tg_user.id):
+        await update.effective_chat.send_message('只有代理管理员或主号铺管理员可以发起利润提款。')
         return
     await reply_rendered(update, build_withdraw_bind_text(config, tg_user.id), reply_markup=build_withdraw_bind_keyboard(config, tg_user.id))
 
@@ -1586,22 +1640,28 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 await query.answer(f'处理失败：{status}', show_alert=True)
                 return
             if withdrawal and withdrawal.get('user_id'):
-                notice = '提现已打款，请注意查收。' if target_status == 'paid' else '提现申请已被驳回，金额已退回余额。'
+                notice = '利润提款已打款，请注意查收。' if target_status == 'paid' else '利润提款申请已被驳回。'
                 await send_rendered(context.bot, int(withdrawal.get('user_id')), f'[emoji:5312028599803460968:🆗]{notice}\n\n单号：{withdrawal_id}\n金额：{standard_num((withdrawal or {}).get("amount", 0))} USDT')
             await edit_rendered(query, build_admin_withdraw_detail_text(withdrawal or {'withdrawal_id': withdrawal_id, 'state': status}), reply_markup=build_admin_withdraw_detail_keyboard(withdrawal or {'withdrawal_id': withdrawal_id, 'state': status}))
             return
     if data.startswith('user_'):
         await query.answer()
         if data == 'user_withdraw_bind':
+            if not is_agent_admin_or_source_admin(config, query.from_user.id):
+                await query.answer('只有代理管理员或主号铺管理员可以设置利润提款地址。', show_alert=True)
+                return
             set_agent_sign(config.agent_bot_id, query.from_user.id, USER_SIGN_BIND_WITHDRAW)
-            await edit_rendered(query, '[emoji:5443127283898405358:📥]请发送你的 TRC20 地址', reply_markup=build_admin_config_keyboard('agent_home'))
+            await edit_rendered(query, '[emoji:5443127283898405358:📥]请发送你的利润提款 TRC20 地址', reply_markup=build_admin_config_keyboard('agent_home'))
             return
         if data == 'user_withdraw_apply':
+            if not is_agent_admin_or_source_admin(config, query.from_user.id):
+                await query.answer('只有代理管理员或主号铺管理员可以发起利润提款。', show_alert=True)
+                return
             if not is_valid_trc20_address(get_user_withdraw_address(config, query.from_user.id)):
-                await query.answer('请先绑定 TRC20 地址。', show_alert=True)
+                await query.answer('请先绑定利润提款 TRC20 地址。', show_alert=True)
                 return
             set_agent_sign(config.agent_bot_id, query.from_user.id, USER_SIGN_APPLY_WITHDRAW)
-            await edit_rendered(query, f'[emoji:5445353829304387411:💳]请输入提款金额\n\n最低提款：{standard_num(AGENT_WITHDRAW_MIN_AMOUNT)} USDT\n当前地址：{get_user_withdraw_address(config, query.from_user.id)}', reply_markup=build_admin_config_keyboard('agent_home'))
+            await edit_rendered(query, f'[emoji:5445353829304387411:💳]请输入利润提款金额\n\n最低提款：{standard_num(AGENT_WITHDRAW_MIN_AMOUNT)} USDT\n可提利润：{standard_num(get_agent_profit_stats(config).get("available_profit", 0))} USDT\n当前地址：{get_user_withdraw_address(config, query.from_user.id)}', reply_markup=build_admin_config_keyboard('agent_home'))
             return
     if data == 'agent_noop':
         await query.answer('这部分下一步继续接', show_alert=False)
@@ -1773,26 +1833,29 @@ async def message_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             return
         set_agent_sign(config.agent_bot_id, tg_user.id, 0)
         get_agent_bot_user_collection(config.agent_bot_id).update_one({'user_id': tg_user.id}, {'$set': {'withdraw_address': address, 'last_contact_time': beijing_now_str()}})
-        await reply_rendered(update, f'[emoji:5312028599803460968:🆗]已绑定提款地址\n\n{address}', reply_markup=build_withdraw_bind_keyboard(config, tg_user.id))
+        await reply_rendered(update, f'[emoji:5312028599803460968:🆗]已绑定利润提款地址\n\n{address}', reply_markup=build_withdraw_bind_keyboard(config, tg_user.id))
         return
     if sign == USER_SIGN_APPLY_WITHDRAW:
         try:
             amount = float(text.strip())
         except Exception:
-            await update.effective_chat.send_message(f'请输入提款金额，最低 {standard_num(AGENT_WITHDRAW_MIN_AMOUNT)} USDT。')
+            await update.effective_chat.send_message(f'请输入利润提款金额，最低 {standard_num(AGENT_WITHDRAW_MIN_AMOUNT)} USDT。')
             return
         withdrawal, status = await submit_agent_withdraw_request(config, context, tg_user.id, amount)
         if status == 'min_amount':
-            await update.effective_chat.send_message(f'最低提款 {standard_num(AGENT_WITHDRAW_MIN_AMOUNT)} USDT。')
+            await update.effective_chat.send_message(f'最低利润提款 {standard_num(AGENT_WITHDRAW_MIN_AMOUNT)} USDT。')
+            return
+        if status == 'insufficient_profit':
+            await update.effective_chat.send_message(f'可提利润不足，当前最多可提 {standard_num(get_agent_profit_stats(config).get("available_profit", 0))} USDT。')
             return
         if status == 'address_missing':
-            await update.effective_chat.send_message('请先绑定 TRC20 地址。')
+            await update.effective_chat.send_message('请先绑定利润提款 TRC20 地址。')
             return
         if status != 'pending':
-            await update.effective_chat.send_message('申请失败：余额不足或金额非法。')
+            await update.effective_chat.send_message('利润提款申请失败，请稍后重试。')
             return
         set_agent_sign(config.agent_bot_id, tg_user.id, 0)
-        await reply_rendered(update, f'[emoji:5312028599803460968:🆗]提款申请已提交\n\n单号：{withdrawal.get("withdrawal_id") or ""}\n金额：{standard_num(withdrawal.get("amount", 0))} USDT\n地址：{get_user_withdraw_address(config, tg_user.id)}', reply_markup=build_withdraw_bind_keyboard(config, tg_user.id))
+        await reply_rendered(update, f'[emoji:5312028599803460968:🆗]利润提款申请已提交\n\n单号：{withdrawal.get("withdrawal_id") or ""}\n金额：{standard_num(withdrawal.get("amount", 0))} USDT\n地址：{get_user_withdraw_address(config, tg_user.id)}', reply_markup=build_withdraw_bind_keyboard(config, tg_user.id))
         return
     if sign.startswith('gmqq '):
         nowuid = sign.replace('gmqq ', '', 1).strip()
