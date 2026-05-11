@@ -843,25 +843,6 @@ def build_agent_delivery_result_text(config: AgentRuntimeConfig, order: dict, to
             '',
             '[emoji:5382194935057372936:⏱️]Timed-out accounts were retried twice and still could not be checked. They were delivered with the file. Please contact support if needed.' if lang == 'en' else '[emoji:5382194935057372936:⏱️]超时账号已自动重试 2 次，仍无法完成检测，现已随文件一起发出；如需售后请联系客服。'
         ])
-    if first_invalid_reason:
-        lines.extend([
-            '',
-            f'First invalid reason: {summarize_agent_check_reason(first_invalid_reason)}' if lang == 'en' else f'首个无效原因：{summarize_agent_check_reason(first_invalid_reason)}'
-        ])
-        if first_invalid_entry_type:
-            lines.append(f'First invalid entry type: {first_invalid_entry_type}' if lang == 'en' else f'首个无效检测入口：{first_invalid_entry_type}')
-        if first_invalid_path:
-            lines.append(f'First invalid path: {summarize_agent_check_reason(first_invalid_path, 160)}' if lang == 'en' else f'首个无效检测路径：{summarize_agent_check_reason(first_invalid_path, 160)}')
-    if first_frozen_reason:
-        lines.extend([
-            '',
-            f'First frozen reason: {summarize_agent_check_reason(first_frozen_reason)}' if lang == 'en' else f'首个冻结原因：{summarize_agent_check_reason(first_frozen_reason)}'
-        ])
-        if first_frozen_entry_type:
-            lines.append(f'First frozen entry type: {first_frozen_entry_type}' if lang == 'en' else f'首个冻结检测入口：{first_frozen_entry_type}')
-        if first_frozen_path:
-            lines.append(f'First frozen path: {summarize_agent_check_reason(first_frozen_path, 160)}' if lang == 'en' else f'首个冻结检测路径：{summarize_agent_check_reason(first_frozen_path, 160)}')
-    lines.extend(['', f'Version: {APP_VERSION}' if lang == 'en' else f'版本：{APP_VERSION}'])
     return '\n'.join(lines)
 
 
@@ -883,19 +864,6 @@ def build_agent_delivery_admin_notice(order: dict, user_row: dict, total_count: 
         f'超时：{timeout_count}',
         f'退款：{standard_num(refund_amount)} USDT',
     ]
-    if first_invalid_reason:
-        lines.append(f'首个无效原因：{summarize_agent_check_reason(first_invalid_reason, 200)}')
-    if first_invalid_entry_type:
-        lines.append(f'首个无效检测入口：{first_invalid_entry_type}')
-    if first_invalid_path:
-        lines.append(f'首个无效检测路径：{summarize_agent_check_reason(first_invalid_path, 200)}')
-    if first_frozen_reason:
-        lines.append(f'首个冻结原因：{summarize_agent_check_reason(first_frozen_reason, 200)}')
-    if first_frozen_entry_type:
-        lines.append(f'首个冻结检测入口：{first_frozen_entry_type}')
-    if first_frozen_path:
-        lines.append(f'首个冻结检测路径：{summarize_agent_check_reason(first_frozen_path, 200)}')
-    lines.append(f'版本：{APP_VERSION}')
     return '\n'.join(lines)
 
 
