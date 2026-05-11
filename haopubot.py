@@ -304,6 +304,7 @@ def build_admin_dashboard_keyboard(user_id):
     if BOT_CLONE_ENABLED:
         buttons.extend([
             InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}一键克隆同款', callback_data='clonebot'),
+            InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE}创建代理Bot', callback_data='cloneagent'),
             InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE_LIST}克隆列表', callback_data='clonelist 0'),
         ])
     buttons.append(InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}'))
@@ -903,6 +904,40 @@ def write_clone_env(clone_dir, bot_token, admin_user_id, bot_info):
     return db_name
 
 
+def write_agent_clone_env(clone_dir, admin_user_id, bot_info, bot_token):
+    source_env_path = BASE_DIR / '.env'
+    env_map = {}
+    if source_env_path.exists():
+        env_map.update({k: v for k, v in (dotenv_values(source_env_path) or {}).items() if k})
+
+    bot_id = str(bot_info.get('id'))
+    bot_username = str(bot_info.get('username') or f'bot{bot_id}').strip().lstrip('@')
+    agent_name = str(bot_info.get('first_name') or bot_username or f'agent{bot_id}').strip()
+
+    env_map['BOT_CLONE_ENABLED'] = 'false'
+    env_map['ALLOW_PUBLIC_BOT_CLONE'] = 'false'
+    env_map['BOT_CLONE_ROOT'] = BOT_CLONE_ROOT
+    env_map['BOT_CLONE_REPO_URL'] = get_clone_repo_url()
+    (clone_dir / '.env').write_text(render_env_lines(env_map), encoding='utf-8')
+
+    customer_service = str(OKPAY_BOT_USERNAME or os.getenv('CUSTOMER_SERVICE_USERNAME', '') or '').strip()
+    agent_env = {
+        'AGENT_BOT_ID': bot_id,
+        'AGENT_BOT_TOKEN': str(bot_token or '').strip(),
+        'AGENT_NAME': agent_name,
+        'AGENT_USERNAME': bot_username,
+        'AGENT_CUSTOMER_SERVICE': customer_service,
+        'AGENT_ADMIN_IDS': str(admin_user_id),
+        'AGENT_TRC20_ADDRESS': trc20,
+        'AGENT_RECHARGE_AMOUNTS': '10,30,50,100',
+        'AGENT_DEFAULT_LANG': 'zh',
+    }
+    agent_env_dir = clone_dir / 'agent_service'
+    agent_env_dir.mkdir(parents=True, exist_ok=True)
+    (agent_env_dir / '.env').write_text(render_env_lines(agent_env), encoding='utf-8')
+    return sanitize_db_name(f'agent_{bot_username}')
+
+
 def build_clone_service_content(description, working_directory, exec_start):
     return f'''[Unit]
 Description={description}
@@ -932,17 +967,23 @@ def refresh_clone_service_files(record):
     bot_username = str(record.get('bot_username') or record.get('bot_id') or 'bot').strip()
     service_name = str(record.get('service_name') or '').strip()
     listener_service_name = str(record.get('listener_service_name') or '').strip()
+    clone_kind = str(record.get('clone_kind') or '').strip()
     if service_name:
         service_path = Path('/etc/systemd/system') / f'{service_name}.service'
+        exec_start = f'{python_exec} {clone_dir / "haopubot.py"}'
+        description = f'botshop cloned telegram bot {bot_username}'
+        if clone_kind == 'agent':
+            exec_start = f'{python_exec} {clone_dir / "agent_service" / "service.py"}'
+            description = f'botshop agent service {bot_username}'
         service_path.write_text(
             build_clone_service_content(
-                f'botshop cloned telegram bot {bot_username}',
+                description,
                 str(clone_dir),
-                f'{python_exec} {clone_dir / "haopubot.py"}'
+                exec_start
             ),
             encoding='utf-8'
         )
-    if listener_service_name:
+    if listener_service_name and clone_kind != 'agent':
         listener_service_path = Path('/etc/systemd/system') / f'{listener_service_name}.service'
         listener_service_path.write_text(
             build_clone_service_content(
@@ -1009,6 +1050,68 @@ def clone_bot_instance(bot_token, admin_user_id, source_bot_id=None):
         'db_name': db_name,
         'service_name': service_name,
         'listener_service_name': listener_service_name,
+    }
+
+
+def clone_agent_instance(bot_token, admin_user_id, source_bot_id=None):
+    if hasattr(os, 'geteuid') and os.geteuid() != 0:
+        raise RuntimeError('当前进程不是 root，无法自动安装 systemd 服务')
+
+    bot_info = get_bot_profile(bot_token)
+    bot_id = str(bot_info.get('id'))
+    if source_bot_id is not None and str(source_bot_id) == bot_id:
+        raise RuntimeError('不能把当前源机器人本体直接当成代理机器人')
+    bot_username = str(bot_info.get('username') or f'bot{bot_id}').strip()
+    slug = sanitize_service_name(f'agent-{bot_username}-{bot_id}')
+    clone_root = Path(BOT_CLONE_ROOT)
+    clone_root.mkdir(parents=True, exist_ok=True)
+    clone_dir = clone_root / slug
+    repo_url = get_clone_repo_url()
+
+    if not clone_dir.exists():
+        run_system_command(['git', 'clone', '--depth', '1', repo_url, str(clone_dir)])
+
+    db_name = write_agent_clone_env(clone_dir, admin_user_id, bot_info, bot_token.strip())
+    python_exec = get_python_exec_path()
+    service_name = f'botshop-agent-{bot_id}'
+    service_path = Path('/etc/systemd/system') / f'{service_name}.service'
+    service_path.write_text(
+        build_clone_service_content(
+            f'botshop agent service {bot_username}',
+            str(clone_dir),
+            f'{python_exec} {clone_dir / "agent_service" / "service.py"}'
+        ),
+        encoding='utf-8'
+    )
+    run_system_command(['systemctl', 'daemon-reload'])
+    run_system_command(['systemctl', 'enable', '--now', f'{service_name}.service'])
+    ensure_systemd_unit_active(f'{service_name}.service', label='代理 Bot 服务', wait_seconds=15)
+
+    agent_bots.update_one(
+        {'agent_bot_id': bot_id},
+        {'$set': {
+            'agent_bot_id': bot_id,
+            'tenant_id': bot_id,
+            'bot_username': bot_username,
+            'bot_name': str(bot_info.get('first_name') or bot_username),
+            'admin_ids': [int(admin_user_id)],
+            'service_name': service_name,
+            'clone_dir': str(clone_dir),
+            'state': 'active',
+            'created_at': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()),
+            'customer_service': str(OKPAY_BOT_USERNAME or os.getenv('CUSTOMER_SERVICE_USERNAME', '') or '').strip(),
+            'trc20_address': trc20,
+        }},
+        upsert=True
+    )
+    return {
+        'bot_id': bot_id,
+        'bot_username': bot_username,
+        'clone_dir': str(clone_dir),
+        'db_name': db_name,
+        'service_name': service_name,
+        'listener_service_name': '',
+        'clone_kind': 'agent',
     }
 
 
@@ -4585,6 +4688,16 @@ def send_clonebot_prompt(context, user_id):
     context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
+def send_cloneagent_prompt(context, user_id):
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消输入', callback_data=f'close {user_id}')]]
+    user.update_one({'user_id': user_id}, {"$set": {"sign": 'agentbottoken'}})
+    context.bot.send_message(
+        chat_id=user_id,
+        text='[emoji:5287684458881756303:🤖] 请发送新的代理 Bot Token\n\n[emoji:5220195537520711716:⚡️] 系统会自动克隆 agent_service、写入配置、注册 systemd 并直接启动。',
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
 def clonepay(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
@@ -4624,6 +4737,17 @@ def clonebot(update: Update, context: CallbackContext):
         context.bot.send_message(chat_id=user_id, text='Clone This Bot is disabled on this bot' if get_user_lang(user_id) == 'en' else '当前机器人未开放克隆功能')
         return
     send_clonebot_prompt(context, user_id)
+
+
+def cloneagent(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
+    user_list = user.find_one({'user_id': user_id}) or {}
+    if str(user_list.get('state')) != '4' and user_id not in get_source_admin_user_ids():
+        context.bot.send_message(chat_id=user_id, text='只有后台管理员可以创建代理 Bot')
+        return
+    send_cloneagent_prompt(context, user_id)
 
 
 def clonelist(update: Update, context: CallbackContext):
@@ -7909,6 +8033,49 @@ def textkeyboard(update: Update, context: CallbackContext):
                     '''
                     context.bot.send_message(chat_id=user_id, text=clone_text, parse_mode='HTML')
                     send_clone_success_notice(context, user_id, result, fee_paid=(float(fee) if fee > 0 and not fee_exempt else 0))
+                elif sign == 'agentbottoken':
+                    if str(state) != '4' and user_id not in get_source_admin_user_ids():
+                        user.update_one({'user_id': user_id}, {'$set': {'sign': 0}})
+                        context.bot.send_message(chat_id=user_id, text='只有后台管理员可以创建代理 Bot')
+                        return
+                    context.bot.send_message(
+                        chat_id=user_id,
+                        text='[emoji:5220195537520711716:⚡️] 正在创建代理 Bot，请稍等…\n\n[emoji:5287684458881756303:🤖] 已收到新的代理 Token，正在自动克隆并注册 systemd。',
+                        parse_mode='HTML'
+                    )
+                    try:
+                        result = clone_agent_instance(text.strip(), user_id, source_bot_id=context.bot.id)
+                    except Exception as exc:
+                        keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消输入', callback_data=f'close {user_id}')]]
+                        context.bot.send_message(chat_id=user_id, text=f'创建代理 Bot 失败：{exc}', reply_markup=InlineKeyboardMarkup(keyboard))
+                        return
+                    user.update_one({'user_id': user_id}, {'$set': {'sign': 0}})
+                    clone_instances.update_one(
+                        {'bot_id': str(result['bot_id'])},
+                        {'$set': {
+                            'source_bot_id': str(context.bot.id),
+                            'source_bot_username': str(getattr(context.bot, 'username', '') or ''),
+                            'bot_id': str(result['bot_id']),
+                            'bot_username': str(result['bot_username']),
+                            'requester_user_id': user_id,
+                            'requester_username': username or '',
+                            'requester_name': fullname,
+                            'clone_dir': result['clone_dir'],
+                            'db_name': result['db_name'],
+                            'service_name': result['service_name'],
+                            'listener_service_name': result.get('listener_service_name', ''),
+                            'clone_kind': 'agent',
+                            'created_at': timer,
+                            'state': 'active',
+                            'fee_paid': 0,
+                        }},
+                        upsert=True
+                    )
+                    context.bot.send_message(
+                        chat_id=user_id,
+                        text=f'[emoji:5312028599803460968:🆗] 代理 Bot 创建成功\n\n[emoji:5287684458881756303:🤖] 机器人：@{result["bot_username"]}\n[emoji:6321041414067068140:👤] 管理员：{user_id}\n[emoji:5132131004097496494:🧩] 服务：<code>{result["service_name"]}.service</code>',
+                        parse_mode='HTML'
+                    )
                 elif 'setkeyname' in sign:
                     qudata = sign.replace('setkeyname ', '')
                     qudataall = qudata.split(':')
@@ -8826,7 +8993,7 @@ def main():
         application.add_handler(CommandHandler(command_name, sync_handler(callback)))
 
     callback_handlers = [
-        ('startupdate', startupdate), ('clonebot', clonebot), ('clonepay', clonepay), ('clonelist', clonelist), ('cloneinfo ', cloneinfo), ('clonerestart ', clonerestart), ('clonedelete ', clonedelete), ('setcloneprice', setcloneprice), ('restockpushcfg', restockpushcfg), ('buynoticecfg', buynoticecfg), ('setbuynotice', setbuynotice), ('setrestocktarget', setrestocktarget), ('restockrequestarea ', restockrequestarea), ('nostock ', nostock), ('okpaycfg', okpaycfg), ('setokpayid', setokpayid), ('setokpaytoken', setokpaytoken), ('setokpayname', setokpayname), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
+        ('startupdate', startupdate), ('clonebot', clonebot), ('cloneagent', cloneagent), ('clonepay', clonepay), ('clonelist', clonelist), ('cloneinfo ', cloneinfo), ('clonerestart ', clonerestart), ('clonedelete ', clonedelete), ('setcloneprice', setcloneprice), ('restockpushcfg', restockpushcfg), ('buynoticecfg', buynoticecfg), ('setbuynotice', setbuynotice), ('setrestocktarget', setrestocktarget), ('restockrequestarea ', restockrequestarea), ('nostock ', nostock), ('okpaycfg', okpaycfg), ('setokpayid', setokpayid), ('setokpaytoken', setokpaytoken), ('setokpayname', setokpayname), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
         ('backstart', backstart), ('paixurow', paixurow), ('addzdykey', addzdykey),
         ('qrscdelrow ', qrscdelrow), ('addhangkey ', addhangkey), ('delhangkey ', delhangkey),
         ('qrdelliekey ', qrdelliekey), ('keyxq ', keyxq), ('setkeyname ', setkeyname),

@@ -8,6 +8,7 @@ from datetime import timedelta, date
 import pymongo
 from pymongo.collection import Collection
 from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
 
 MONGO_URI = os.getenv('MONGO_URI', 'mongodb://127.0.0.1:27018/')
 MONGO_USER = os.getenv('MONGO_USER', '')
@@ -420,6 +421,189 @@ def mark_tenant_topup_paid(order_id, txid='', paid_amount=None, currency='USDT',
     return topup_orders.find_one({'_id': order['_id']}), 'paid'
 
 
+def get_tenant_order(tenant_id, order_id):
+    return tenant_orders.find_one({'tenant_id': normalize_tenant_id(tenant_id), 'order_id': str(order_id)})
+
+
+def update_tenant_order(tenant_id, order_id, updates=None, unset_fields=None):
+    tenant_id = normalize_tenant_id(tenant_id)
+    updates = dict(updates or {})
+    payload = {}
+    if updates:
+        payload['$set'] = updates
+    if unset_fields:
+        payload['$unset'] = {str(key): '' for key in unset_fields}
+    if not payload:
+        return get_tenant_order(tenant_id, order_id)
+    tenant_orders.update_one({'tenant_id': tenant_id, 'order_id': str(order_id)}, payload)
+    agent_orders.update_one({'agent_bot_id': tenant_id, 'order_id': str(order_id)}, payload)
+    return get_tenant_order(tenant_id, order_id)
+
+
+def refund_tenant_order(tenant_id, user_id, order_id, amount, currency='USDT', reason='account_check_refund', meta=None):
+    tenant_id = normalize_tenant_id(tenant_id)
+    user_id = int(user_id)
+    amount = float(standard_num(amount))
+    if amount <= 0:
+        wallet_doc = get_tenant_wallet_doc(tenant_id, user_id, currency)
+        return {
+            'status': 'noop',
+            'amount': 0,
+            'balance_after': float(wallet_doc.get('balance', 0) or 0),
+        }
+    created_at = beijing_now_str()
+    try:
+        refund_records.insert_one({
+            'tenant_id': tenant_id,
+            'order_id': str(order_id),
+            'user_id': user_id,
+            'amount': amount,
+            'currency': str(currency or 'USDT').upper(),
+            'reason': str(reason or 'account_check_refund'),
+            'state': 'pending',
+            'created_at': created_at,
+            'meta': dict(meta or {}),
+        })
+    except DuplicateKeyError:
+        wallet_doc = get_tenant_wallet_doc(tenant_id, user_id, currency)
+        return {
+            'status': 'already_refunded',
+            'amount': amount,
+            'balance_after': float(wallet_doc.get('balance', 0) or 0),
+        }
+
+    credit_result = credit_tenant_wallet(
+        tenant_id,
+        user_id,
+        amount,
+        currency=currency,
+        biz_type='refund',
+        ref_id=str(order_id),
+        description=str(reason or 'account_check_refund'),
+        meta=dict(meta or {}),
+    )
+    refund_records.update_one(
+        {'tenant_id': tenant_id, 'order_id': str(order_id)},
+        {'$set': {
+            'state': 'applied',
+            'applied_at': beijing_now_str(),
+            'balance_after': float(credit_result.get('balance_after', 0)),
+        }}
+    )
+    return {
+        'status': 'refunded',
+        'amount': amount,
+        'balance_after': float(credit_result.get('balance_after', 0)),
+    }
+
+
+def build_agent_withdrawal_id(tenant_id, user_id):
+    return build_tenant_order_id('W', tenant_id, user_id)
+
+
+def create_agent_withdrawal_request(tenant_id, user_id, amount, currency='USDT', address='', note=''):
+    tenant_id = normalize_tenant_id(tenant_id)
+    user_id = int(user_id)
+    amount = float(standard_num(amount))
+    if amount <= 0:
+        return None, 'invalid_amount'
+    debit_result = debit_tenant_wallet(
+        tenant_id,
+        user_id,
+        amount,
+        currency=currency,
+        biz_type='withdraw_hold',
+        ref_id='',
+        description='agent_withdraw_hold',
+        meta={'address': str(address or '').strip(), 'note': str(note or '').strip()},
+    )
+    if debit_result is None:
+        return None, 'insufficient_balance'
+    withdrawal_id = build_agent_withdrawal_id(tenant_id, user_id)
+    created_at = beijing_now_str()
+    agent_withdrawals.insert_one({
+        'agent_bot_id': tenant_id,
+        'tenant_id': tenant_id,
+        'withdrawal_id': withdrawal_id,
+        'user_id': user_id,
+        'amount': amount,
+        'currency': str(currency or 'USDT').upper(),
+        'address': str(address or '').strip(),
+        'note': str(note or '').strip(),
+        'state': 'pending',
+        'created_at': created_at,
+        'balance_after_hold': float(debit_result.get('balance_after', 0)),
+    })
+    settlement_ledger.insert_one({
+        'tenant_id': tenant_id,
+        'ref_id': withdrawal_id,
+        'type': 'withdraw_request',
+        'user_id': user_id,
+        'amount': -amount,
+        'currency': str(currency or 'USDT').upper(),
+        'state': 'pending',
+        'created_at': created_at,
+    })
+    return agent_withdrawals.find_one({'agent_bot_id': tenant_id, 'withdrawal_id': withdrawal_id}), 'pending'
+
+
+def update_agent_withdrawal_status(tenant_id, withdrawal_id, status, operator_user_id=None, note=''):
+    tenant_id = normalize_tenant_id(tenant_id)
+    withdrawal = agent_withdrawals.find_one({'agent_bot_id': tenant_id, 'withdrawal_id': str(withdrawal_id)})
+    if withdrawal is None:
+        return None, 'not_found'
+    current_state = str(withdrawal.get('state') or '')
+    status = str(status or '').strip().lower()
+    if status not in {'paid', 'rejected'}:
+        return None, 'invalid_status'
+    if current_state == status:
+        return withdrawal, 'already_done'
+    if current_state != 'pending':
+        return withdrawal, f'invalid_state:{current_state}'
+    now_str = beijing_now_str()
+    updates = {
+        'state': status,
+        'operator_user_id': int(operator_user_id) if operator_user_id else 0,
+        'operator_note': str(note or '').strip(),
+        f'{status}_at': now_str,
+    }
+    if status == 'rejected':
+        credit_result = credit_tenant_wallet(
+            tenant_id,
+            int(withdrawal.get('user_id')),
+            float(withdrawal.get('amount', 0) or 0),
+            currency=str(withdrawal.get('currency') or 'USDT').upper(),
+            biz_type='withdraw_reject_refund',
+            ref_id=str(withdrawal_id),
+            description='agent_withdraw_rejected',
+            meta={'operator_user_id': int(operator_user_id) if operator_user_id else 0, 'note': str(note or '').strip()},
+        )
+        updates['balance_after_refund'] = float(credit_result.get('balance_after', 0))
+        settlement_ledger.update_one(
+            {'tenant_id': tenant_id, 'ref_id': str(withdrawal_id), 'type': 'withdraw_request'},
+            {'$set': {'state': 'rejected', 'updated_at': now_str}}
+        )
+    else:
+        settlement_ledger.update_one(
+            {'tenant_id': tenant_id, 'ref_id': str(withdrawal_id), 'type': 'withdraw_request'},
+            {'$set': {'state': 'paid', 'updated_at': now_str, 'operator_user_id': int(operator_user_id) if operator_user_id else 0}}
+        )
+        settlement_ledger.insert_one({
+            'tenant_id': tenant_id,
+            'ref_id': str(withdrawal_id),
+            'type': 'withdraw_paid',
+            'user_id': int(withdrawal.get('user_id')),
+            'amount': -float(withdrawal.get('amount', 0) or 0),
+            'currency': str(withdrawal.get('currency') or 'USDT').upper(),
+            'state': 'paid',
+            'created_at': now_str,
+            'operator_user_id': int(operator_user_id) if operator_user_id else 0,
+            'note': str(note or '').strip(),
+        })
+    agent_withdrawals.update_one({'_id': withdrawal['_id'], 'state': 'pending'}, {'$set': updates})
+    return agent_withdrawals.find_one({'_id': withdrawal['_id']}), status
+
+
 def debit_tenant_wallet(tenant_id, user_id, amount, currency='USDT', biz_type='purchase', ref_id='', description='', meta=None):
     tenant_id = normalize_tenant_id(tenant_id)
     user_id = int(user_id)
@@ -531,6 +715,10 @@ def create_tenant_purchase_order(tenant_id, user_id, nowuid, quantity=1, currenc
         return None, 'balance'
 
     timer = beijing_now_str()
+    get_agent_bot_user_collection(tenant_id).update_one(
+        {'user_id': user_id},
+        {'$inc': {'zgsl': quantity, 'zgje': total_amount}, '$set': {'last_contact_time': timer, 'sign': 0}},
+    )
     category = fenlei.find_one({'uid': product.get('uid')}) or {}
     doc = {
         'tenant_id': tenant_id,
@@ -602,6 +790,7 @@ def ensure_tenant_core_indexes():
     _create_index_safe(agent_bots, 'agent_bot_id', unique=True)
     _create_index_safe(agent_product_prices, [('agent_bot_id', 1), ('nowuid', 1)], unique=True)
     _create_index_safe(agent_orders, [('agent_bot_id', 1), ('order_id', 1)], unique=True, sparse=True)
+    _create_index_safe(agent_withdrawals, [('agent_bot_id', 1), ('withdrawal_id', 1)], unique=True, sparse=True)
     _create_index_safe(agent_withdrawals, [('agent_bot_id', 1), ('created_at', -1)], name='agent_created_at')
 
 
