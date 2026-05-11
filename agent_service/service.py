@@ -16,6 +16,7 @@ if str(PARENT_DIR) not in sys.path:
     sys.path.insert(0, str(PARENT_DIR))
 
 from telegram import InlineKeyboardMarkup, ReplyKeyboardMarkup, Update
+from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from config import AgentRuntimeConfig, load_agent_env
@@ -111,6 +112,13 @@ AGENT_WITHDRAW_MIN_AMOUNT = 10.0
 
 def render_text(text: str):
     return build_custom_emoji_text_entities(str(text or ''))
+
+
+def format_usdt_2(value) -> str:
+    try:
+        return f'{float(value or 0):.2f}'
+    except Exception:
+        return '0.00'
 
 
 def strip_basic_html(text: str) -> str:
@@ -260,6 +268,17 @@ async def reply_rendered(update: Update, text: str, reply_markup=None):
 async def edit_rendered(query, text: str, reply_markup=None):
     rendered_text, entities = render_text(text)
     return await query.edit_message_text(text=rendered_text, entities=entities, reply_markup=reply_markup)
+
+
+async def reply_html(update: Update, html_text: str, reply_markup=None):
+    message = update.effective_message
+    if message is None:
+        return None
+    return await message.reply_text(text=html_text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+
+
+async def edit_html(query, html_text: str, reply_markup=None):
+    return await query.edit_message_text(text=html_text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
 
 
 def is_agent_admin(config: AgentRuntimeConfig, user_id: int) -> bool:
@@ -600,11 +619,11 @@ def build_welcome_text(config: AgentRuntimeConfig, user_row: dict) -> str:
     username = str(user_row.get('username') or '').strip().lstrip('@')
     username_text = f'@{html.escape(username, quote=False)}' if username else '未设置'
     return (
-        f'[emoji:5222044641200720562:🌸]欢迎来到 {config.agent_name}\n\n'
-        f'[emoji:5929391996408959380:🏞]你的ID：{user_row.get("user_id")} id\n'
-        f'[emoji:5220064167356025824:⭐️]您的用户名：{username_text}\n'
-        f'[emoji:4972482444025398275:👛]当前余额：{user_row.get("USDT", 0)} USDT\n\n'
-        f'[emoji:5954227490179255253:🔵]/start 启动主菜单'
+        f'🌸欢迎来到 {html.escape(str(config.agent_name or ""), quote=False)}\n\n'
+        f'🏞你的ID：<code>{user_row.get("user_id")}</code>\n'
+        f'⭐️您的用户名：{username_text}\n'
+        f'👛当前余额：{format_usdt_2(user_row.get("USDT", 0))} USDT\n\n'
+        f'🔵/start 启动主菜单'
     )
 
 
@@ -1323,7 +1342,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         getattr(tg_user, 'language_code', None) or config.default_lang,
         state='1',
     )
-    await reply_rendered(
+    await reply_html(
         update,
         build_home_text(config, user_row or {'user_id': tg_user.id, 'USDT': 0, 'username': tg_user.username}),
         reply_markup=build_home_keyboard(config, lang=(user_row or {}).get('lang', config.default_lang), user_id=tg_user.id),
@@ -1336,7 +1355,7 @@ async def send_home(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if tg_user is None or update.effective_chat is None:
         return
     user_row = get_agent_bot_user(config.agent_bot_id, tg_user.id) or {'user_id': tg_user.id, 'USDT': 0, 'username': tg_user.username}
-    await reply_rendered(update, build_home_text(config, user_row), reply_markup=build_home_keyboard(config, lang=user_row.get('lang', config.default_lang), user_id=tg_user.id))
+    await reply_html(update, build_home_text(config, user_row), reply_markup=build_home_keyboard(config, lang=user_row.get('lang', config.default_lang), user_id=tg_user.id))
 
 
 def build_profile_text(user_id: int, user_row: dict) -> str:
@@ -1699,7 +1718,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
     if data == 'agent_home':
         user_row = get_agent_bot_user(config.agent_bot_id, query.from_user.id) or {'user_id': query.from_user.id, 'USDT': 0, 'username': query.from_user.username}
-        await edit_rendered(query, build_home_text(config, user_row))
+        await edit_html(query, build_home_text(config, user_row))
         return
     if data == 'agent_profile':
         user_row = get_agent_bot_user(config.agent_bot_id, query.from_user.id) or {}
