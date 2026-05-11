@@ -2043,6 +2043,34 @@ def rename_directory(old_path, new_path):
         print(f"Folder '{old_path}' does not exist")
 
 
+TRANSFER_CLAIM_EXPIRE_SECONDS = 5 * 60
+
+
+def get_transfer_expire_ts(transfer_row):
+    row = transfer_row or {}
+    try:
+        expire_ts = int(row.get('expire_ts') or 0)
+        if expire_ts > 0:
+            return expire_ts
+    except Exception:
+        pass
+    timer_text = str(row.get('timer') or '').strip()
+    if timer_text:
+        try:
+            return int(time.mktime(time.strptime(timer_text, '%Y-%m-%d %H:%M:%S'))) + TRANSFER_CLAIM_EXPIRE_SECONDS
+        except Exception:
+            pass
+    return 0
+
+
+def is_transfer_expired(transfer_row, now_ts=None):
+    expire_ts = get_transfer_expire_ts(transfer_row)
+    if expire_ts <= 0:
+        return False
+    now_ts = int(now_ts or time.time())
+    return now_ts >= expire_ts
+
+
 def inline_query(update: Update, context: CallbackContext):
     """Handle the inline query. This is run when you type: @botusername <query>"""
     query = update.inline_query.query
@@ -2095,13 +2123,16 @@ def inline_query(update: Update, context: CallbackContext):
                 update.inline_query.answer(results=results, cache_time=0)
                 return
             uid = generate_24bit_uid()
-            timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+            created_ts = int(time.time())
+            timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(created_ts))
             zhuanz.insert_one({
                 'uid': uid,
                 'user_id': user_id,
                 'fullname': fullname,
                 'money': money,
                 'timer': timer,
+                'created_ts': created_ts,
+                'expire_ts': created_ts + TRANSFER_CLAIM_EXPIRE_SECONDS,
                 'state': 0
             })
             # keyboard = [[InlineKeyboardButton("📥收款", callback_data=f'shokuan {user_id}:{money}')]]
@@ -2113,7 +2144,7 @@ def inline_query(update: Update, context: CallbackContext):
             zztext = f'''
 <b>转账给你 {query} U</b>
 
-请在24小时内领取
+请在5分钟内领取
             '''
             results = [
                 InlineQueryResultArticle(
@@ -2250,29 +2281,45 @@ def inline_query(update: Update, context: CallbackContext):
 
 def shokuan(update: Update, context: CallbackContext):
     query = update.callback_query
-    # data = query.data.replace('shokuan ','')
     uid = query.data.replace('shokuan ', '')
+    now_ts = int(time.time())
 
-    # fb_id = int(data.split(':')[0])
-    # fb_money = data.split(':')[1]
-    # fb_money = float(fb_money) if str((fb_money)).count('.') > 0 else int(standard_num(fb_money))
     fb_list = zhuanz.find_one({'uid': uid})
-    fb_state = fb_list['state']
-    if fb_state == 1:
-        fstext = f'''
-❌ 领取失败
-        '''
-        query.answer(fstext, show_alert=bool("true"))
+    if fb_list is None:
+        logging.warning('transfer claim target missing: uid=%s claimer=%s', uid, getattr(query.from_user, 'id', 0))
+        query.answer('❌ 领取失败，转账记录不存在或已失效', show_alert=bool("true"))
         return
-    fb_id = fb_list['user_id']
-    fb_money = fb_list['money']
+
+    fb_state = int(fb_list.get('state', 0) or 0)
+    if fb_state == 1:
+        query.answer('❌ 领取失败，该转账已被领取', show_alert=bool("true"))
+        return
+    if fb_state == 2 or is_transfer_expired(fb_list, now_ts):
+        zhuanz.update_one({'uid': uid, 'state': {'$ne': 1}}, {"$set": {"state": 2, 'expired_at': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(now_ts))}})
+        query.answer('❌ 领取失败，该转账已超过5分钟，已自动失效', show_alert=bool("true"))
+        try:
+            query.edit_message_text('❌ 该转账已超过5分钟，已自动失效')
+        except Exception:
+            pass
+        return
+
+    claimed_row = zhuanz.find_one_and_update(
+        {'uid': uid, 'state': 0},
+        {'$set': {'state': 1, 'claimed_at': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(now_ts)), 'claimed_user_id': int(query.from_user.id)}},
+        return_document=ReturnDocument.AFTER,
+    )
+    if claimed_row is None:
+        query.answer('❌ 领取失败，该转账已被领取或已失效', show_alert=bool("true"))
+        return
+
+    fb_id = claimed_row['user_id']
+    fb_money = claimed_row['money']
     yh_list = user.find_one({'user_id': fb_id})
-    yh_usdt = yh_list['USDT']
+    yh_usdt = float((yh_list or {}).get('USDT', 0) or 0)
     if yh_usdt < fb_money:
         fstext = f'''
 ❌ 领取失败.USDT 操作失败，余额不足
         '''
-        zhuanz.update_one({'uid': uid}, {"$set": {"state": 1}})
         query.answer(fstext, show_alert=bool("true"))
         return
 
@@ -2280,7 +2327,6 @@ def shokuan(update: Update, context: CallbackContext):
     now_money = float(now_money) if str((now_money)).count('.') > 0 else int(standard_num(now_money))
     user.update_one({'user_id': fb_id}, {"$set": {'USDT': now_money}})
 
-    zhuanz.update_one({'uid': uid}, {"$set": {"state": 1}})
     user_id = query.from_user.id
     username = query.from_user.username
     fullname = query.from_user.full_name.replace('<', '').replace('>', '')
