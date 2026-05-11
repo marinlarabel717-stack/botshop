@@ -73,6 +73,7 @@ from haopubot import (
     get_ui_text,
     resolve_inventory_check_target,
     write_invalid_archive_meta,
+    APP_VERSION,
 )
 
 
@@ -806,7 +807,7 @@ def summarize_agent_check_reason(reason: str, limit: int = 120) -> str:
     return f'{text[:limit - 3]}...'
 
 
-def build_agent_delivery_result_text(config: AgentRuntimeConfig, order: dict, total_count: int, alive_count: int, invalid_count: int, frozen_count: int, timeout_count: int, refund_amount: float, balance_after: float, user_id: int, first_invalid_reason: str = '', first_frozen_reason: str = '') -> str:
+def build_agent_delivery_result_text(config: AgentRuntimeConfig, order: dict, total_count: int, alive_count: int, invalid_count: int, frozen_count: int, timeout_count: int, refund_amount: float, balance_after: float, user_id: int, first_invalid_reason: str = '', first_frozen_reason: str = '', first_invalid_entry_type: str = '', first_invalid_path: str = '', first_frozen_entry_type: str = '', first_frozen_path: str = '') -> str:
     charged_amount = float(standard_num(float(order.get('total_amount', 0) or 0) - float(refund_amount or 0)))
     refund_text = standard_num(refund_amount)
     remaining_text = standard_num(balance_after)
@@ -847,15 +848,24 @@ def build_agent_delivery_result_text(config: AgentRuntimeConfig, order: dict, to
             '',
             f'First invalid reason: {summarize_agent_check_reason(first_invalid_reason)}' if lang == 'en' else f'首个无效原因：{summarize_agent_check_reason(first_invalid_reason)}'
         ])
+        if first_invalid_entry_type:
+            lines.append(f'First invalid entry type: {first_invalid_entry_type}' if lang == 'en' else f'首个无效检测入口：{first_invalid_entry_type}')
+        if first_invalid_path:
+            lines.append(f'First invalid path: {summarize_agent_check_reason(first_invalid_path, 160)}' if lang == 'en' else f'首个无效检测路径：{summarize_agent_check_reason(first_invalid_path, 160)}')
     if first_frozen_reason:
         lines.extend([
             '',
             f'First frozen reason: {summarize_agent_check_reason(first_frozen_reason)}' if lang == 'en' else f'首个冻结原因：{summarize_agent_check_reason(first_frozen_reason)}'
         ])
+        if first_frozen_entry_type:
+            lines.append(f'First frozen entry type: {first_frozen_entry_type}' if lang == 'en' else f'首个冻结检测入口：{first_frozen_entry_type}')
+        if first_frozen_path:
+            lines.append(f'First frozen path: {summarize_agent_check_reason(first_frozen_path, 160)}' if lang == 'en' else f'首个冻结检测路径：{summarize_agent_check_reason(first_frozen_path, 160)}')
+    lines.extend(['', f'Version: {APP_VERSION}' if lang == 'en' else f'版本：{APP_VERSION}'])
     return '\n'.join(lines)
 
 
-def build_agent_delivery_admin_notice(order: dict, user_row: dict, total_count: int, alive_count: int, invalid_count: int, frozen_count: int, timeout_count: int, refund_amount: float, first_invalid_reason: str = '', first_frozen_reason: str = '') -> str:
+def build_agent_delivery_admin_notice(order: dict, user_row: dict, total_count: int, alive_count: int, invalid_count: int, frozen_count: int, timeout_count: int, refund_amount: float, first_invalid_reason: str = '', first_frozen_reason: str = '', first_invalid_entry_type: str = '', first_invalid_path: str = '', first_frozen_entry_type: str = '', first_frozen_path: str = '') -> str:
     username = str(user_row.get('username') or '').strip()
     username_text = f'@{username}' if username else '未设置'
     lines = [
@@ -875,8 +885,17 @@ def build_agent_delivery_admin_notice(order: dict, user_row: dict, total_count: 
     ]
     if first_invalid_reason:
         lines.append(f'首个无效原因：{summarize_agent_check_reason(first_invalid_reason, 200)}')
+    if first_invalid_entry_type:
+        lines.append(f'首个无效检测入口：{first_invalid_entry_type}')
+    if first_invalid_path:
+        lines.append(f'首个无效检测路径：{summarize_agent_check_reason(first_invalid_path, 200)}')
     if first_frozen_reason:
         lines.append(f'首个冻结原因：{summarize_agent_check_reason(first_frozen_reason, 200)}')
+    if first_frozen_entry_type:
+        lines.append(f'首个冻结检测入口：{first_frozen_entry_type}')
+    if first_frozen_path:
+        lines.append(f'首个冻结检测路径：{summarize_agent_check_reason(first_frozen_path, 200)}')
+    lines.append(f'版本：{APP_VERSION}')
     return '\n'.join(lines)
 
 
@@ -986,7 +1005,11 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
         checked_count = 0
         last_progress_ts = 0.0
         first_invalid_reason = ''
+        first_invalid_entry_type = ''
+        first_invalid_path = ''
         first_frozen_reason = ''
+        first_frozen_entry_type = ''
+        first_frozen_path = ''
         semaphore = asyncio.Semaphore(get_agent_account_check_concurrency(total_count))
 
         async def run_agent_check(item: dict):
@@ -1072,10 +1095,14 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
                 elif status == 'invalid':
                     if not first_invalid_reason and reason_text:
                         first_invalid_reason = reason_text
+                        first_invalid_entry_type = str(check_result.get('entry_type') or '')
+                        first_invalid_path = str(check_result.get('path') or '')
                     invalid_items.append(archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, meta))
                 elif status == 'frozen':
                     if not first_frozen_reason and reason_text:
                         first_frozen_reason = reason_text
+                        first_frozen_entry_type = str(check_result.get('entry_type') or '')
+                        first_frozen_path = str(check_result.get('path') or '')
                     frozen_items.append(archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, meta))
                 else:
                     timeout_items.append(item)
@@ -1098,7 +1125,11 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
                     task.cancel()
     else:
         first_invalid_reason = ''
+        first_invalid_entry_type = ''
+        first_invalid_path = ''
         first_frozen_reason = ''
+        first_frozen_entry_type = ''
+        first_frozen_path = ''
         alive_items = list(selected_docs)
 
     refund_amount = float(standard_num(float(order.get('unit_price', 0) or 0) * (len(invalid_items) + len(frozen_items))))
@@ -1139,7 +1170,7 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
         final_state = 'refunded'
     elif refund_amount > 0:
         final_state = 'partial_refunded'
-    final_text = build_agent_delivery_result_text(config, order, total_count, len(alive_items), len(invalid_items), len(frozen_items), len(timeout_items), refund_amount, balance_after, user_id, first_invalid_reason=first_invalid_reason, first_frozen_reason=first_frozen_reason)
+    final_text = build_agent_delivery_result_text(config, order, total_count, len(alive_items), len(invalid_items), len(frozen_items), len(timeout_items), refund_amount, balance_after, user_id, first_invalid_reason=first_invalid_reason, first_frozen_reason=first_frozen_reason, first_invalid_entry_type=first_invalid_entry_type, first_invalid_path=first_invalid_path, first_frozen_entry_type=first_frozen_entry_type, first_frozen_path=first_frozen_path)
     if progress_message is not None:
         try:
             rendered_text, entities = render_text(final_text)
@@ -1170,7 +1201,7 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
         'ts': final_text,
         'timer': beijing_now_str(),
     })
-    await send_agent_admin_notice(config, context, build_agent_delivery_admin_notice(order, user_row, total_count, len(alive_items), len(invalid_items), len(frozen_items), len(timeout_items), refund_amount, first_invalid_reason=first_invalid_reason, first_frozen_reason=first_frozen_reason))
+    await send_agent_admin_notice(config, context, build_agent_delivery_admin_notice(order, user_row, total_count, len(alive_items), len(invalid_items), len(frozen_items), len(timeout_items), refund_amount, first_invalid_reason=first_invalid_reason, first_frozen_reason=first_frozen_reason, first_invalid_entry_type=first_invalid_entry_type, first_invalid_path=first_invalid_path, first_frozen_entry_type=first_frozen_entry_type, first_frozen_path=first_frozen_path))
 
 
 def format_trc20_amount_text(value) -> str:
