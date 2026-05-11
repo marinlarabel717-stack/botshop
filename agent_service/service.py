@@ -65,6 +65,7 @@ from haopubot import (
     create_delivery_order_id,
     find_existing_storage_path,
     get_buy_notice_text,
+    get_message_storage_text,
     get_source_admin_user_ids,
     get_ui_text,
     resolve_inventory_check_target,
@@ -346,10 +347,11 @@ def build_admin_purchase_notice_text(config: AgentRuntimeConfig) -> str:
     return (
         '[emoji:5235511932064129087:🎁]购买后通知配置\n\n'
         f'当前内容：\n{current_text}\n\n'
-        '请直接发送新的购买后通知内容。\n'
-        '支持会员表情格式，例如：\n'
-        '[emoji:5193209274452425995:🎉]购买成功后请先查看文件\n'
-        '[emoji:5954078884310814346:☎️]有问题联系客服 @support\n\n'
+        '请直接把最终想发给用户的内容发给机器人即可。\n'
+        '会员表情可以直接发，机器人会自动识别保存，不需要手打代码。\n\n'
+        '例如：\n'
+        '✔️您的账号已打包完成\n\n'
+        '⚠️二级密码请在文件里查看 2fa\n\n'
         '如果要清空，直接发送：关闭'
     )
 
@@ -1597,7 +1599,8 @@ async def message_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await reply_rendered(update, f'[emoji:5312028599803460968:🆗]已更新补货通知目标：{target}', reply_markup=build_admin_panel_keyboard())
         return
     if sign == ADMIN_SIGN_PURCHASE_NOTICE:
-        notice_text = text.strip()
+        raw_notice_text = get_message_storage_text(update.effective_message) or text
+        notice_text = str(raw_notice_text or '').strip()
         if notice_text in {'关闭', '清空', 'none', 'NONE'}:
             notice_text = ''
         set_agent_sign(config.agent_bot_id, tg_user.id, 0)
