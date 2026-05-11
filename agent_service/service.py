@@ -14,11 +14,15 @@ if str(PARENT_DIR) not in sys.path:
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, Update
 from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
-from config import AgentRuntimeConfig
+from config import AgentRuntimeConfig, load_agent_env
+
+load_agent_env()
+
 from mongo import (
     agent_bots,
     agent_product_prices,
     beijing_now_str,
+    create_tenant_purchase_order,
     create_tenant_topup_order,
     credit_tenant_wallet,
     ejfl,
@@ -33,6 +37,7 @@ from mongo import (
     get_latest_pending_topup_order,
     mark_tenant_topup_paid,
     standard_num,
+    tenant_orders,
     topup_orders,
 )
 
@@ -310,10 +315,65 @@ def build_product_detail_text(payload: dict) -> str:
 
 def build_product_detail_keyboard(uid: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton('🛒暂未开放购买', callback_data='agent_noop')],
+        [InlineKeyboardButton('✅立即购买 1 件', callback_data=f'agent_buy:{uid}')],
         [InlineKeyboardButton('⬅️返回商品列表', callback_data=f'agent_cate:{uid}')],
         [InlineKeyboardButton('🏠返回分类目录', callback_data='agent_catalog')],
     ])
+
+
+def build_purchase_confirm_text(payload: dict, user_row: dict) -> str:
+    return (
+        f'<b>确认购买</b>\n\n'
+        f'商品：{html.escape(str(payload.get("projectname") or "商品"), quote=False)}\n'
+        f'数量：<code>1</code>\n'
+        f'单价：<code>{standard_num(payload.get("price", 0))} USDT</code>\n'
+        f'需支付：<code>{standard_num(payload.get("price", 0))} USDT</code>\n'
+        f'当前余额：<code>{standard_num(user_row.get("USDT", 0))} USDT</code>\n'
+        f'当前库存：<code>{payload.get("stock", 0)}</code>\n\n'
+        '这一步先按单件购买跑通，后面再扩成数量输入与真实发货。'
+    )
+
+
+def build_purchase_confirm_keyboard(nowuid: str, uid: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton('确认购买✅', callback_data=f'agent_buy_confirm:{nowuid}')],
+        [InlineKeyboardButton('⬅️返回商品详情', callback_data=f'agent_goods:{nowuid}')],
+        [InlineKeyboardButton('🏠返回分类目录', callback_data='agent_catalog')],
+    ])
+
+
+def build_purchase_result_text(order: dict) -> str:
+    return (
+        f'<b>代理下单成功</b>\n\n'
+        f'订单号：<code>{html.escape(str(order.get("order_id") or ""), quote=False)}</code>\n'
+        f'商品：{html.escape(str(order.get("product_name") or "商品"), quote=False)}\n'
+        f'数量：<code>{order.get("quantity", 1)}</code>\n'
+        f'扣款：<code>{standard_num(order.get("total_amount", 0))} USDT</code>\n'
+        f'余额：<code>{standard_num(order.get("balance_after", 0))} USDT</code>\n'
+        f'状态：<code>{html.escape(str(order.get("state") or "reserved"), quote=False)}</code>\n\n'
+        '当前已完成：代理订单、扣款、库存预占。下一步继续接真实发货与售后退款。'
+    )
+
+
+async def agent_orders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    config: AgentRuntimeConfig = context.application.bot_data['agent_config']
+    tg_user = update.effective_user
+    if tg_user is None or update.effective_chat is None:
+        return
+    rows = list(tenant_orders.find({'tenant_id': config.agent_bot_id, 'user_id': tg_user.id}, sort=[('created_ts_ms', -1)], limit=10))
+    if not rows:
+        await update.effective_chat.send_message('当前还没有代理订单记录。')
+        return
+    lines = ['<b>最近代理订单</b>']
+    for row in rows:
+        lines.extend([
+            '',
+            f'订单号：<code>{html.escape(str(row.get("order_id") or ""), quote=False)}</code>',
+            f'商品：{html.escape(str(row.get("product_name") or "商品"), quote=False)}',
+            f'金额：<code>{standard_num(row.get("total_amount", 0))} USDT</code>',
+            f'状态：<code>{html.escape(str(row.get("state") or ""), quote=False)}</code>',
+        ])
+    await update.effective_chat.send_message('\n'.join(lines), parse_mode='HTML')
 
 
 async def send_catalog(chat_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
