@@ -965,6 +965,13 @@ WantedBy=multi-user.target
 '''
 
 
+def sync_clone_repo_code(clone_dir):
+    clone_dir = Path(str(clone_dir or '').strip())
+    if not clone_dir or not clone_dir.exists() or not (clone_dir / '.git').exists():
+        return
+    run_system_command(['git', 'pull', '--ff-only'], cwd=str(clone_dir), timeout=60)
+
+
 def refresh_clone_service_files(record):
     clone_dir = Path(str(record.get('clone_dir') or '').strip())
     if not clone_dir:
@@ -5056,10 +5063,12 @@ def finish_agent_restart_in_background(context, user_id, bot_id):
         return
     service_name = str(row.get('service_name') or '').strip()
     bot_username = str(row.get('bot_username') or '').strip()
+    clone_dir = Path(str(row.get('clone_dir') or '').strip())
     display_bot = f'@{bot_username}' if bot_username else str(bot_id)
     try:
         if not service_name:
             raise RuntimeError('未找到代理服务名')
+        sync_clone_repo_code(clone_dir)
         refresh_clone_service_files(row)
         restart_systemd_unit(f'{service_name}.service', label='代理 Bot 服务', wait_seconds=120)
         final_state = get_systemd_unit_state(f'{service_name}.service')
