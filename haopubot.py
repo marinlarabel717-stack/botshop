@@ -5062,13 +5062,19 @@ def finish_agent_restart_in_background(context, user_id, bot_id):
             raise RuntimeError('未找到代理服务名')
         refresh_clone_service_files(row)
         restart_systemd_unit(f'{service_name}.service', label='代理 Bot 服务', wait_seconds=120)
+        final_state = get_systemd_unit_state(f'{service_name}.service')
     except Exception as exc:
         try:
             context.bot.send_message(chat_id=user_id, text=f'重启代理失败：{exc}')
         except Exception:
             pass
         return
-    text = f'[emoji:5312028599803460968:🆗] 已重启代理机器人\n\n[emoji:5287684458881756303:🤖] 机器人：{display_bot}'
+    text = (
+        f'[emoji:5312028599803460968:🆗] 已重启代理机器人\n\n'
+        f'[emoji:5287684458881756303:🤖] 机器人：{display_bot}\n'
+        f'[emoji:5954227490179255253:🔵] 服务：{service_name}.service\n'
+        f'[emoji:5217818964612108191:✨] 当前状态：{final_state}'
+    )
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f'{ADMIN_EMOJI_CLONE_LIST}返回代理详情', callback_data=f'agentinfo {bot_id}')]])
     try:
         context.bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)

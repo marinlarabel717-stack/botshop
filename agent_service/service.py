@@ -107,13 +107,11 @@ def render_text(text: str):
 
 
 def strip_basic_html(text: str) -> str:
-    text = str(text or '')
-    for old, new in (
-        ('<b>', ''), ('</b>', ''),
-        ('<code>', ''), ('</code>', ''),
-    ):
-        text = text.replace(old, new)
-    return text
+    text = html.unescape(str(text or ''))
+    text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'</p\s*>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'<[^>]+>', '', text)
+    return text.strip()
 
 
 def get_agent_lang(config: AgentRuntimeConfig, user_id: int | None = None, user_row: dict | None = None) -> str:
