@@ -12,6 +12,9 @@
 - 代理商品分类目录 / 商品列表展示
 - 代理价格覆盖读取
 - 管理员命令设置/清理价格覆盖
+- 代理 TRC20 充值订单创建
+- 代理钱包账本入账 helper
+- 管理员手动上分 / 手动确认到账命令
 
 ## 启动
 
@@ -28,12 +31,13 @@ py agent_service\service.py
 ```bash
 /agent_price <nowuid> <price> [display_name]
 /agent_price_clear <nowuid>
+/agent_credit <user_id> <amount> [note]
+/agent_mark_paid <order_id> [txid]
 ```
 
 ## 下一步计划
 
-1. 接代理充值订单与钱包账本
+1. 把真实链上监听 / 主支付系统接到代理充值订单
 2. 接代理订单、发货、退款
 3. 接代理结算与提现
 4. 接代理 bot 与主系统 clone/systemd 流程
-

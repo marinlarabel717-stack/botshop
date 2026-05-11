@@ -3,6 +3,7 @@ import os
 import json
 import random
 import re
+import uuid
 from datetime import timedelta, date
 import pymongo
 from pymongo.collection import Collection
@@ -233,6 +234,190 @@ def get_agent_stats(agent_bot_id):
         'total_topups': total_topups,
         'purchase_records': total_records,
     }
+
+
+def build_tenant_order_id(prefix, tenant_id, user_id):
+    tenant_id = normalize_tenant_id(tenant_id)
+    return f'{prefix}{int(time.time() * 1000)}{tenant_id[:6].upper()}{int(user_id)}{uuid.uuid4().hex[:6].upper()}'
+
+
+def build_topup_expire_ts_ms(created_ts_ms, minutes=10):
+    return int(created_ts_ms) + int(minutes * 60 * 1000)
+
+
+def current_ts_ms():
+    return int(time.time() * 1000)
+
+
+def parse_decimal_amount(value, places='0.0001'):
+    from decimal import Decimal
+    return Decimal(str(value)).quantize(Decimal(places))
+
+
+def get_tenant_wallet_doc(tenant_id, user_id, currency='USDT'):
+    tenant_id = normalize_tenant_id(tenant_id)
+    user_id = int(user_id)
+    currency = str(currency or 'USDT').upper()
+    row = tenant_wallets.find_one({'tenant_id': tenant_id, 'user_id': user_id, 'currency': currency})
+    if row is not None:
+        return row
+    now = beijing_now_str()
+    tenant_wallets.update_one(
+        {'tenant_id': tenant_id, 'user_id': user_id, 'currency': currency},
+        {'$setOnInsert': {
+            'tenant_id': tenant_id,
+            'user_id': user_id,
+            'currency': currency,
+            'balance': 0,
+            'created_at': now,
+            'updated_at': now,
+        }},
+        upsert=True,
+    )
+    return tenant_wallets.find_one({'tenant_id': tenant_id, 'user_id': user_id, 'currency': currency}) or {}
+
+
+def append_wallet_ledger_entry(tenant_id, user_id, currency, amount, balance_before, balance_after, biz_type, ref_id='', description='', meta=None):
+    tenant_id = normalize_tenant_id(tenant_id)
+    wallet_ledger.insert_one({
+        'tenant_id': tenant_id,
+        'user_id': int(user_id),
+        'currency': str(currency or 'USDT').upper(),
+        'amount': float(amount),
+        'balance_before': float(balance_before),
+        'balance_after': float(balance_after),
+        'biz_type': str(biz_type or 'unknown'),
+        'ref_id': str(ref_id or ''),
+        'description': str(description or ''),
+        'meta': dict(meta or {}),
+        'created_at': beijing_now_str(),
+        'created_ts_ms': current_ts_ms(),
+    })
+
+
+def credit_tenant_wallet(tenant_id, user_id, amount, currency='USDT', biz_type='manual_topup', ref_id='', description='', meta=None):
+    tenant_id = normalize_tenant_id(tenant_id)
+    user_id = int(user_id)
+    amount = float(amount)
+    if amount <= 0:
+        raise ValueError('credit amount must be positive')
+    ensure_agent_user_exists(tenant_id, user_id)
+    wallet_doc = get_tenant_wallet_doc(tenant_id, user_id, currency)
+    balance_before = float(wallet_doc.get('balance', 0) or 0)
+    updated_wallet = tenant_wallets.find_one_and_update(
+        {'tenant_id': tenant_id, 'user_id': user_id, 'currency': str(currency or 'USDT').upper()},
+        {'$inc': {'balance': amount}, '$set': {'updated_at': beijing_now_str()}},
+        return_document=ReturnDocument.AFTER,
+    )
+    updated_user = update_agent_bot_user_balance(tenant_id, user_id, amount, allow_negative=False)
+    if updated_wallet is None or updated_user is None:
+        raise RuntimeError('failed to credit tenant wallet')
+    balance_after = float(updated_wallet.get('balance', 0) or 0)
+    append_wallet_ledger_entry(tenant_id, user_id, currency, amount, balance_before, balance_after, biz_type, ref_id, description, meta)
+    return {
+        'wallet': updated_wallet,
+        'user': updated_user,
+        'balance_before': balance_before,
+        'balance_after': balance_after,
+    }
+
+
+def create_tenant_topup_order(tenant_id, user_id, payment_type, requested_amount, pay_amount=None, pay_amount_text=None, currency='USDT', to_address='', expire_minutes=10, extra=None):
+    tenant_id = normalize_tenant_id(tenant_id)
+    user_id = int(user_id)
+    requested_amount = float(requested_amount)
+    pay_amount = float(pay_amount if pay_amount is not None else requested_amount)
+    pay_amount_text = str(pay_amount_text or standard_num(pay_amount))
+    now_ts = current_ts_ms()
+    now_str = beijing_now_str()
+    expire_ts = build_topup_expire_ts_ms(now_ts, minutes=expire_minutes)
+    order_id = build_tenant_order_id(str(payment_type or 'TOPUP').upper(), tenant_id, user_id)
+    topup_orders.update_many(
+        {'tenant_id': tenant_id, 'user_id': user_id, 'type': payment_type, 'state': 'pending'},
+        {'$set': {'state': 'canceled', 'canceled_at': now_str, 'cancel_reason': 'recreated'}},
+    )
+    doc = {
+        'tenant_id': tenant_id,
+        'user_id': user_id,
+        'order_id': order_id,
+        'type': str(payment_type or 'trc20').lower(),
+        'currency': str(currency or 'USDT').upper(),
+        'requested_amount': requested_amount,
+        'pay_amount': pay_amount,
+        'pay_amount_text': pay_amount_text,
+        'to_address': str(to_address or ''),
+        'state': 'pending',
+        'created_at': now_str,
+        'created_ts_ms': now_ts,
+        'expire_ts_ms': expire_ts,
+        'expire_at': format_beijing_time(datetime.datetime.utcfromtimestamp(expire_ts / 1000) + timedelta(hours=8)),
+        'extra': dict(extra or {}),
+    }
+    topup_orders.insert_one(doc)
+    return doc
+
+
+def get_latest_pending_topup_order(tenant_id, user_id, payment_type=None):
+    query = {'tenant_id': normalize_tenant_id(tenant_id), 'user_id': int(user_id), 'state': 'pending'}
+    if payment_type is not None:
+        query['type'] = str(payment_type).lower()
+    return topup_orders.find_one(query, sort=[('created_ts_ms', -1)])
+
+
+def expire_tenant_topup_orders(tenant_id=None):
+    query = {'state': 'pending', 'expire_ts_ms': {'$lt': current_ts_ms()}}
+    if tenant_id is not None:
+        query['tenant_id'] = normalize_tenant_id(tenant_id)
+    result = topup_orders.update_many(query, {'$set': {'state': 'expired', 'expired_at': beijing_now_str()}})
+    return int(result.modified_count or 0)
+
+
+def mark_tenant_topup_paid(order_id, txid='', paid_amount=None, currency='USDT', channel='manual', meta=None):
+    order = topup_orders.find_one({'order_id': str(order_id)})
+    if order is None:
+        return None, 'order_not_found'
+    if order.get('state') == 'paid':
+        return order, 'already_paid'
+    if order.get('state') != 'pending':
+        return None, 'order_not_pending'
+    if int(order.get('expire_ts_ms') or 0) and current_ts_ms() > int(order.get('expire_ts_ms') or 0):
+        topup_orders.update_one({'_id': order['_id'], 'state': 'pending'}, {'$set': {'state': 'expired', 'expired_at': beijing_now_str()}})
+        return None, 'order_expired'
+    tenant_id = normalize_tenant_id(order.get('tenant_id'))
+    amount = float(paid_amount if paid_amount is not None else order.get('pay_amount', order.get('requested_amount', 0)))
+    claim = topup_orders.find_one_and_update(
+        {'_id': order['_id'], 'state': 'pending'},
+        {'$set': {'state': 'processing', 'processing_at': beijing_now_str(), 'paid_channel': channel}},
+        return_document=ReturnDocument.BEFORE,
+    )
+    if claim is None:
+        latest = topup_orders.find_one({'_id': order['_id']}) or {}
+        if latest.get('state') == 'paid':
+            return latest, 'already_paid'
+        return None, 'order_processing'
+    credit_result = credit_tenant_wallet(
+        tenant_id,
+        int(order.get('user_id')),
+        amount,
+        currency=currency,
+        biz_type='topup',
+        ref_id=str(order_id),
+        description=f'{channel} 充值到账',
+        meta=dict(meta or {}),
+    )
+    topup_orders.update_one(
+        {'_id': order['_id'], 'state': 'processing'},
+        {'$set': {
+            'state': 'paid',
+            'paid_at': beijing_now_str(),
+            'paid_ts_ms': current_ts_ms(),
+            'txid': str(txid or ''),
+            'paid_amount': amount,
+            'currency': str(currency or order.get('currency') or 'USDT').upper(),
+            'balance_after': float(credit_result['balance_after']),
+        }}
+    )
+    return topup_orders.find_one({'_id': order['_id']}), 'paid'
 
 
 def _create_index_safe(collection, keys, **kwargs):

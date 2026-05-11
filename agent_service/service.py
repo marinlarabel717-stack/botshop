@@ -19,7 +19,10 @@ from mongo import (
     agent_bots,
     agent_product_prices,
     beijing_now_str,
+    create_tenant_topup_order,
+    credit_tenant_wallet,
     ejfl,
+    expire_tenant_topup_orders,
     ensure_agent_mongo_indexes,
     ensure_agent_user_exists,
     fenlei,
@@ -27,7 +30,10 @@ from mongo import (
     get_batch_stock,
     get_real_time_stock,
     get_agent_bot_user,
+    get_latest_pending_topup_order,
+    mark_tenant_topup_paid,
     standard_num,
+    topup_orders,
 )
 
 
@@ -67,6 +73,67 @@ def build_home_keyboard(config: AgentRuntimeConfig, lang: str = 'zh') -> ReplyKe
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
 
 
+def is_valid_trc20_address(address: str) -> bool:
+    import re
+    return re.fullmatch(r'T[1-9A-HJ-NP-Za-km-z]{33}', str(address or '').strip()) is not None
+
+
+def build_recharge_menu_text(config: AgentRuntimeConfig) -> str:
+    address = html.escape(config.trc20_address or '未配置', quote=False)
+    return (
+        f'<b>{html.escape(config.agent_name, quote=False)} 充值中心</b>\n\n'
+        '当前阶段先接入 TRC20 充值订单与账本。\n'
+        f'收款地址：<code>{address}</code>\n\n'
+        '选择下方金额后会生成代理充值订单。'
+    )
+
+
+def build_recharge_menu_keyboard(config: AgentRuntimeConfig) -> InlineKeyboardMarkup:
+    keyboard = []
+    row = []
+    for idx, amount in enumerate(config.recharge_amounts, start=1):
+        row.append(InlineKeyboardButton(f'{standard_num(amount)} USDT', callback_data=f'agent_topup_amount:{amount}'))
+        if idx % 3 == 0:
+            keyboard.append(row)
+            row = []
+    if row:
+        keyboard.append(row)
+    keyboard.append([InlineKeyboardButton('📦查看待支付订单', callback_data='agent_topup_pending')])
+    keyboard.append([InlineKeyboardButton('🏠返回首页', callback_data='agent_home')])
+    return InlineKeyboardMarkup(keyboard)
+
+
+def build_topup_order_text(order: dict, config: AgentRuntimeConfig) -> str:
+    state_map = {
+        'pending': '待支付',
+        'paid': '已到账',
+        'expired': '已过期',
+        'canceled': '已取消',
+        'processing': '处理中',
+    }
+    return (
+        f'<b>代理充值订单</b>\n\n'
+        f'订单号：<code>{html.escape(str(order.get("order_id") or ""), quote=False)}</code>\n'
+        f'状态：{state_map.get(str(order.get("state") or "pending"), str(order.get("state") or "pending"))}\n'
+        f'充值方式：<code>{html.escape(str(order.get("type") or "trc20").upper(), quote=False)}</code>\n'
+        f'应付金额：<code>{html.escape(str(order.get("pay_amount_text") or order.get("pay_amount") or 0), quote=False)} {html.escape(str(order.get("currency") or "USDT"), quote=False)}</code>\n'
+        f'收款地址：<code>{html.escape(str(order.get("to_address") or config.trc20_address or "未配置"), quote=False)}</code>\n'
+        f'创建时间：<code>{html.escape(str(order.get("created_at") or ""), quote=False)}</code>\n'
+        f'过期时间：<code>{html.escape(str(order.get("expire_at") or ""), quote=False)}</code>\n\n'
+        '说明：下一步会把真实链上监听和代理充值确认接到这条订单链路上。'
+    )
+
+
+def build_topup_order_keyboard(order: dict) -> InlineKeyboardMarkup:
+    order_id = str(order.get('order_id') or '')
+    keyboard = []
+    if order.get('state') == 'pending':
+        keyboard.append([InlineKeyboardButton('♻️刷新订单状态', callback_data=f'agent_topup_view:{order_id}')])
+    keyboard.append([InlineKeyboardButton('💸继续充值', callback_data='agent_recharge_menu')])
+    keyboard.append([InlineKeyboardButton('🏠返回首页', callback_data='agent_home')])
+    return InlineKeyboardMarkup(keyboard)
+
+
 def upsert_agent_bot_runtime(config: AgentRuntimeConfig) -> None:
     now = beijing_now_str()
     agent_bots.update_one(
@@ -102,6 +169,10 @@ def build_welcome_text(config: AgentRuntimeConfig, user_row: dict) -> str:
         f'订单记录数：<code>{stats.get("purchase_records", 0)}</code>\n\n'
         f'代理分销服务已接入商品列表骨架，下一步继续接充值、下单与结算。'
     )
+
+
+def build_home_text(config: AgentRuntimeConfig, user_row: dict) -> str:
+    return build_welcome_text(config, user_row)
 
 
 def get_override_doc(agent_bot_id: str, nowuid: str) -> dict:
@@ -271,9 +342,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         state='1',
     )
     await update.effective_chat.send_message(
-        build_welcome_text(config, user_row or {'user_id': tg_user.id, 'USDT': 0, 'username': tg_user.username}),
+        build_home_text(config, user_row or {'user_id': tg_user.id, 'USDT': 0, 'username': tg_user.username}),
         parse_mode='HTML',
         reply_markup=build_home_keyboard(config, lang=(user_row or {}).get('lang', config.default_lang)),
+    )
+
+
+async def send_home(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    config: AgentRuntimeConfig = context.application.bot_data['agent_config']
+    tg_user = update.effective_user
+    if tg_user is None or update.effective_chat is None:
+        return
+    user_row = get_agent_bot_user(config.agent_bot_id, tg_user.id) or {'user_id': tg_user.id, 'USDT': 0, 'username': tg_user.username}
+    await update.effective_chat.send_message(
+        build_home_text(config, user_row),
+        parse_mode='HTML',
+        reply_markup=build_home_keyboard(config, lang=user_row.get('lang', config.default_lang)),
     )
 
 
@@ -292,6 +376,95 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         f'总购金额：<code>{standard_num(user_row.get("zgje", 0))} USDT</code>'
     )
     await update.effective_chat.send_message(text, parse_mode='HTML')
+
+
+async def send_recharge_menu(chat_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
+    config: AgentRuntimeConfig = context.application.bot_data['agent_config']
+    expire_tenant_topup_orders(config.agent_bot_id)
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=build_recharge_menu_text(config),
+        parse_mode='HTML',
+        reply_markup=build_recharge_menu_keyboard(config),
+    )
+
+
+async def send_pending_topup(chat_id: int, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
+    config: AgentRuntimeConfig = context.application.bot_data['agent_config']
+    expire_tenant_topup_orders(config.agent_bot_id)
+    order = get_latest_pending_topup_order(config.agent_bot_id, user_id, payment_type='trc20')
+    if order is None:
+        await context.bot.send_message(chat_id=chat_id, text='当前没有待支付的代理充值订单。')
+        return
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=build_topup_order_text(order, config),
+        parse_mode='HTML',
+        reply_markup=build_topup_order_keyboard(order),
+    )
+
+
+async def agent_credit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    config: AgentRuntimeConfig = context.application.bot_data['agent_config']
+    tg_user = update.effective_user
+    if tg_user is None:
+        return
+    if not is_agent_admin(config, tg_user.id):
+        await update.effective_chat.send_message('只有代理管理员可以手动上分。')
+        return
+    if len(context.args) < 2:
+        await update.effective_chat.send_message('用法：/agent_credit <user_id> <amount> [备注]')
+        return
+    try:
+        target_user_id = int(context.args[0])
+        amount = float(context.args[1])
+    except Exception:
+        await update.effective_chat.send_message('user_id 或 amount 格式不对。')
+        return
+    note = ' '.join(context.args[2:]).strip() or '代理管理员手动上分'
+    ensure_agent_user_exists(config.agent_bot_id, target_user_id)
+    result = credit_tenant_wallet(
+        config.agent_bot_id,
+        target_user_id,
+        amount,
+        biz_type='manual_credit',
+        ref_id=f'ADMIN{tg_user.id}',
+        description=note,
+        meta={'operator_user_id': tg_user.id},
+    )
+    await update.effective_chat.send_message(
+        f'已完成手动上分\n用户: <code>{target_user_id}</code>\n金额: <code>{standard_num(amount)} USDT</code>\n余额: <code>{standard_num(result["balance_after"])} USDT</code>',
+        parse_mode='HTML'
+    )
+
+
+async def agent_mark_paid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    config: AgentRuntimeConfig = context.application.bot_data['agent_config']
+    tg_user = update.effective_user
+    if tg_user is None:
+        return
+    if not is_agent_admin(config, tg_user.id):
+        await update.effective_chat.send_message('只有代理管理员可以手动确认到账。')
+        return
+    if not context.args:
+        await update.effective_chat.send_message('用法：/agent_mark_paid <order_id> [txid]')
+        return
+    order_id = str(context.args[0]).strip()
+    txid = str(context.args[1]).strip() if len(context.args) > 1 else ''
+    order, status = mark_tenant_topup_paid(
+        order_id,
+        txid=txid,
+        currency='USDT',
+        channel='agent_admin_manual',
+        meta={'operator_user_id': tg_user.id},
+    )
+    if status != 'paid' and status != 'already_paid':
+        await update.effective_chat.send_message(f'处理失败：{status}')
+        return
+    await update.effective_chat.send_message(
+        f'订单状态：{status}\n订单号：<code>{html.escape(order_id, quote=False)}</code>\n当前状态：<code>{html.escape(str((order or {}).get("state") or status), quote=False)}</code>',
+        parse_mode='HTML'
+    )
 
 
 async def agent_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -369,6 +542,71 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             reply_markup=build_category_keyboard(config),
         )
         return
+    if data == 'agent_home':
+        user_row = get_agent_bot_user(config.agent_bot_id, query.from_user.id) or {'user_id': query.from_user.id, 'USDT': 0, 'username': query.from_user.username}
+        await query.edit_message_text(
+            text=build_home_text(config, user_row),
+            parse_mode='HTML',
+        )
+        return
+    if data == 'agent_recharge_menu':
+        await query.edit_message_text(
+            text=build_recharge_menu_text(config),
+            parse_mode='HTML',
+            reply_markup=build_recharge_menu_keyboard(config),
+        )
+        return
+    if data == 'agent_topup_pending':
+        order = get_latest_pending_topup_order(config.agent_bot_id, query.from_user.id, payment_type='trc20')
+        if order is None:
+            await query.edit_message_text(
+                text='当前没有待支付的代理充值订单。',
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('💸去创建充值订单', callback_data='agent_recharge_menu')]]),
+            )
+            return
+        await query.edit_message_text(
+            text=build_topup_order_text(order, config),
+            parse_mode='HTML',
+            reply_markup=build_topup_order_keyboard(order),
+        )
+        return
+    if data.startswith('agent_topup_view:'):
+        order_id = data.split(':', 1)[1]
+        order = get_latest_pending_topup_order(config.agent_bot_id, query.from_user.id, payment_type='trc20')
+        if order is None or str(order.get('order_id')) != order_id:
+            order = topup_orders.find_one({'order_id': order_id, 'tenant_id': config.agent_bot_id, 'user_id': query.from_user.id})
+        if order is None:
+            await query.edit_message_text('充值订单不存在或已被清理。')
+            return
+        await query.edit_message_text(
+            text=build_topup_order_text(order, config),
+            parse_mode='HTML',
+            reply_markup=build_topup_order_keyboard(order),
+        )
+        return
+    if data.startswith('agent_topup_amount:'):
+        amount = float(data.split(':', 1)[1])
+        if not is_valid_trc20_address(config.trc20_address):
+            await query.edit_message_text('代理 TRC20 收款地址未配置，先在 agent_service/.env 里补 AGENT_TRC20_ADDRESS。')
+            return
+        order = create_tenant_topup_order(
+            config.agent_bot_id,
+            query.from_user.id,
+            'trc20',
+            requested_amount=amount,
+            pay_amount=amount,
+            pay_amount_text=str(standard_num(amount)),
+            currency='USDT',
+            to_address=config.trc20_address,
+            expire_minutes=10,
+            extra={'source': 'agent_service'},
+        )
+        await query.edit_message_text(
+            text=build_topup_order_text(order, config),
+            parse_mode='HTML',
+            reply_markup=build_topup_order_keyboard(order),
+        )
+        return
     if data.startswith('agent_cate:'):
         uid = data.split(':', 1)[1]
         category, products = build_product_list_payload(config, uid)
@@ -412,7 +650,7 @@ async def message_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.effective_chat.send_message(f'当前代理客服：{target}')
         return
     if text in (MENU_RECHARGE_ZH, MENU_RECHARGE_EN):
-        await update.effective_chat.send_message('代理充值链路下一步继续接，这一步先把商品目录和价格覆盖跑通。')
+        await send_recharge_menu(update.effective_chat.id, context)
         return
     await update.effective_chat.send_message('代理服务已启动。现在可以先看商品目录；充值、下单、结算下一步继续接。')
 
@@ -426,6 +664,8 @@ def main() -> None:
     application.add_handler(CommandHandler('start', start))
     application.add_handler(CommandHandler('agent_price', agent_price))
     application.add_handler(CommandHandler('agent_price_clear', agent_price_clear))
+    application.add_handler(CommandHandler('agent_credit', agent_credit))
+    application.add_handler(CommandHandler('agent_mark_paid', agent_mark_paid))
     application.add_handler(CallbackQueryHandler(handle_callback, pattern=r'^agent_'))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_router))
     logger.info('agent_service started: agent_bot_id=%s name=%s at=%s', config.agent_bot_id, config.agent_name, datetime.utcnow().isoformat())
