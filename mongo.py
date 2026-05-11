@@ -667,10 +667,16 @@ def create_tenant_purchase_order(tenant_id, user_id, nowuid, quantity=1, currenc
     if not enabled:
         return None, 'product_disabled'
 
-    unit_price = float(override.get('price', product.get('money', 0)) or 0)
+    runtime = agent_bots.find_one({'agent_bot_id': tenant_id}) or {}
+    source_unit_price = float(product.get('money', 0) or 0)
+    configured_price_delta = float(runtime.get('price_delta', 0) or 0)
+    has_override_price = 'price' in override and override.get('price') is not None and str(override.get('price')).strip() != ''
+    unit_price = float((override.get('price') if has_override_price else (source_unit_price + configured_price_delta)) or 0)
     if unit_price <= 0:
         return None, 'invalid_price'
     total_amount = float(quantity * unit_price)
+    applied_price_delta = float(unit_price - source_unit_price)
+    total_profit_amount = float(quantity * applied_price_delta)
     order_id = build_tenant_order_id('BUY', tenant_id, user_id)
     reserved_docs = reserve_tenant_inventory(nowuid, quantity, user_id, order_id)
     if len(reserved_docs) < quantity:
@@ -706,8 +712,15 @@ def create_tenant_purchase_order(tenant_id, user_id, nowuid, quantity=1, currenc
         'product_name': str(override.get('display_name') or product.get('projectname') or '商品'),
         'source_product_name': str(product.get('projectname') or '商品'),
         'quantity': quantity,
+        'source_unit_price': source_unit_price,
         'unit_price': unit_price,
+        'configured_price_delta': configured_price_delta,
+        'applied_price_delta': applied_price_delta,
         'total_amount': total_amount,
+        'total_profit_amount': total_profit_amount,
+        'refunded_profit_amount': 0.0,
+        'net_profit_amount': total_profit_amount,
+        'price_source': 'override' if has_override_price else 'runtime_delta',
         'currency': str(currency or 'USDT').upper(),
         'state': 'reserved',
         'created_at': timer,

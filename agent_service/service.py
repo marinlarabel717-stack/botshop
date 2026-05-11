@@ -165,9 +165,22 @@ def get_agent_price_delta(config: AgentRuntimeConfig) -> float:
 
 def get_agent_profit_stats(config: AgentRuntimeConfig) -> dict:
     stats = get_agent_stats(config.agent_bot_id)
-    price_delta = max(0.0, float(get_agent_price_delta(config) or 0))
-    total_items = int(stats.get('total_orders', 0) or 0)
-    total_profit = float(standard_num(total_items * price_delta))
+    total_items = 0
+    total_profit = 0.0
+    for row in tenant_orders.find({'tenant_id': config.agent_bot_id}, {'quantity': 1, 'net_profit_amount': 1, 'total_profit_amount': 1, 'refunded_profit_amount': 1, 'unit_price': 1, 'source_unit_price': 1, 'nowuid': 1}):
+        quantity = int(row.get('quantity', 0) or 0)
+        total_items += quantity
+        if row.get('net_profit_amount') is not None:
+            total_profit += float(row.get('net_profit_amount', 0) or 0)
+            continue
+        source_unit_price = row.get('source_unit_price')
+        if source_unit_price is None:
+            product = ejfl.find_one({'nowuid': str(row.get('nowuid') or '')}) or {}
+            source_unit_price = float(product.get('money', 0) or 0)
+        unit_price = float(row.get('unit_price', 0) or 0)
+        refunded_profit_amount = float(row.get('refunded_profit_amount', 0) or 0)
+        total_profit += float((unit_price - float(source_unit_price or 0)) * quantity - refunded_profit_amount)
+    total_profit = float(standard_num(total_profit))
     rows = list(agent_bots.database['agent_withdrawals'].aggregate([
         {'$match': {'agent_bot_id': config.agent_bot_id}},
         {'$group': {'_id': '$state', 'amount': {'$sum': '$amount'}, 'count': {'$sum': 1}}},
@@ -189,7 +202,7 @@ def get_agent_profit_stats(config: AgentRuntimeConfig) -> dict:
     available_profit = max(0.0, float(standard_num(total_profit - pending_amount - paid_amount)))
     return {
         'total_items': total_items,
-        'price_delta': price_delta,
+        'current_price_delta': float(standard_num(get_agent_price_delta(config))),
         'total_profit': total_profit,
         'available_profit': available_profit,
         'pending_amount': float(standard_num(pending_amount)),
@@ -306,7 +319,7 @@ def build_admin_panel_text(config: AgentRuntimeConfig) -> str:
         f'[emoji:5954227490179255253:🔵]代理ID：{config.agent_bot_id}\n'
         f'[emoji:6321041414067068140:👤]用户数：{stats.get("user_count", 0)}\n'
         f'[emoji:5028746137645876535:📈]累计销售：{standard_num(stats.get("total_spent", 0))} USDT\n'
-        f'[emoji:5397916757333654639:➕]当前差价：{standard_num(profit_stats.get("price_delta", 0))} USDT/个\n'
+        f'[emoji:5397916757333654639:➕]当前差价：{standard_num(profit_stats.get("current_price_delta", 0))} USDT/个\n'
         f'[emoji:4965219701572503640:💰]累计利润：{standard_num(profit_stats.get("total_profit", 0))} USDT\n'
         f'[emoji:5312028599803460968:🆗]可提利润：{standard_num(profit_stats.get("available_profit", 0))} USDT\n'
         f'[emoji:5954078884310814346:☎️]客服：{customer_service}\n'
@@ -1142,6 +1155,7 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
         alive_items = list(selected_docs)
 
     refund_amount = float(standard_num(float(order.get('unit_price', 0) or 0) * (len(invalid_items) + len(frozen_items))))
+    refunded_profit_amount = float(standard_num(float(order.get('applied_price_delta', 0) or 0) * (len(invalid_items) + len(frozen_items))))
     refund_result = refund_tenant_order(config.agent_bot_id, user_id, order_id, refund_amount, reason='agent_account_check_refund', meta={'tenant_id': config.agent_bot_id})
     balance_after = float(refund_result.get('balance_after', user_row.get('USDT', 0) or 0))
 
@@ -1198,6 +1212,8 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
         'frozen_count': len(frozen_items),
         'timeout_count': len(timeout_items),
         'refund_amount': refund_amount,
+        'refunded_profit_amount': refunded_profit_amount,
+        'net_profit_amount': float(standard_num(float(order.get('total_profit_amount', 0) or 0) - refunded_profit_amount)),
         'balance_after': balance_after,
         'delivery_file': delivery_file or '',
     })
