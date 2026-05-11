@@ -88,6 +88,26 @@ def _extract_rpc_error_name(exc: Exception) -> str:
     return str(exc).upper()
 
 
+def _describe_exception(exc: Exception) -> str:
+    text = str(exc).strip()
+    if text:
+        return text
+    rpc_name = _extract_rpc_error_name(exc).strip()
+    if rpc_name:
+        return rpc_name
+    return exc.__class__.__name__
+
+
+def _is_timeout_exception(exc: Exception) -> bool:
+    lower_message = _describe_exception(exc).lower()
+    timeout_markers = ('timeout', 'timed out', 'deadline', 'floodwait', 'temporarily unavailable', 'connection lost')
+    return isinstance(exc, (asyncio.TimeoutError, TimeoutError, DependencyUnavailable)) or any(marker in lower_message for marker in timeout_markers)
+
+
+def _stage_invalid_reason(stage: str, exc: Exception) -> str:
+    return f'{stage}:{exc.__class__.__name__}:{_describe_exception(exc)}'
+
+
 def _is_frozen_rpc_error(exc: Exception) -> bool:
     name = _extract_rpc_error_name(exc)
     return 'FROZEN_METHOD_INVALID' in name or 'FROZEN_PARTICIPANT_MISSING' in name
@@ -252,13 +272,31 @@ async def _check_tdata_async(tdata_dir: Path, timeout_seconds: int) -> Dict[str,
 
 async def _probe_client_with_ttl_update(client: Any, timeout_seconds: int, ttl_days: int = AGENT_ACCOUNT_TTL_DAYS) -> Dict[str, Any]:
     try:
-        await asyncio.wait_for(client.connect(), timeout=timeout_seconds)
-        authorized = await asyncio.wait_for(client.is_user_authorized(), timeout=timeout_seconds)
+        try:
+            await asyncio.wait_for(client.connect(), timeout=timeout_seconds)
+        except Exception as exc:
+            if _is_timeout_exception(exc):
+                raise
+            return {'status': 'invalid', 'reason': _stage_invalid_reason('agent_login_connect_failed', exc)}
+
+        try:
+            authorized = await asyncio.wait_for(client.is_user_authorized(), timeout=timeout_seconds)
+        except Exception as exc:
+            if _is_timeout_exception(exc):
+                raise
+            return {'status': 'invalid', 'reason': _stage_invalid_reason('agent_login_authorize_failed', exc)}
         if not authorized:
             return {'status': 'invalid', 'reason': 'session_not_authorized'}
-        me = await asyncio.wait_for(client.get_me(), timeout=timeout_seconds)
+
+        try:
+            me = await asyncio.wait_for(client.get_me(), timeout=timeout_seconds)
+        except Exception as exc:
+            if _is_timeout_exception(exc):
+                raise
+            return {'status': 'invalid', 'reason': _stage_invalid_reason('agent_login_get_me_failed', exc)}
         if me is None:
             return {'status': 'invalid', 'reason': 'account_not_found'}
+
         display_name = ' '.join(filter(None, [getattr(me, 'first_name', ''), getattr(me, 'last_name', '')])).strip()
         freeze_metadata = await _fetch_freeze_metadata(client, timeout_seconds)
         if freeze_metadata.get('freeze_since_date') or freeze_metadata.get('freeze_until_date'):
@@ -275,7 +313,12 @@ async def _probe_client_with_ttl_update(client: Any, timeout_seconds: int, ttl_d
                 'freeze_until_text': freeze_metadata.get('freeze_until_text', ''),
                 'freeze_appeal_url': freeze_metadata.get('freeze_appeal_url', ''),
             }
-        frozen_status = await _detect_frozen_status(client, timeout_seconds)
+        try:
+            frozen_status = await _detect_frozen_status(client, timeout_seconds)
+        except Exception as exc:
+            if _is_timeout_exception(exc):
+                raise
+            return {'status': 'invalid', 'reason': _stage_invalid_reason('agent_login_probe_failed', exc)}
         if frozen_status.get('status') == 'frozen':
             return {
                 'status': 'frozen',
@@ -309,7 +352,16 @@ async def _probe_client_with_ttl_update(client: Any, timeout_seconds: int, ttl_d
                     'phone': getattr(me, 'phone', None),
                 })
                 return metadata
-            raise
+            if _is_timeout_exception(exc):
+                raise
+            return {
+                'status': 'invalid',
+                'reason': _stage_invalid_reason('agent_set_account_ttl_failed', exc),
+                'user_id': getattr(me, 'id', None),
+                'display_name': display_name,
+                'username': getattr(me, 'username', None),
+                'phone': getattr(me, 'phone', None),
+            }
         if ttl_result is False:
             return {'status': 'invalid', 'reason': 'set_account_ttl_returned_false'}
         return {
@@ -368,12 +420,10 @@ def _run_async(coro):
 
 
 def _classify_exception(exc: Exception) -> Dict[str, Any]:
-    message = str(exc) or exc.__class__.__name__
-    lower_message = message.lower()
-    timeout_markers = ('timeout', 'timed out', 'deadline', 'floodwait', 'temporarily unavailable', 'connection lost')
-    if isinstance(exc, (asyncio.TimeoutError, TimeoutError, DependencyUnavailable)) or any(marker in lower_message for marker in timeout_markers):
+    message = _describe_exception(exc)
+    if _is_timeout_exception(exc):
         return {'status': 'timeout', 'reason': message}
-    return {'status': 'invalid', 'reason': message}
+    return {'status': 'invalid', 'reason': f'{exc.__class__.__name__}:{message}'}
 
 
 def get_account_check_runtime_status(entry_type: str) -> Dict[str, Any]:

@@ -799,7 +799,14 @@ def build_agent_account_check_progress_text(config: AgentRuntimeConfig, total_co
     )
 
 
-def build_agent_delivery_result_text(config: AgentRuntimeConfig, order: dict, total_count: int, alive_count: int, invalid_count: int, frozen_count: int, timeout_count: int, refund_amount: float, balance_after: float, user_id: int) -> str:
+def summarize_agent_check_reason(reason: str, limit: int = 120) -> str:
+    text = str(reason or '').strip().replace('\n', ' ').replace('\r', ' ')
+    if len(text) <= limit:
+        return text
+    return f'{text[:limit - 3]}...'
+
+
+def build_agent_delivery_result_text(config: AgentRuntimeConfig, order: dict, total_count: int, alive_count: int, invalid_count: int, frozen_count: int, timeout_count: int, refund_amount: float, balance_after: float, user_id: int, first_invalid_reason: str = '', first_frozen_reason: str = '') -> str:
     charged_amount = float(standard_num(float(order.get('total_amount', 0) or 0) - float(refund_amount or 0)))
     refund_text = standard_num(refund_amount)
     remaining_text = standard_num(balance_after)
@@ -835,13 +842,23 @@ def build_agent_delivery_result_text(config: AgentRuntimeConfig, order: dict, to
             '',
             '[emoji:5382194935057372936:⏱️]Timed-out accounts were retried twice and still could not be checked. They were delivered with the file. Please contact support if needed.' if lang == 'en' else '[emoji:5382194935057372936:⏱️]超时账号已自动重试 2 次，仍无法完成检测，现已随文件一起发出；如需售后请联系客服。'
         ])
+    if first_invalid_reason:
+        lines.extend([
+            '',
+            f'First invalid reason: {summarize_agent_check_reason(first_invalid_reason)}' if lang == 'en' else f'首个无效原因：{summarize_agent_check_reason(first_invalid_reason)}'
+        ])
+    if first_frozen_reason:
+        lines.extend([
+            '',
+            f'First frozen reason: {summarize_agent_check_reason(first_frozen_reason)}' if lang == 'en' else f'首个冻结原因：{summarize_agent_check_reason(first_frozen_reason)}'
+        ])
     return '\n'.join(lines)
 
 
-def build_agent_delivery_admin_notice(order: dict, user_row: dict, total_count: int, alive_count: int, invalid_count: int, frozen_count: int, timeout_count: int, refund_amount: float) -> str:
+def build_agent_delivery_admin_notice(order: dict, user_row: dict, total_count: int, alive_count: int, invalid_count: int, frozen_count: int, timeout_count: int, refund_amount: float, first_invalid_reason: str = '', first_frozen_reason: str = '') -> str:
     username = str(user_row.get('username') or '').strip()
     username_text = f'@{username}' if username else '未设置'
-    return '\n'.join([
+    lines = [
         '[emoji:5312361253610475399:🛒]代理订单通知',
         '',
         f'代理：{order.get("tenant_id") or ""}',
@@ -855,7 +872,12 @@ def build_agent_delivery_admin_notice(order: dict, user_row: dict, total_count: 
         f'冻结：{frozen_count}',
         f'超时：{timeout_count}',
         f'退款：{standard_num(refund_amount)} USDT',
-    ])
+    ]
+    if first_invalid_reason:
+        lines.append(f'首个无效原因：{summarize_agent_check_reason(first_invalid_reason, 200)}')
+    if first_frozen_reason:
+        lines.append(f'首个冻结原因：{summarize_agent_check_reason(first_frozen_reason, 200)}')
+    return '\n'.join(lines)
 
 
 def write_text_temp_file(prefix: str, suffix: str, content: str) -> str:
@@ -940,6 +962,8 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
         progress_message = await send_rendered(context.bot, user_id, build_agent_account_check_progress_text(config, total_count, 0, 0, 0, 0, 0, user_id))
         checked_count = 0
         last_progress_ts = 0.0
+        first_invalid_reason = ''
+        first_frozen_reason = ''
         semaphore = asyncio.Semaphore(get_agent_account_check_concurrency(total_count))
 
         async def run_agent_check(item: dict):
@@ -987,6 +1011,18 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
                 attempts = int(check_result.get('attempts', 1) or 1)
                 if check_result.get('status') == 'timeout' and attempts > 1:
                     reason_text = f'{reason_text} | retries={attempts - 1}'.strip(' |')
+                logger.warning(
+                    'agent ttl-check result: tenant=%s order=%s hbid=%s project=%s entry_type=%s status=%s attempts=%s path=%s reason=%s',
+                    config.agent_bot_id,
+                    order_id,
+                    item.get('hbid'),
+                    projectname,
+                    check_result.get('entry_type') or '',
+                    check_result.get('status', 'timeout'),
+                    attempts,
+                    check_result.get('path') or '',
+                    reason_text,
+                )
                 hb.update_one(
                     {'_id': item.get('_id')},
                     {'$set': {
@@ -1000,8 +1036,12 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
                 if status == 'alive':
                     alive_items.append(item)
                 elif status == 'invalid':
+                    if not first_invalid_reason and reason_text:
+                        first_invalid_reason = reason_text
                     invalid_items.append(archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, meta))
                 elif status == 'frozen':
+                    if not first_frozen_reason and reason_text:
+                        first_frozen_reason = reason_text
                     frozen_items.append(archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, meta))
                 else:
                     timeout_items.append(item)
@@ -1023,6 +1063,8 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
                 if not task.done():
                     task.cancel()
     else:
+        first_invalid_reason = ''
+        first_frozen_reason = ''
         alive_items = list(selected_docs)
 
     refund_amount = float(standard_num(float(order.get('unit_price', 0) or 0) * (len(invalid_items) + len(frozen_items))))
@@ -1063,7 +1105,7 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
         final_state = 'refunded'
     elif refund_amount > 0:
         final_state = 'partial_refunded'
-    final_text = build_agent_delivery_result_text(config, order, total_count, len(alive_items), len(invalid_items), len(frozen_items), len(timeout_items), refund_amount, balance_after, user_id)
+    final_text = build_agent_delivery_result_text(config, order, total_count, len(alive_items), len(invalid_items), len(frozen_items), len(timeout_items), refund_amount, balance_after, user_id, first_invalid_reason=first_invalid_reason, first_frozen_reason=first_frozen_reason)
     if progress_message is not None:
         try:
             rendered_text, entities = render_text(final_text)
@@ -1094,7 +1136,7 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
         'ts': final_text,
         'timer': beijing_now_str(),
     })
-    await send_agent_admin_notice(config, context, build_agent_delivery_admin_notice(order, user_row, total_count, len(alive_items), len(invalid_items), len(frozen_items), len(timeout_items), refund_amount))
+    await send_agent_admin_notice(config, context, build_agent_delivery_admin_notice(order, user_row, total_count, len(alive_items), len(invalid_items), len(frozen_items), len(timeout_items), refund_amount, first_invalid_reason=first_invalid_reason, first_frozen_reason=first_frozen_reason))
 
 
 def format_trc20_amount_text(value) -> str:
