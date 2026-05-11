@@ -6,6 +6,7 @@ import logging
 import re
 import sys
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -57,6 +58,8 @@ from haopubot import (
     ACCOUNT_CHECK_ENABLED,
     ACCOUNT_CHECK_SUPPORTED_TYPES,
     ACCOUNT_CHECK_TIMEOUT_SECONDS,
+    ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS,
+    ACCOUNT_CHECK_PROGRESS_STEP,
     InlineKeyboardButton,
     KeyboardButton,
     archive_invalid_inventory_item,
@@ -863,6 +866,19 @@ def write_text_temp_file(prefix: str, suffix: str, content: str) -> str:
     return str(file_path)
 
 
+def get_agent_account_check_concurrency(total_count: int) -> int:
+    total_count = max(0, int(total_count or 0))
+    if total_count > 500:
+        return 30
+    if total_count > 100:
+        return 10
+    if total_count > 10:
+        return 5
+    if total_count > 3:
+        return 2
+    return 1
+
+
 def build_agent_delivery_file(leixing: str, user_id: int, nowuid: str, selected_docs: list[dict]) -> str | None:
     selected_docs = list(selected_docs or [])
     if not selected_docs:
@@ -919,34 +935,60 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
 
     if use_account_check:
         progress_message = await send_rendered(context.bot, user_id, build_agent_account_check_progress_text(config, total_count, 0, 0, 0, 0, 0, user_id))
-        for index, item in enumerate(selected_docs, start=1):
+        checked_count = 0
+        last_progress_ts = 0.0
+        semaphore = asyncio.Semaphore(get_agent_account_check_concurrency(total_count))
+
+        async def run_agent_check(item: dict):
             projectname = str(item.get('projectname') or '')
             entry_type, target_path = resolve_inventory_check_target(leixing, nowuid, projectname)
-            check_result = await asyncio.to_thread(check_account_inventory_item, entry_type, str(target_path), ACCOUNT_CHECK_TIMEOUT_SECONDS)
-            hb.update_one(
-                {'_id': item.get('_id')},
-                {'$set': {
-                    'delivery_check_state': check_result.get('status', 'timeout'),
-                    'delivery_check_reason': str(check_result.get('reason', ''))[:500],
-                    'delivery_check_timer': beijing_now_str(),
-                }}
-            )
-            meta = {'hbid': item.get('hbid'), 'projectname': projectname, 'status': check_result.get('status', 'timeout'), 'reason': check_result.get('reason', '')}
-            status = check_result.get('status')
-            if status == 'alive':
-                alive_items.append(item)
-            elif status == 'invalid':
-                invalid_items.append(archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, meta))
-            elif status == 'frozen':
-                frozen_items.append(archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, meta))
-            else:
-                timeout_items.append(item)
-            if progress_message is not None:
+            async with semaphore:
                 try:
-                    rendered_text, entities = render_text(build_agent_account_check_progress_text(config, total_count, index, len(alive_items), len(invalid_items), len(frozen_items), len(timeout_items), user_id))
-                    await context.bot.edit_message_text(chat_id=user_id, message_id=progress_message.message_id, text=rendered_text, entities=entities)
-                except Exception:
-                    logger.warning('update agent account-check progress failed: tenant=%s order=%s', config.agent_bot_id, order_id, exc_info=True)
+                    check_result = await asyncio.to_thread(check_account_inventory_item, entry_type, str(target_path), ACCOUNT_CHECK_TIMEOUT_SECONDS)
+                except Exception as exc:
+                    check_result = {'status': 'timeout', 'reason': str(exc) or exc.__class__.__name__}
+            return item, projectname, check_result
+
+        tasks = [asyncio.create_task(run_agent_check(item)) for item in selected_docs]
+        try:
+            for future in asyncio.as_completed(tasks):
+                item, projectname, check_result = await future
+                checked_count += 1
+                hb.update_one(
+                    {'_id': item.get('_id')},
+                    {'$set': {
+                        'delivery_check_state': check_result.get('status', 'timeout'),
+                        'delivery_check_reason': str(check_result.get('reason', ''))[:500],
+                        'delivery_check_timer': beijing_now_str(),
+                    }}
+                )
+                meta = {'hbid': item.get('hbid'), 'projectname': projectname, 'status': check_result.get('status', 'timeout'), 'reason': check_result.get('reason', '')}
+                status = check_result.get('status')
+                if status == 'alive':
+                    alive_items.append(item)
+                elif status == 'invalid':
+                    invalid_items.append(archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, meta))
+                elif status == 'frozen':
+                    frozen_items.append(archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, meta))
+                else:
+                    timeout_items.append(item)
+
+                should_push_progress = (
+                    checked_count == total_count
+                    or checked_count % ACCOUNT_CHECK_PROGRESS_STEP == 0
+                    or time.time() - last_progress_ts >= ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS
+                )
+                if progress_message is not None and should_push_progress:
+                    try:
+                        rendered_text, entities = render_text(build_agent_account_check_progress_text(config, total_count, checked_count, len(alive_items), len(invalid_items), len(frozen_items), len(timeout_items), user_id))
+                        await context.bot.edit_message_text(chat_id=user_id, message_id=progress_message.message_id, text=rendered_text, entities=entities)
+                    except Exception:
+                        logger.warning('update agent account-check progress failed: tenant=%s order=%s', config.agent_bot_id, order_id, exc_info=True)
+                    last_progress_ts = time.time()
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
     else:
         alive_items = list(selected_docs)
 
