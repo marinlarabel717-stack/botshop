@@ -6,6 +6,7 @@ import re
 from datetime import timedelta, date
 import pymongo
 from pymongo.collection import Collection
+from pymongo import ReturnDocument
 
 MONGO_URI = os.getenv('MONGO_URI', 'mongodb://127.0.0.1:27018/')
 MONGO_USER = os.getenv('MONGO_USER', '')
@@ -38,6 +39,19 @@ xyh = mydb['xyh']
 gmjlu = mydb['gmjlu']
 fyb = mydb['fyb']
 fyb_override = mydb['fyb_override']
+tenants = mydb['tenants']
+tenant_users = mydb['tenant_users']
+tenant_wallets = mydb['tenant_wallets']
+wallet_ledger = mydb['wallet_ledger']
+tenant_products = mydb['tenant_products']
+tenant_orders = mydb['tenant_orders']
+topup_orders = mydb['topup_orders']
+refund_records = mydb['refund_records']
+settlement_ledger = mydb['settlement_ledger']
+agent_bots = mydb['agent_bots']
+agent_product_prices = mydb['agent_product_prices']
+agent_orders = mydb['agent_orders']
+agent_withdrawals = mydb['agent_withdrawals']
 
 mydb1 = teleclient[MONGO_CHAIN_DB_NAME]
 qukuai = mydb1['qukuai']
@@ -45,6 +59,218 @@ hongbao = mydb['hongbao']
 qb = mydb['qb']
 zhuanz = mydb['zhuanz']
 sftw = mydb['sftw']
+
+
+def _sanitize_collection_suffix(value):
+    value = re.sub(r'[^a-zA-Z0-9_]+', '_', str(value or '').strip()).strip('_').lower()
+    return value or 'default'
+
+
+def normalize_tenant_id(tenant_id):
+    return _sanitize_collection_suffix(tenant_id)
+
+
+def get_tenant_collection(base_name, tenant_id):
+    return mydb[f'{base_name}_{normalize_tenant_id(tenant_id)}']
+
+
+def get_agent_bot_user_collection(agent_bot_id) -> Collection:
+    return get_tenant_collection('agent_users', agent_bot_id)
+
+
+def get_agent_bot_topup_collection(agent_bot_id) -> Collection:
+    return get_tenant_collection('agent_topup', agent_bot_id)
+
+
+def get_agent_bot_gmjlu_collection(agent_bot_id) -> Collection:
+    return get_tenant_collection('agent_gmjlu', agent_bot_id)
+
+
+def get_beijing_now():
+    return datetime.datetime.utcnow() + timedelta(hours=8)
+
+
+def format_beijing_time(dt=None, fmt='%Y-%m-%d %H:%M:%S'):
+    dt = dt or get_beijing_now()
+    if isinstance(dt, datetime.datetime):
+        return dt.strftime(fmt)
+    return str(dt)
+
+
+def beijing_now_str(fmt='%Y-%m-%d %H:%M:%S'):
+    return format_beijing_time(get_beijing_now(), fmt)
+
+
+def standard_num(num, ndigits=4):
+    try:
+        value = round(float(num), ndigits)
+    except Exception:
+        return 0
+    text = f'{value:.{ndigits}f}'.rstrip('0').rstrip('.')
+    if text in ('', '-0'):
+        return 0
+    if '.' in text:
+        return text
+    try:
+        return int(text)
+    except Exception:
+        return text
+
+
+def get_real_time_stock(nowuid):
+    return hb.count_documents({'nowuid': str(nowuid), 'state': 0})
+
+
+def get_batch_stock(nowuid_list):
+    normalized = [str(item) for item in (nowuid_list or []) if str(item).strip()]
+    if not normalized:
+        return {}
+    pipeline = [
+        {'$match': {'nowuid': {'$in': normalized}, 'state': 0}},
+        {'$group': {'_id': '$nowuid', 'count': {'$sum': 1}}}
+    ]
+    result = {str(row['_id']): int(row.get('count', 0)) for row in hb.aggregate(pipeline)}
+    for item in normalized:
+        result.setdefault(item, 0)
+    return result
+
+
+def build_tenant_user_doc(tenant_id, user_id, username='', fullname='', lastname='', lang='zh', state='1', creation_time=None, last_contact_time=None):
+    timer = creation_time or beijing_now_str()
+    return {
+        'tenant_id': normalize_tenant_id(tenant_id),
+        'user_id': int(user_id),
+        'username': username,
+        'fullname': fullname,
+        'lastname': lastname,
+        'lang': lang or 'zh',
+        'state': state,
+        'creation_time': timer,
+        'last_contact_time': last_contact_time or timer,
+        'USDT': 0,
+        'zgje': 0,
+        'zgsl': 0,
+        'sign': 0,
+    }
+
+
+def create_agent_user_data(agent_bot_id, user_id, username='', fullname='', lastname='', lang='zh', state='1', creation_time=None, last_contact_time=None):
+    coll = get_agent_bot_user_collection(agent_bot_id)
+    doc = build_tenant_user_doc(agent_bot_id, user_id, username, fullname, lastname, lang, state, creation_time, last_contact_time)
+    coll.update_one(
+        {'user_id': doc['user_id']},
+        {'$setOnInsert': doc},
+        upsert=True,
+    )
+    return coll.find_one({'user_id': doc['user_id']})
+
+
+def get_agent_bot_user(agent_bot_id, user_id):
+    return get_agent_bot_user_collection(agent_bot_id).find_one({'user_id': int(user_id)})
+
+
+def ensure_agent_user_exists(agent_bot_id, user_id, username='', fullname='', lastname='', lang='zh', state='1'):
+    coll = get_agent_bot_user_collection(agent_bot_id)
+    user_id = int(user_id)
+    now_str = beijing_now_str()
+    existing = coll.find_one({'user_id': user_id})
+    if existing is None:
+        return create_agent_user_data(agent_bot_id, user_id, username, fullname, lastname, lang, state, now_str, now_str)
+
+    updates = {
+        'last_contact_time': now_str,
+    }
+    if username is not None:
+        updates['username'] = username
+    if fullname is not None:
+        updates['fullname'] = fullname
+    if lastname is not None:
+        updates['lastname'] = lastname
+    if lang:
+        updates['lang'] = lang
+    if state is not None:
+        updates['state'] = state
+    return coll.find_one_and_update(
+        {'user_id': user_id},
+        {'$set': updates},
+        return_document=ReturnDocument.AFTER,
+    )
+
+
+def update_agent_bot_user_balance(agent_bot_id, user_id, amount, allow_negative=False):
+    coll = get_agent_bot_user_collection(agent_bot_id)
+    user_id = int(user_id)
+    amount = float(amount)
+    query = {'user_id': user_id}
+    if not allow_negative and amount < 0:
+        query['USDT'] = {'$gte': abs(amount)}
+    return coll.find_one_and_update(
+        query,
+        {'$inc': {'USDT': amount}, '$set': {'last_contact_time': beijing_now_str()}},
+        return_document=ReturnDocument.AFTER,
+    )
+
+
+def get_agent_stats(agent_bot_id):
+    users_coll = get_agent_bot_user_collection(agent_bot_id)
+    topup_coll = get_agent_bot_topup_collection(agent_bot_id)
+    gmjlu_coll = get_agent_bot_gmjlu_collection(agent_bot_id)
+    user_count = users_coll.count_documents({})
+    balance_pipeline = [
+        {'$group': {'_id': None, 'total_balance': {'$sum': '$USDT'}, 'total_spent': {'$sum': '$zgje'}, 'total_orders': {'$sum': '$zgsl'}}}
+    ]
+    balance_row = next(iter(users_coll.aggregate(balance_pipeline)), {})
+    pending_topups = topup_coll.count_documents({'status': {'$in': ['pending', 0, 4]}})
+    total_topups = topup_coll.count_documents({})
+    total_records = gmjlu_coll.count_documents({})
+    return {
+        'tenant_id': normalize_tenant_id(agent_bot_id),
+        'user_count': user_count,
+        'total_balance': float(balance_row.get('total_balance', 0) or 0),
+        'total_spent': float(balance_row.get('total_spent', 0) or 0),
+        'total_orders': int(balance_row.get('total_orders', 0) or 0),
+        'pending_topups': pending_topups,
+        'total_topups': total_topups,
+        'purchase_records': total_records,
+    }
+
+
+def _create_index_safe(collection, keys, **kwargs):
+    try:
+        collection.create_index(keys, **kwargs)
+    except Exception:
+        pass
+
+
+
+def ensure_agent_mongo_indexes(agent_bot_id):
+    users_coll = get_agent_bot_user_collection(agent_bot_id)
+    topup_coll = get_agent_bot_topup_collection(agent_bot_id)
+    gmjlu_coll = get_agent_bot_gmjlu_collection(agent_bot_id)
+    _create_index_safe(users_coll, 'user_id', unique=True)
+    _create_index_safe(users_coll, [('USDT', -1), ('user_id', 1)], name='balance_rank')
+    _create_index_safe(topup_coll, 'order_id', unique=True, sparse=True)
+    _create_index_safe(topup_coll, [('status', 1), ('created_at', -1)], name='status_created_at')
+    _create_index_safe(gmjlu_coll, [('user_id', 1), ('timer', -1)], name='user_timer')
+
+
+def ensure_tenant_core_indexes():
+    _create_index_safe(tenants, 'tenant_id', unique=True)
+    _create_index_safe(tenant_users, [('tenant_id', 1), ('user_id', 1)], unique=True)
+    _create_index_safe(tenant_wallets, [('tenant_id', 1), ('user_id', 1), ('currency', 1)], unique=True)
+    _create_index_safe(wallet_ledger, [('tenant_id', 1), ('user_id', 1), ('created_at', -1)], name='tenant_user_created_at')
+    _create_index_safe(tenant_products, [('tenant_id', 1), ('nowuid', 1)], unique=True)
+    _create_index_safe(tenant_orders, [('tenant_id', 1), ('order_id', 1)], unique=True, sparse=True)
+    _create_index_safe(topup_orders, [('tenant_id', 1), ('order_id', 1)], unique=True, sparse=True)
+    _create_index_safe(refund_records, [('tenant_id', 1), ('order_id', 1)], name='tenant_order')
+    _create_index_safe(settlement_ledger, [('tenant_id', 1), ('created_at', -1)], name='tenant_created_at')
+    _create_index_safe(agent_bots, 'agent_bot_id', unique=True)
+    _create_index_safe(agent_product_prices, [('agent_bot_id', 1), ('nowuid', 1)], unique=True)
+    _create_index_safe(agent_orders, [('agent_bot_id', 1), ('order_id', 1)], unique=True, sparse=True)
+    _create_index_safe(agent_withdrawals, [('agent_bot_id', 1), ('created_at', -1)], name='agent_created_at')
+
+
+ensure_tenant_core_indexes()
 
 def sifatuwen(bot_id, projectname, text, file_id,key_text, keyboard, send_type):
     sftw.insert_one({
