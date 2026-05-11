@@ -833,7 +833,7 @@ def build_agent_delivery_result_text(config: AgentRuntimeConfig, order: dict, to
     if timeout_count:
         lines.extend([
             '',
-            '[emoji:5382194935057372936:⏱️]Timed-out accounts were delivered with the file. Please contact support if needed.' if lang == 'en' else '[emoji:5382194935057372936:⏱️]超时账号已随文件一起发出，如需售后请联系客服。'
+            '[emoji:5382194935057372936:⏱️]Timed-out accounts were retried twice and still could not be checked. They were delivered with the file. Please contact support if needed.' if lang == 'en' else '[emoji:5382194935057372936:⏱️]超时账号已自动重试 2 次，仍无法完成检测，现已随文件一起发出；如需售后请联系客服。'
         ])
     return '\n'.join(lines)
 
@@ -877,6 +877,9 @@ def get_agent_account_check_concurrency(total_count: int) -> int:
     if total_count > 3:
         return 2
     return 1
+
+
+AGENT_ACCOUNT_CHECK_MAX_RETRIES = 2
 
 
 def build_agent_delivery_file(leixing: str, user_id: int, nowuid: str, selected_docs: list[dict]) -> str | None:
@@ -942,11 +945,30 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
         async def run_agent_check(item: dict):
             projectname = str(item.get('projectname') or '')
             entry_type, target_path = resolve_inventory_check_target(leixing, nowuid, projectname)
-            async with semaphore:
-                try:
-                    check_result = await asyncio.to_thread(check_account_inventory_item, entry_type, str(target_path), ACCOUNT_CHECK_TIMEOUT_SECONDS)
-                except Exception as exc:
-                    check_result = {'status': 'timeout', 'reason': str(exc) or exc.__class__.__name__}
+            attempts = 0
+            check_result = {'status': 'timeout', 'reason': 'empty_check_result'}
+            while True:
+                attempts += 1
+                async with semaphore:
+                    try:
+                        check_result = await asyncio.to_thread(check_account_inventory_item, entry_type, str(target_path), ACCOUNT_CHECK_TIMEOUT_SECONDS)
+                    except Exception as exc:
+                        check_result = {'status': 'timeout', 'reason': str(exc) or exc.__class__.__name__}
+                if check_result.get('status') != 'timeout' or attempts > AGENT_ACCOUNT_CHECK_MAX_RETRIES:
+                    break
+                logger.warning(
+                    'agent account check timeout, retrying: tenant=%s order=%s hbid=%s attempt=%s/%s path=%s reason=%s',
+                    config.agent_bot_id,
+                    order_id,
+                    item.get('hbid'),
+                    attempts,
+                    AGENT_ACCOUNT_CHECK_MAX_RETRIES + 1,
+                    str(target_path),
+                    check_result.get('reason', ''),
+                )
+            check_result = dict(check_result or {})
+            check_result['attempts'] = attempts
+            check_result['max_retries'] = AGENT_ACCOUNT_CHECK_MAX_RETRIES
             return item, projectname, check_result
 
         tasks = [asyncio.create_task(run_agent_check(item)) for item in selected_docs]
@@ -954,15 +976,19 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
             for future in asyncio.as_completed(tasks):
                 item, projectname, check_result = await future
                 checked_count += 1
+                reason_text = str(check_result.get('reason', '') or '')
+                attempts = int(check_result.get('attempts', 1) or 1)
+                if check_result.get('status') == 'timeout' and attempts > 1:
+                    reason_text = f'{reason_text} | retries={attempts - 1}'.strip(' |')
                 hb.update_one(
                     {'_id': item.get('_id')},
                     {'$set': {
                         'delivery_check_state': check_result.get('status', 'timeout'),
-                        'delivery_check_reason': str(check_result.get('reason', ''))[:500],
+                        'delivery_check_reason': reason_text[:500],
                         'delivery_check_timer': beijing_now_str(),
                     }}
                 )
-                meta = {'hbid': item.get('hbid'), 'projectname': projectname, 'status': check_result.get('status', 'timeout'), 'reason': check_result.get('reason', '')}
+                meta = {'hbid': item.get('hbid'), 'projectname': projectname, 'status': check_result.get('status', 'timeout'), 'reason': reason_text, 'attempts': attempts}
                 status = check_result.get('status')
                 if status == 'alive':
                     alive_items.append(item)
