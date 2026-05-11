@@ -485,9 +485,9 @@ def build_purchase_result_text(order: dict) -> str:
 
 def build_purchase_status_text(config: AgentRuntimeConfig, status: str, user_id: int) -> str:
     mapping = {
-        'product_not_found': get_agent_ui_text(config, 'product_not_found', user_id=user_id),
-        'stock': get_agent_ui_text(config, 'current_no_stock', user_id=user_id),
-        'balance': get_agent_ui_text(config, 'insufficient_balance', user_id=user_id),
+        'product_not_found': strip_basic_html(get_agent_ui_text(config, 'product_not_found', user_id=user_id)),
+        'stock': strip_basic_html(get_agent_ui_text(config, 'current_no_stock', user_id=user_id)),
+        'balance': strip_basic_html(get_agent_ui_text(config, 'insufficient_balance', user_id=user_id)),
         'invalid_price': '商品价格异常，请联系管理员。',
         'product_disabled': '当前代理未开放这个商品。',
     }
@@ -1117,7 +1117,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await query.answer(build_purchase_status_text(config, 'stock', query.from_user.id), show_alert=True)
             return
         set_agent_sign(config.agent_bot_id, query.from_user.id, f'gmqq {nowuid}')
-        prompt = get_agent_ui_text(config, 'enter_quantity_prompt', user_id=query.from_user.id)
+        prompt = strip_basic_html(get_agent_ui_text(config, 'enter_quantity_prompt', user_id=query.from_user.id))
         await query.answer()
         await reply_rendered(update, prompt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_agent_ui_text(config, 'cancel_purchase', user_id=query.from_user.id), callback_data='agent_home')]]))
         return
@@ -1153,7 +1153,7 @@ async def message_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if text.isdigit():
             quantity = int(text)
             if quantity <= 0:
-                await update.effective_chat.send_message(get_agent_ui_text(config, 'quantity_positive_integer_retry', user_id=tg_user.id))
+                await update.effective_chat.send_message(strip_basic_html(get_agent_ui_text(config, 'quantity_positive_integer_retry', user_id=tg_user.id)))
                 return
             product = ejfl.find_one({'nowuid': nowuid})
             if product is None or not is_product_enabled_for_agent(config.agent_bot_id, nowuid):
@@ -1163,7 +1163,7 @@ async def message_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             payload = resolve_agent_product_payload(config.agent_bot_id, product)
             stock_count = int(payload.get('stock', 0) or 0)
             if stock_count < quantity:
-                await update.effective_chat.send_message(get_agent_ui_text(config, 'stock_insufficient_retry', user_id=tg_user.id))
+                await update.effective_chat.send_message(strip_basic_html(get_agent_ui_text(config, 'stock_insufficient_retry', user_id=tg_user.id)))
                 return
             total_amount = float(payload.get('price', 0) or 0) * quantity
             if float(user_row.get('USDT', 0) or 0) < total_amount:
@@ -1175,7 +1175,7 @@ async def message_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await reply_rendered(update, confirm_text, reply_markup=build_purchase_confirm_keyboard(config, nowuid, str(product.get('uid') or ''), tg_user.id, quantity))
             return
         await update.effective_chat.send_message(
-            get_agent_ui_text(config, 'quantity_positive_integer_retry', user_id=tg_user.id),
+            strip_basic_html(get_agent_ui_text(config, 'quantity_positive_integer_retry', user_id=tg_user.id)),
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_agent_ui_text(config, 'cancel_purchase', user_id=tg_user.id), callback_data='agent_home')]])
         )
         return
