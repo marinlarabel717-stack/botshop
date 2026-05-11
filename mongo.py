@@ -743,7 +743,7 @@ def create_tenant_purchase_order(tenant_id, user_id, nowuid, quantity=1, currenc
     tenant_orders.insert_one(doc)
     agent_orders.update_one(
         {'agent_bot_id': tenant_id, 'order_id': order_id},
-        {'$set': dict(doc, agent_bot_id=tenant_id), '$setOnInsert': {'created_at': timer}},
+        {'$set': dict(doc, agent_bot_id=tenant_id)},
         upsert=True,
     )
     get_agent_bot_gmjlu_collection(tenant_id).insert_one({
