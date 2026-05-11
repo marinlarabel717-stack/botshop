@@ -420,6 +420,156 @@ def mark_tenant_topup_paid(order_id, txid='', paid_amount=None, currency='USDT',
     return topup_orders.find_one({'_id': order['_id']}), 'paid'
 
 
+def debit_tenant_wallet(tenant_id, user_id, amount, currency='USDT', biz_type='purchase', ref_id='', description='', meta=None):
+    tenant_id = normalize_tenant_id(tenant_id)
+    user_id = int(user_id)
+    amount = float(amount)
+    if amount <= 0:
+        raise ValueError('debit amount must be positive')
+    wallet_doc = get_tenant_wallet_doc(tenant_id, user_id, currency)
+    balance_before = float(wallet_doc.get('balance', 0) or 0)
+    updated_wallet = tenant_wallets.find_one_and_update(
+        {
+            'tenant_id': tenant_id,
+            'user_id': user_id,
+            'currency': str(currency or 'USDT').upper(),
+            'balance': {'$gte': amount},
+        },
+        {'$inc': {'balance': -amount}, '$set': {'updated_at': beijing_now_str()}},
+        return_document=ReturnDocument.AFTER,
+    )
+    if updated_wallet is None:
+        return None
+    updated_user = update_agent_bot_user_balance(tenant_id, user_id, -amount, allow_negative=False)
+    if updated_user is None:
+        tenant_wallets.update_one(
+            {'tenant_id': tenant_id, 'user_id': user_id, 'currency': str(currency or 'USDT').upper()},
+            {'$inc': {'balance': amount}, '$set': {'updated_at': beijing_now_str()}},
+        )
+        return None
+    balance_after = float(updated_wallet.get('balance', 0) or 0)
+    append_wallet_ledger_entry(tenant_id, user_id, currency, -amount, balance_before, balance_after, biz_type, ref_id, description, meta)
+    return {
+        'wallet': updated_wallet,
+        'user': updated_user,
+        'balance_before': balance_before,
+        'balance_after': balance_after,
+    }
+
+
+def reserve_tenant_inventory(nowuid, count, user_id, order_id):
+    nowuid = str(nowuid)
+    user_id = int(user_id)
+    count = max(0, int(count or 0))
+    timer = beijing_now_str()
+    reserved_docs = []
+    for _ in range(count):
+        row = hb.find_one_and_update(
+            {'nowuid': nowuid, 'state': 0},
+            {'$set': {'state': 1, 'gmid': user_id, 'delivery_order_id': order_id, 'yssj': timer}},
+            sort=[('_id', 1)],
+            return_document=ReturnDocument.AFTER,
+        )
+        if row is None:
+            break
+        reserved_docs.append(row)
+    if len(reserved_docs) < count:
+        release_tenant_inventory(reserved_docs, user_id, order_id)
+        return []
+    return reserved_docs
+
+
+def release_tenant_inventory(selected_docs, user_id, order_id):
+    selected_docs = list(selected_docs or [])
+    if not selected_docs:
+        return
+    hb.update_many(
+        {
+            '_id': {'$in': [doc['_id'] for doc in selected_docs if doc.get('_id') is not None]},
+            'gmid': int(user_id),
+            'delivery_order_id': str(order_id),
+            'state': 1,
+        },
+        {'$set': {'state': 0}, '$unset': {'gmid': '', 'delivery_order_id': '', 'yssj': ''}},
+    )
+
+
+def create_tenant_purchase_order(tenant_id, user_id, nowuid, quantity=1, currency='USDT'):
+    tenant_id = normalize_tenant_id(tenant_id)
+    user_id = int(user_id)
+    quantity = max(1, int(quantity or 1))
+    product = ejfl.find_one({'nowuid': str(nowuid)})
+    if product is None:
+        return None, 'product_not_found'
+
+    override = agent_product_prices.find_one({'agent_bot_id': tenant_id, 'nowuid': str(nowuid)}) or {}
+    enabled = override.get('enabled', True)
+    if not enabled:
+        return None, 'product_disabled'
+
+    unit_price = float(override.get('price', product.get('money', 0)) or 0)
+    if unit_price <= 0:
+        return None, 'invalid_price'
+    total_amount = float(quantity * unit_price)
+    order_id = build_tenant_order_id('BUY', tenant_id, user_id)
+    reserved_docs = reserve_tenant_inventory(nowuid, quantity, user_id, order_id)
+    if len(reserved_docs) < quantity:
+        return None, 'stock'
+
+    debit_result = debit_tenant_wallet(
+        tenant_id,
+        user_id,
+        total_amount,
+        currency=currency,
+        biz_type='purchase',
+        ref_id=order_id,
+        description=f'购买商品 {product.get("projectname") or nowuid}',
+        meta={'nowuid': str(nowuid), 'quantity': quantity},
+    )
+    if debit_result is None:
+        release_tenant_inventory(reserved_docs, user_id, order_id)
+        return None, 'balance'
+
+    timer = beijing_now_str()
+    category = fenlei.find_one({'uid': product.get('uid')}) or {}
+    doc = {
+        'tenant_id': tenant_id,
+        'order_id': order_id,
+        'user_id': user_id,
+        'nowuid': str(nowuid),
+        'uid': product.get('uid'),
+        'category_name': str(category.get('projectname') or ''),
+        'product_name': str(override.get('display_name') or product.get('projectname') or '商品'),
+        'source_product_name': str(product.get('projectname') or '商品'),
+        'quantity': quantity,
+        'unit_price': unit_price,
+        'total_amount': total_amount,
+        'currency': str(currency or 'USDT').upper(),
+        'state': 'reserved',
+        'created_at': timer,
+        'created_ts_ms': current_ts_ms(),
+        'reserved_hbids': [doc.get('hbid') for doc in reserved_docs if doc.get('hbid')],
+        'inventory_ids': [str(doc.get('_id')) for doc in reserved_docs if doc.get('_id') is not None],
+        'balance_after': float(debit_result.get('balance_after', 0)),
+    }
+    tenant_orders.insert_one(doc)
+    agent_orders.update_one(
+        {'agent_bot_id': tenant_id, 'order_id': order_id},
+        {'$set': dict(doc, agent_bot_id=tenant_id), '$setOnInsert': {'created_at': timer}},
+        upsert=True,
+    )
+    get_agent_bot_gmjlu_collection(tenant_id).insert_one({
+        'leixing': '代理下单',
+        'bianhao': order_id,
+        'user_id': user_id,
+        'projectname': str(doc['product_name']),
+        'text': '',
+        'ts': f'代理下单预占库存，待后续接发货链路。',
+        'timer': timer,
+    })
+    return doc, 'ok'
+
+
 def _create_index_safe(collection, keys, **kwargs):
     try:
         collection.create_index(keys, **kwargs)
