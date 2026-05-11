@@ -46,8 +46,40 @@ BASE_DIR = Path(__file__).resolve().parent
 VERSION_FILE = BASE_DIR / 'VERSION'
 
 
+def _configured_storage_roots(folder_name):
+    folder_name = str(folder_name or '').strip()
+    configured = []
+    if folder_name == '协议号':
+        protocol_root = str(os.getenv('BASE_PROTOCOL_PATH', '') or '').strip()
+        if protocol_root:
+            configured.append(Path(protocol_root))
+    elif folder_name == '号包':
+        direct_root = str(
+            os.getenv('BASE_ACCOUNT_BAG_PATH', '')
+            or os.getenv('BASE_DIRECT_LOGIN_PATH', '')
+            or os.getenv('BASE_TDATA_PATH', '')
+            or ''
+        ).strip()
+        if direct_root:
+            configured.append(Path(direct_root))
+        protocol_root = str(os.getenv('BASE_PROTOCOL_PATH', '') or '').strip()
+        if protocol_root:
+            protocol_parent = Path(protocol_root).expanduser().parent
+            if str(protocol_parent) not in {'', '.'}:
+                configured.append(protocol_parent / '号包')
+    elif folder_name == '协议号发货':
+        delivery_root = str(os.getenv('BASE_PROTOCOL_DELIVERY_PATH', '') or '').strip()
+        if delivery_root:
+            configured.append(Path(delivery_root))
+    elif folder_name == '发货':
+        delivery_root = str(os.getenv('BASE_DELIVERY_PATH', '') or '').strip()
+        if delivery_root:
+            configured.append(Path(delivery_root))
+    return configured
+
+
 def candidate_storage_roots(folder_name):
-    roots = [BASE_DIR / folder_name, Path(folder_name)]
+    roots = [*_configured_storage_roots(folder_name), BASE_DIR / folder_name, Path(folder_name)]
     deduped = []
     seen = set()
     for root in roots:
@@ -864,6 +896,7 @@ def render_env_lines(env_map):
         'ACCOUNT_CHECK_PROGRESS_STEP', 'ACCOUNT_CHECK_API_ID', 'ACCOUNT_CHECK_API_HASH',
         'TRONGRID_API_BASE', 'TRONGRID_API_KEY', 'TRONGRID_API_KEYS', 'TRC20_USDT_CONTRACT', 'TRONGRID_POLL_SECONDS',
         'TRONGRID_REQUEST_TIMEOUT', 'TRONGRID_MAX_PAGES', 'TRONGRID_LOOKBACK_MINUTES', 'TRONGRID_MONITOR_ADDRESSES',
+        'BASE_PROTOCOL_PATH', 'BASE_ACCOUNT_BAG_PATH',
         'BOT_CLONE_ROOT', 'BOT_CLONE_REPO_URL'
     ]
     lines = []
@@ -877,6 +910,32 @@ def render_env_lines(env_map):
             continue
         lines.append(f'{key}={env_map.get(key, "") or ""}')
     return '\n'.join(lines) + '\n'
+
+
+def get_default_storage_env_map(existing_env=None):
+    existing_env = existing_env or {}
+    protocol_path = str(existing_env.get('BASE_PROTOCOL_PATH') or os.getenv('BASE_PROTOCOL_PATH') or (BASE_DIR / '协议号')).strip()
+    direct_path = str(existing_env.get('BASE_ACCOUNT_BAG_PATH') or os.getenv('BASE_ACCOUNT_BAG_PATH') or (BASE_DIR / '号包')).strip()
+    return {
+        'BASE_PROTOCOL_PATH': protocol_path,
+        'BASE_ACCOUNT_BAG_PATH': direct_path,
+    }
+
+
+def backfill_clone_storage_env(clone_dir, clone_kind=''):
+    clone_dir = Path(str(clone_dir or '').strip())
+    if not clone_dir:
+        return
+    root_env_path = clone_dir / '.env'
+    root_env = {k: v for k, v in (dotenv_values(root_env_path) or {}).items() if k} if root_env_path.exists() else {}
+    root_env.update({k: v for k, v in get_default_storage_env_map(root_env).items() if v})
+    root_env_path.write_text(render_env_lines(root_env), encoding='utf-8')
+    if str(clone_kind or '').strip() == 'agent':
+        agent_env_path = clone_dir / 'agent_service' / '.env'
+        agent_env = {k: v for k, v in (dotenv_values(agent_env_path) or {}).items() if k} if agent_env_path.exists() else {}
+        agent_env.update({k: v for k, v in get_default_storage_env_map(agent_env).items() if v})
+        agent_env_path.parent.mkdir(parents=True, exist_ok=True)
+        agent_env_path.write_text(render_env_lines(agent_env), encoding='utf-8')
 
 
 def write_clone_env(clone_dir, bot_token, admin_user_id, bot_info):
@@ -904,6 +963,7 @@ def write_clone_env(clone_dir, bot_token, admin_user_id, bot_info):
     env_map['ALLOW_PUBLIC_BOT_CLONE'] = 'false'
     env_map['BOT_CLONE_ROOT'] = BOT_CLONE_ROOT
     env_map['BOT_CLONE_REPO_URL'] = get_clone_repo_url()
+    env_map.update({k: v for k, v in get_default_storage_env_map(env_map).items() if v})
 
     (clone_dir / '.env').write_text(render_env_lines(env_map), encoding='utf-8')
     return db_name
@@ -924,6 +984,7 @@ def write_agent_clone_env(clone_dir, admin_user_id, bot_info, bot_token):
     env_map['ALLOW_PUBLIC_BOT_CLONE'] = 'false'
     env_map['BOT_CLONE_ROOT'] = BOT_CLONE_ROOT
     env_map['BOT_CLONE_REPO_URL'] = get_clone_repo_url()
+    env_map.update({k: v for k, v in get_default_storage_env_map(env_map).items() if v})
     (clone_dir / '.env').write_text(render_env_lines(env_map), encoding='utf-8')
 
     customer_service = str(OKPAY_BOT_USERNAME or os.getenv('CUSTOMER_SERVICE_USERNAME', '') or '').strip()
@@ -937,6 +998,7 @@ def write_agent_clone_env(clone_dir, admin_user_id, bot_info, bot_token):
         'AGENT_TRC20_ADDRESS': agent_trc20_address,
         'AGENT_RECHARGE_AMOUNTS': '10,30,50,100',
         'AGENT_DEFAULT_LANG': 'zh',
+        **get_default_storage_env_map(env_map),
     }
     agent_env_dir = clone_dir / 'agent_service'
     agent_env_dir.mkdir(parents=True, exist_ok=True)
@@ -976,11 +1038,12 @@ def refresh_clone_service_files(record):
     clone_dir = Path(str(record.get('clone_dir') or '').strip())
     if not clone_dir:
         return
+    clone_kind = str(record.get('clone_kind') or '').strip()
+    backfill_clone_storage_env(clone_dir, clone_kind=clone_kind)
     python_exec = get_python_exec_path()
     bot_username = str(record.get('bot_username') or record.get('bot_id') or 'bot').strip()
     service_name = str(record.get('service_name') or '').strip()
     listener_service_name = str(record.get('listener_service_name') or '').strip()
-    clone_kind = str(record.get('clone_kind') or '').strip()
     if service_name:
         service_path = Path('/etc/systemd/system') / f'{service_name}.service'
         exec_start = f'{python_exec} {clone_dir / "haopubot.py"}'
@@ -2864,7 +2927,7 @@ def archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, item_
     archived_files = []
     if leixing == '协议号':
         for suffix in ('.session', '.json'):
-            src_path = BASE_DIR / '协议号' / str(nowuid) / f'{projectname}{suffix}'
+            src_path = find_existing_storage_path('协议号', nowuid, f'{projectname}{suffix}')
             if src_path.exists():
                 dst_path = target_root / src_path.name
                 if dst_path.exists():
