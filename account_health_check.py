@@ -266,10 +266,34 @@ def _run_async(coro):
 def _classify_exception(exc: Exception) -> Dict[str, Any]:
     message = str(exc) or exc.__class__.__name__
     lower_message = message.lower()
-    timeout_markers = ('timeout', 'timed out', 'deadline', 'floodwait', 'temporarily unavailable', 'connection lost')
+    timeout_markers = (
+        'timeout', 'timed out', 'deadline', 'floodwait', 'temporarily unavailable',
+        'connection lost', 'connection reset', 'broken pipe', 'network', 'disconnected',
+        'server closed the connection', 'rpc call fail', 'transport closed', 'cancelled'
+    )
+    invalid_markers = (
+        'session_not_authorized', 'account_not_found', 'session_file_missing', 'tdata_folder_missing',
+        'tdata_not_loaded', 'auth key unregistered', 'user deactivated', 'user deactivated ban',
+        'phone number banned', 'session password needed', 'account banned', 'account was deleted'
+    )
+    explicit_invalid_types = ()
+    if telethon_errors is not None:
+        explicit_invalid_types = tuple(
+            item for item in (
+                getattr(telethon_errors, 'AuthKeyUnregisteredError', None),
+                getattr(telethon_errors, 'UserDeactivatedError', None),
+                getattr(telethon_errors, 'UserDeactivatedBanError', None),
+                getattr(telethon_errors, 'PhoneNumberBannedError', None),
+                getattr(telethon_errors, 'SessionPasswordNeededError', None),
+            ) if item is not None
+        )
     if isinstance(exc, (asyncio.TimeoutError, TimeoutError, DependencyUnavailable)) or any(marker in lower_message for marker in timeout_markers):
         return {'status': 'timeout', 'reason': message}
-    return {'status': 'invalid', 'reason': message}
+    if explicit_invalid_types and isinstance(exc, explicit_invalid_types):
+        return {'status': 'invalid', 'reason': message}
+    if any(marker in lower_message for marker in invalid_markers):
+        return {'status': 'invalid', 'reason': message}
+    return {'status': 'timeout', 'reason': message}
 
 
 def get_account_check_runtime_status(entry_type: str) -> Dict[str, Any]:
