@@ -6339,6 +6339,24 @@ def okpay_verify_callback(data):
     return False
 
 
+def send_admin_topup_notice(bot, text):
+    if bot is None or not text:
+        return
+    for admin_row in list(user.find({'state': '4'}, {'user_id': 1})):
+        admin_user_id = admin_row.get('user_id')
+        if not admin_user_id:
+            continue
+        try:
+            bot.send_message(
+                chat_id=admin_user_id,
+                text=text,
+                parse_mode='HTML',
+                disable_web_page_preview=True,
+            )
+        except Exception:
+            continue
+
+
 def okpay_mark_deposit_paid(payload):
     unique_id = payload.get('data[unique_id]') or payload.get('unique_id')
     amount = payload.get('data[amount]') or payload.get('amount')
@@ -6451,6 +6469,17 @@ def okpay_mark_deposit_paid(payload):
 
     user_logging(unique_id, 'OKPay充值', user_id, paid_amount_float, timer)
 
+    user_row = user.find_one({'user_id': user_id}, {'fullname': 1, 'username': 1}) or {}
+    display_name = html.escape(str(user_row.get('fullname') or user_id).replace('<', '').replace('>', ''), quote=False)
+    username = str(user_row.get('username') or '').strip().lstrip('@')
+    username_text = f' @{html.escape(username, quote=False)}' if username else ''
+    admin_notify_text = (
+        f'用户: <a href="tg://user?id={user_id}">{display_name}</a>{username_text} OKPay充值成功\n'
+        f'订单号: <code>{html.escape(str(unique_id), quote=False)}</code>\n'
+        f'充值: {paid_amount_float} {html.escape(paid_coin, quote=False)}\n'
+        f'OKPay订单: <code>{html.escape(str(order_id or "-"), quote=False)}</code>'
+    )
+
     if OKPAY_BOT is not None:
         try:
             notify_text = f'<b>✅ OKPay充值到账：{paid_amount_float} {paid_coin}\n\n💳 当前余额：{now_money} USDT</b>'
@@ -6463,6 +6492,7 @@ def okpay_mark_deposit_paid(payload):
             )
         except Exception as exc:
             print(f'OKPay到账通知失败: {exc}')
+        send_admin_topup_notice(OKPAY_BOT, admin_notify_text)
     return True, 'paid'
 
 
