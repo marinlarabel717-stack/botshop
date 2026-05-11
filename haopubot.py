@@ -9168,140 +9168,343 @@ def fbgg(update: Update, context: CallbackContext):
             context.bot.send_message(chat_id=user_id, text='广告发送完成')
 
 
+def is_source_admin_user(user_id):
+    try:
+        return int(user_id) in set(get_source_admin_user_ids())
+    except Exception:
+        return False
+
+
+def get_agent_runtime_record(agent_bot_id):
+    tenant_id = normalize_tenant_id(agent_bot_id)
+    runtime = agent_bots.find_one({'agent_bot_id': tenant_id}) or {}
+    clone_row = clone_instances.find_one({'bot_id': tenant_id, 'clone_kind': 'agent', 'state': {'$ne': 'deleted'}}) or {}
+    return tenant_id, runtime, clone_row
+
+
+def load_agent_bot_token(agent_bot_id):
+    tenant_id, runtime, clone_row = get_agent_runtime_record(agent_bot_id)
+    clone_dir = Path(str((clone_row or {}).get('clone_dir') or (runtime or {}).get('clone_dir') or '').strip())
+    if not clone_dir:
+        return ''
+    env_path = clone_dir / 'agent_service' / '.env'
+    if not env_path.exists():
+        return ''
+    env_map = dotenv_values(env_path) or {}
+    return str(env_map.get('AGENT_BOT_TOKEN') or '').strip()
+
+
+def send_agent_bot_text(agent_bot_id, chat_id, text, parse_mode='HTML'):
+    token = load_agent_bot_token(agent_bot_id)
+    if not token:
+        return False, 'missing_agent_bot_token'
+    try:
+        response = requests.post(
+            f'https://api.telegram.org/bot{token}/sendMessage',
+            data={
+                'chat_id': int(chat_id),
+                'text': str(text or ''),
+                'parse_mode': parse_mode,
+                'disable_web_page_preview': 'true',
+            },
+            timeout=20,
+        )
+        response.raise_for_status()
+        payload = response.json() or {}
+        if not payload.get('ok'):
+            return False, str(payload.get('description') or 'send_failed')
+        return True, ''
+    except Exception as exc:
+        return False, str(exc)
+
+
+def build_agent_admin_balance_notice(delta_amount, balance_after):
+    delta_amount = float(delta_amount or 0)
+    action_text = '通过管理员充值' if delta_amount >= 0 else '通过管理员扣款'
+    amount_text = standard_num(abs(delta_amount))
+    balance_text = standard_num(balance_after)
+    return f'''
+<b>✅ {action_text}：{amount_text} USDT
+
+💳 当前余额：{balance_text} USDT</b>
+    '''
+
+
+def format_agent_order_state(state):
+    mapping = {
+        'reserved': '已预占',
+        'delivered': '已发货',
+        'delivery_failed': '发货失败',
+        'refunded': '已退款',
+        'partial_refunded': '部分退款',
+        'refund_pending': '退款中',
+        'paid': '已支付',
+        'pending': '待处理',
+        'canceled': '已取消',
+    }
+    state = str(state or '').strip()
+    return mapping.get(state, state or '未知')
+
+
+def build_agent_purchase_history_text(agent_bot_id, user_id, limit=10):
+    tenant_id = normalize_tenant_id(agent_bot_id)
+    rows = list(tenant_orders.find({'tenant_id': tenant_id, 'user_id': int(user_id)}, sort=[('created_ts_ms', -1), ('created_at', -1)], limit=max(1, int(limit))))
+    if not rows:
+        rows = []
+        for row in list(get_agent_bot_gmjlu_collection(tenant_id).find({'user_id': int(user_id)}, sort=[('timer', -1)], limit=max(1, int(limit)))):
+            rows.append({
+                'created_at': row.get('timer') or '',
+                'product_name': row.get('projectname') or '',
+                'quantity': 1,
+                'total_amount': '',
+                'state': row.get('leixing') or '',
+                'order_id': row.get('bianhao') or '',
+            })
+    lines = ['🛒 最近购买记录']
+    if not rows:
+        lines.append('暂无购买记录')
+        return '\n'.join(lines)
+    for idx, row in enumerate(rows, 1):
+        total_amount = row.get('total_amount')
+        amount_text = f'{standard_num(total_amount)} USDT' if total_amount not in (None, '') else '—'
+        lines.extend([
+            '',
+            f'{idx}. 时间：{row.get("created_at") or ""}',
+            f'商品：{row.get("product_name") or row.get("source_product_name") or ""}',
+            f'数量：{int(row.get("quantity", 1) or 1)}',
+            f'金额：{amount_text}',
+            f'状态：{format_agent_order_state(row.get("state"))}',
+            f'订单号：{row.get("order_id") or row.get("bianhao") or ""}',
+        ])
+    return '\n'.join(lines)
+
+
 def adm(update: Update, context: CallbackContext):
     chat = update.effective_chat
-    # print(chat)
-    if chat.type == 'private':
-        user_id = chat['id']
-        chat_id = user_id
-        username = chat['username']
-        firstname = chat['first_name']
-        fullname = chat['full_name']
-        timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-        lastname = chat['last_name']
-        text = update.message.text
-        text1 = text.split(' ')
-        user_list = user.find_one({'user_id': user_id})
-        USDT = user_list['USDT']
-        state = user_list['state']
-        if state == '4':
-            if len(text1) == 3:
-                df_id = int(text1[1])
-                money = text1[2]
-                if user.find_one({'user_id': df_id}) is None:
-                    context.bot.send_message(chat_id=chat_id, text='用户不存在')
-                    return
-                if '+' in money:
-                    money = money.replace('+', '')
-                    if not is_number(money):
-                        context.bot.send_message(chat_id=chat_id, text='非数字，操作失败')
-                        return
-                    hyh_list = user.find_one({'user_id': df_id})
-                    hyh_money = hyh_list['USDT']
-                    now_money = standard_num(hyh_money + float(money))
-                    now_money = float(now_money) if str((now_money)).count('.') > 0 else int(standard_num(now_money))
+    if chat.type != 'private':
+        return
+    user_id = chat['id']
+    chat_id = user_id
+    timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+    text = update.message.text
+    text1 = text.split(' ')
+    user_list = user.find_one({'user_id': user_id})
+    if not user_list or not is_source_admin_user(user_id):
+        return
 
-                    order_id = generate_24bit_uid()
-                    user_logging(order_id, '充值', df_id, money, timer)
-                    user.update_one({'user_id': df_id}, {'$set': {'USDT': now_money}})
-                    hyh_list = user.find_one({"user_id": df_id})
-                    fullname = hyh_list['fullname']
-                    USDT = hyh_list['USDT']
-                    fstext = f'''
+    if len(text1) == 4:
+        agent_bot_id = str(text1[1]).strip()
+        try:
+            df_id = int(text1[2])
+        except Exception:
+            context.bot.send_message(chat_id=chat_id, text='用户ID格式错误')
+            return
+        money_raw = str(text1[3]).strip()
+        if not money_raw or money_raw[0] not in {'+', '-'}:
+            context.bot.send_message(chat_id=chat_id, text='格式为: /add 代理id 用户id +-数值')
+            return
+        amount_text = money_raw[1:].strip()
+        if not is_number(amount_text):
+            context.bot.send_message(chat_id=chat_id, text='非数字，操作失败')
+            return
+        tenant_id, runtime, clone_row = get_agent_runtime_record(agent_bot_id)
+        if not runtime and not clone_row:
+            context.bot.send_message(chat_id=chat_id, text='代理不存在')
+            return
+        agent_user = get_agent_bot_user(tenant_id, df_id)
+        if agent_user is None:
+            context.bot.send_message(chat_id=chat_id, text='代理用户不存在')
+            return
+        amount = float(amount_text)
+        order_id = build_tenant_order_id('ADMIN', tenant_id, df_id)
+        if money_raw.startswith('+'):
+            result = credit_tenant_wallet(
+                tenant_id,
+                df_id,
+                amount,
+                currency='USDT',
+                biz_type='admin_credit',
+                ref_id=order_id,
+                description=f'主号铺管理员手动加余额 {user_id}',
+                meta={'operator_user_id': user_id, 'operator_scope': 'main_admin'},
+            )
+            action_text = '加余额'
+            delta_amount = amount
+        else:
+            result = debit_tenant_wallet(
+                tenant_id,
+                df_id,
+                amount,
+                currency='USDT',
+                biz_type='admin_debit',
+                ref_id=order_id,
+                description=f'主号铺管理员手动减余额 {user_id}',
+                meta={'operator_user_id': user_id, 'operator_scope': 'main_admin'},
+            )
+            if result is None:
+                context.bot.send_message(chat_id=chat_id, text='扣款失败：余额不足或用户不存在')
+                return
+            action_text = '减余额'
+            delta_amount = -amount
+        agent_user = get_agent_bot_user(tenant_id, df_id) or agent_user
+        bot_name = str((runtime or {}).get('bot_name') or (runtime or {}).get('bot_username') or tenant_id)
+        username_text = str(agent_user.get('username') or agent_user.get('fullname') or '').strip() or '未设置'
+        fstext = f'''
+代理: {bot_name} ({tenant_id})
+用户ID: {df_id}
+用户名: {username_text}
+操作: {action_text}
+变动: {standard_num(delta_amount)} USDT
+余额: {standard_num(result['balance_after'])} USDT
+        '''
+        context.bot.send_message(chat_id=chat_id, text=fstext)
+        notice_ok, notice_error = send_agent_bot_text(tenant_id, df_id, build_agent_admin_balance_notice(delta_amount, result['balance_after']))
+        if not notice_ok:
+            context.bot.send_message(chat_id=chat_id, text=f'已完成余额调整，但代理用户通知发送失败：{notice_error}')
+        return
+
+    if len(text1) == 3:
+        df_id = int(text1[1])
+        money = text1[2]
+        if user.find_one({'user_id': df_id}) is None:
+            context.bot.send_message(chat_id=chat_id, text='用户不存在')
+            return
+        if '+' in money:
+            money = money.replace('+', '')
+            if not is_number(money):
+                context.bot.send_message(chat_id=chat_id, text='非数字，操作失败')
+                return
+            hyh_list = user.find_one({'user_id': df_id})
+            hyh_money = hyh_list['USDT']
+            now_money = standard_num(hyh_money + float(money))
+            now_money = float(now_money) if str((now_money)).count('.') > 0 else int(standard_num(now_money))
+
+            order_id = generate_24bit_uid()
+            user_logging(order_id, '充值', df_id, money, timer)
+            user.update_one({'user_id': df_id}, {'$set': {'USDT': now_money}})
+            hyh_list = user.find_one({"user_id": df_id})
+            fullname = hyh_list['fullname']
+            USDT = hyh_list['USDT']
+            fstext = f'''
 ID: {df_id}
 昵称: {fullname}
 余额: {USDT}
-                    '''
-                    context.bot.send_message(chat_id=chat_id, text=fstext)
+            '''
+            context.bot.send_message(chat_id=chat_id, text=fstext)
 
-                    fstext = f'''
-<b>✅    通过管理员充值：{money} USDT
+            fstext = f'''
+<b>✅    通过管理员充值：{money} USDT
 
-💳    您的余额：{USDT}  USDT</b>
-                    '''
-                    context.bot.send_message(chat_id=df_id, text=fstext, parse_mode='HTML')
-                else:
-                    money = money.replace('-', '')
-                    if not is_number(money):
-                        context.bot.send_message(chat_id=chat_id, text='非数字，操作失败')
-                        return
-                    hyh_list = user.find_one({'user_id': df_id})
-                    hyh_money = hyh_list['USDT']
-                    now_money = standard_num(hyh_money - float(money))
-                    now_money = float(now_money) if str((now_money)).count('.') > 0 else int(standard_num(now_money))
+💳    您的余额：{USDT}  USDT</b>
+            '''
+            context.bot.send_message(chat_id=df_id, text=fstext, parse_mode='HTML')
+        else:
+            money = money.replace('-', '')
+            if not is_number(money):
+                context.bot.send_message(chat_id=chat_id, text='非数字，操作失败')
+                return
+            hyh_list = user.find_one({'user_id': df_id})
+            hyh_money = hyh_list['USDT']
+            now_money = standard_num(hyh_money - float(money))
+            now_money = float(now_money) if str((now_money)).count('.') > 0 else int(standard_num(now_money))
 
-                    order_id = generate_24bit_uid()
-                    user_logging(order_id, '扣款', df_id, money, timer)
-                    user.update_one({'user_id': df_id}, {'$set': {'USDT': now_money}})
-                    hyh_list = user.find_one({"user_id": df_id})
-                    fullname = hyh_list['fullname']
-                    USDT = hyh_list['USDT']
-                    fstext = f'''
+            order_id = generate_24bit_uid()
+            user_logging(order_id, '扣款', df_id, money, timer)
+            user.update_one({'user_id': df_id}, {'$set': {'USDT': now_money}})
+            hyh_list = user.find_one({"user_id": df_id})
+            fullname = hyh_list['fullname']
+            USDT = hyh_list['USDT']
+            fstext = f'''
 ID: {df_id}
 昵称: {fullname}
 余额: {USDT}
-                    '''
-                    context.bot.send_message(chat_id=chat_id, text=fstext)
+            '''
+            context.bot.send_message(chat_id=chat_id, text=fstext)
 
-                    fstext = f'''
-<b>✅    通过管理员扣款：{money} USDT
+            fstext = f'''
+<b>✅    通过管理员扣款：{money} USDT
 
-💳    您的余额：{USDT}  USDT</b>
-                    '''
-                    context.bot.send_message(chat_id=df_id, text=fstext, parse_mode='HTML')
-            else:
-                context.bot.send_message(chat_id=chat_id, text='格式为: /add id +-数值，有两个空格')
+💳    您的余额：{USDT}  USDT</b>
+            '''
+            context.bot.send_message(chat_id=df_id, text=fstext, parse_mode='HTML')
+        return
+
+    context.bot.send_message(chat_id=chat_id, text='格式为: /add id +-数值 或 /add 代理id 用户id +-数值')
 
 
 def cha(update: Update, context: CallbackContext):
     chat = update.effective_chat
-    # print(chat)
-    if chat.type == 'private':
-        user_id = chat['id']
-        chat_id = user_id
-        username = chat['username']
-        firstname = chat['first_name']
-        fullname = chat['full_name']
-        timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-        lastname = chat['last_name']
-        text = update.message.text
-        text1 = text.split(' ')
-        user_list = user.find_one({'user_id': user_id})
-        USDT = user_list['USDT']
-        state = user_list['state']
-        if state == '4':
-            if len(text1) == 2:
-                jieguo = text1[1]
-                if is_number(jieguo):
-                    df_id = int(jieguo)
-                    df_list = user.find_one({'user_id': df_id})
-                    if df_list is None:
-                        context.bot.send_message(chat_id=chat_id, text='用户不存在')
-                        return
-                else:
-                    df_list = user.find_one({'username': jieguo.replace('@', '')})
-                    if df_list is None:
-                        context.bot.send_message(chat_id=chat_id, text='用户不存在')
-                        return
-                    df_id = df_list['user_id']
-                df_fullname = df_list['fullname']
-                df_username = df_list['username']
-                if df_username is None:
-                    df_username = df_fullname
-                creation_time = df_list['creation_time']
-                zgsl = df_list['zgsl']
-                zgje = df_list['zgje']
-                USDT = df_list['USDT']
-                fstext = build_user_profile_text(df_id, df_username, creation_time, zgsl, zgje, USDT)
-                keyboard = [[InlineKeyboardButton('🛒购买记录', callback_data=f'gmaijilu {df_id}')],
-                            [InlineKeyboardButton('关闭', callback_data=f'close {user_id}')]]
-                context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
-                                         reply_markup=InlineKeyboardMarkup(keyboard), disable_web_page_preview=True)
+    if chat.type != 'private':
+        return
+    user_id = chat['id']
+    chat_id = user_id
+    text = update.message.text
+    text1 = text.split(' ')
+    user_list = user.find_one({'user_id': user_id})
+    if not user_list or not is_source_admin_user(user_id):
+        return
 
+    if len(text1) == 3:
+        agent_bot_id = str(text1[1]).strip()
+        try:
+            df_id = int(text1[2])
+        except Exception:
+            context.bot.send_message(chat_id=chat_id, text='格式为: /cha 代理id 用户id')
+            return
+        tenant_id, runtime, clone_row = get_agent_runtime_record(agent_bot_id)
+        if not runtime and not clone_row:
+            context.bot.send_message(chat_id=chat_id, text='代理不存在')
+            return
+        df_list = get_agent_bot_user(tenant_id, df_id)
+        if df_list is None:
+            context.bot.send_message(chat_id=chat_id, text='代理用户不存在')
+            return
+        df_fullname = df_list.get('fullname')
+        df_username = df_list.get('username')
+        if not df_username:
+            df_username = df_fullname
+        creation_time = df_list.get('creation_time') or df_list.get('created_at') or ''
+        zgsl = df_list.get('zgsl', 0)
+        zgje = df_list.get('zgje', 0)
+        agent_balance = df_list.get('USDT', 0)
+        fstext = build_user_profile_text(df_id, df_username, creation_time, zgsl, zgje, agent_balance)
+        agent_name = str((runtime or {}).get('bot_name') or (runtime or {}).get('bot_username') or tenant_id)
+        fstext = f'<b>代理：</b><code>{html.escape(str(agent_name), quote=False)}</code>\n<b>代理ID：</b><code>{html.escape(str(tenant_id), quote=False)}</code>\n\n' + fstext
+        history_text = build_agent_purchase_history_text(tenant_id, df_id)
+        context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML', disable_web_page_preview=True)
+        context.bot.send_message(chat_id=user_id, text=history_text, disable_web_page_preview=True)
+        return
 
+    if len(text1) == 2:
+        jieguo = text1[1]
+        if is_number(jieguo):
+            df_id = int(jieguo)
+            df_list = user.find_one({'user_id': df_id})
+            if df_list is None:
+                context.bot.send_message(chat_id=chat_id, text='用户不存在')
+                return
+        else:
+            df_list = user.find_one({'username': jieguo.replace('@', '')})
+            if df_list is None:
+                context.bot.send_message(chat_id=chat_id, text='用户不存在')
+                return
+            df_id = df_list['user_id']
+        df_fullname = df_list['fullname']
+        df_username = df_list['username']
+        if df_username is None:
+            df_username = df_fullname
+        creation_time = df_list['creation_time']
+        zgsl = df_list['zgsl']
+        zgje = df_list['zgje']
+        USDT = df_list['USDT']
+        fstext = build_user_profile_text(df_id, df_username, creation_time, zgsl, zgje, USDT)
+        keyboard = [[InlineKeyboardButton('🛒购买记录', callback_data=f'gmaijilu {df_id}')],
+                    [InlineKeyboardButton('关闭', callback_data=f'close {user_id}')]]
+        context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
+                                 reply_markup=InlineKeyboardMarkup(keyboard), disable_web_page_preview=True)
+        return
 
-            else:
-                context.bot.send_message(chat_id=chat_id, text='格式为: /cha id或用户名，有一个空格')
+    context.bot.send_message(chat_id=chat_id, text='格式为: /cha id或用户名 或 /cha 代理id 用户id')
 
 
 def create_folder_if_not_exists(folder_path):
