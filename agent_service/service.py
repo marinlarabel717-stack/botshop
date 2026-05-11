@@ -544,16 +544,12 @@ def upsert_agent_bot_runtime(config: AgentRuntimeConfig) -> None:
 def build_welcome_text(config: AgentRuntimeConfig, user_row: dict) -> str:
     username = str(user_row.get('username') or '').strip().lstrip('@')
     username_text = f'@{html.escape(username, quote=False)}' if username else '未设置'
-    stats = get_agent_stats(config.agent_bot_id)
     return (
         f'[emoji:5222044641200720562:🌸]欢迎来到 {config.agent_name}\n\n'
-        f'[emoji:5954227490179255253:🔵]代理标识：{config.agent_bot_id}\n'
-        f'[emoji:5929391996408959380:🏞]你的账号：{user_row.get("user_id")}\n'
-        f'用户名：{username_text}\n'
+        f'[emoji:5929391996408959380:🏞]你的ID：{user_row.get("user_id")} id\n'
+        f'[emoji:5220064167356025824:⭐️]您的用户名：{username_text}\n'
         f'[emoji:4972482444025398275:👛]当前余额：{user_row.get("USDT", 0)} USDT\n\n'
-        f'[emoji:6321041414067068140:👤]当前代理用户数：{stats.get("user_count", 0)}\n'
-        f'[emoji:5312361253610475399:🛒]订单记录数：{stats.get("purchase_records", 0)}\n\n'
-        f'代理分销服务已接入商品列表骨架，下一步继续接充值、下单与结算。'
+        f'[emoji:5954227490179255253:🔵]/start 启动主菜单'
     )
 
 
