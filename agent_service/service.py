@@ -880,6 +880,41 @@ def get_agent_account_check_concurrency(total_count: int) -> int:
 
 
 AGENT_ACCOUNT_CHECK_MAX_RETRIES = 2
+AGENT_EXPLICIT_INVALID_REASONS = {
+    'session_not_authorized',
+    'account_not_found',
+    'session_file_missing',
+    'tdata_folder_missing',
+    'tdata_not_loaded',
+}
+AGENT_INVALID_REASON_MARKERS = (
+    'auth key unregistered',
+    'user deactivated',
+    'user deactivated ban',
+    'phone number banned',
+    'session password needed',
+    'account banned',
+    'account was deleted',
+)
+
+
+def normalize_agent_check_result(check_result: dict | None) -> dict:
+    result = dict(check_result or {})
+    status = str(result.get('status') or '').strip().lower()
+    reason = str(result.get('reason') or '').strip()
+    lower_reason = reason.lower()
+    if status != 'invalid':
+        return result
+    if reason in AGENT_EXPLICIT_INVALID_REASONS:
+        return result
+    if any(marker in lower_reason for marker in AGENT_INVALID_REASON_MARKERS):
+        return result
+    result['status'] = 'timeout'
+    if reason:
+        result['reason'] = f'agent_downgraded_from_invalid:{reason}'
+    else:
+        result['reason'] = 'agent_downgraded_from_invalid:unknown'
+    return result
 
 
 def build_agent_delivery_file(leixing: str, user_id: int, nowuid: str, selected_docs: list[dict]) -> str | None:
@@ -954,6 +989,7 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
                         check_result = await asyncio.to_thread(check_account_inventory_item, entry_type, str(target_path), ACCOUNT_CHECK_TIMEOUT_SECONDS)
                     except Exception as exc:
                         check_result = {'status': 'timeout', 'reason': str(exc) or exc.__class__.__name__}
+                check_result = normalize_agent_check_result(check_result)
                 if check_result.get('status') != 'timeout' or attempts > AGENT_ACCOUNT_CHECK_MAX_RETRIES:
                     break
                 logger.warning(
