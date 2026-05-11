@@ -1473,30 +1473,27 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await reply_rendered(update, prompt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_agent_ui_text(config, 'cancel_purchase', user_id=query.from_user.id), callback_data='agent_home')]]))
         return
     if data.startswith('agent_buy_confirm:'):
+        data_parts = data.split(':')
+        nowuid = data_parts[1] if len(data_parts) > 1 else ''
+        quantity = int(data_parts[2]) if len(data_parts) > 2 and str(data_parts[2]).isdigit() else 0
+        if quantity <= 0:
+            await query.answer(get_agent_ui_text(config, 'quantity_positive_integer', user_id=query.from_user.id), show_alert=True)
+            return
         try:
             await query.answer('正在下单，请稍候...')
         except Exception:
             pass
         try:
-            data_parts = data.split(':')
-            nowuid = data_parts[1] if len(data_parts) > 1 else ''
-            quantity = int(data_parts[2]) if len(data_parts) > 2 and str(data_parts[2]).isdigit() else 0
-            if quantity <= 0:
-                await query.answer(get_agent_ui_text(config, 'quantity_positive_integer', user_id=query.from_user.id), show_alert=True)
-                return
             order, status = create_tenant_purchase_order(config.agent_bot_id, query.from_user.id, nowuid, quantity=quantity)
             if order is None:
-                await query.answer(build_purchase_status_text(config, status, query.from_user.id), show_alert=True)
+                await reply_rendered(update, build_purchase_status_text(config, status, query.from_user.id), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_agent_ui_text(config, 'main_menu', user_id=query.from_user.id), callback_data='agent_home')]]))
                 return
             set_agent_sign(config.agent_bot_id, query.from_user.id, 0)
             context.application.create_task(deliver_agent_order(context, config, order.get('order_id')))
             await edit_rendered(query, build_purchase_result_text(order), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_agent_ui_text(config, 'main_menu', user_id=query.from_user.id), callback_data='agent_home')]]))
         except Exception as exc:
             logger.exception('agent buy confirm failed: tenant=%s user=%s data=%s', config.agent_bot_id, query.from_user.id, data)
-            try:
-                await query.answer(f'下单失败：{exc}', show_alert=True)
-            except Exception:
-                pass
+            await reply_rendered(update, f'[emoji:5301246586918024418:⚠️]下单失败：{strip_basic_html(str(exc))}', reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_agent_ui_text(config, 'main_menu', user_id=query.from_user.id), callback_data='agent_home')]]))
         return
 
 
