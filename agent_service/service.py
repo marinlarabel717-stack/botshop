@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import logging
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -11,7 +12,7 @@ PARENT_DIR = CURRENT_DIR.parent
 if str(PARENT_DIR) not in sys.path:
     sys.path.insert(0, str(PARENT_DIR))
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, Update
+from telegram import InlineKeyboardMarkup, ReplyKeyboardMarkup, Update
 from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from config import AgentRuntimeConfig, load_agent_env
@@ -40,6 +41,7 @@ from mongo import (
     tenant_orders,
     topup_orders,
 )
+from haopubot import InlineKeyboardButton, KeyboardButton, build_custom_emoji_text_entities
 
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] [%(levelname)s] %(message)s')
@@ -55,6 +57,44 @@ MENU_RECHARGE_EN = '💸 Recharge'
 MENU_SUPPORT_ZH = '📞联系客服'
 MENU_SUPPORT_EN = '📞 Contact Support'
 
+PREMIUM_GOODS = '[emoji:5312361253610475399:🛒]商品列表'
+PREMIUM_GOODS_EN = '[emoji:5312361253610475399:🛒]Product Catalog'
+PREMIUM_PROFILE = '[emoji:5929391996408959380:🏞]个人中心'
+PREMIUM_PROFILE_EN = '[emoji:5929391996408959380:🏞]Profile'
+PREMIUM_RECHARGE = '[emoji:5197474438970363734:💳]我要充值'
+PREMIUM_RECHARGE_EN = '[emoji:5197474438970363734:💳]Recharge'
+PREMIUM_SUPPORT = '[emoji:5954078884310814346:☎️]联系客服'
+PREMIUM_SUPPORT_EN = '[emoji:5954078884310814346:☎️]Contact Support'
+
+
+def render_text(text: str):
+    return build_custom_emoji_text_entities(str(text or ''))
+
+
+def normalize_menu_text(text: str) -> str:
+    text = str(text or '').strip()
+    text = re.sub(r'\[emoji:\d+:(.*?)\]', lambda m: m.group(1) or '', text)
+    text = re.sub(r'^[\W_]+', '', text).strip()
+    return text.casefold()
+
+
+async def send_rendered(bot, chat_id: int, text: str, reply_markup=None):
+    rendered_text, entities = render_text(text)
+    return await bot.send_message(chat_id=chat_id, text=rendered_text, entities=entities, reply_markup=reply_markup)
+
+
+async def reply_rendered(update: Update, text: str, reply_markup=None):
+    message = update.effective_message
+    if message is None:
+        return None
+    rendered_text, entities = render_text(text)
+    return await message.reply_text(text=rendered_text, entities=entities, reply_markup=reply_markup)
+
+
+async def edit_rendered(query, text: str, reply_markup=None):
+    rendered_text, entities = render_text(text)
+    return await query.edit_message_text(text=rendered_text, entities=entities, reply_markup=reply_markup)
+
 
 def is_agent_admin(config: AgentRuntimeConfig, user_id: int) -> bool:
     return int(user_id) in set(config.admin_ids or ())
@@ -63,18 +103,18 @@ def is_agent_admin(config: AgentRuntimeConfig, user_id: int) -> bool:
 def build_home_keyboard(config: AgentRuntimeConfig, lang: str = 'zh') -> ReplyKeyboardMarkup:
     if lang == 'en':
         keyboard = [[
-            KeyboardButton(MENU_GOODS_EN),
-            KeyboardButton(MENU_PROFILE_EN),
-            KeyboardButton(MENU_RECHARGE_EN),
+            KeyboardButton(PREMIUM_GOODS_EN),
+            KeyboardButton(PREMIUM_PROFILE_EN),
+            KeyboardButton(PREMIUM_RECHARGE_EN),
         ]]
     else:
         keyboard = [[
-            KeyboardButton(MENU_GOODS_ZH),
-            KeyboardButton(MENU_PROFILE_ZH),
-            KeyboardButton(MENU_RECHARGE_ZH),
+            KeyboardButton(PREMIUM_GOODS),
+            KeyboardButton(PREMIUM_PROFILE),
+            KeyboardButton(PREMIUM_RECHARGE),
         ]]
     if config.customer_service:
-        keyboard.append([KeyboardButton(MENU_SUPPORT_EN if lang == 'en' else MENU_SUPPORT_ZH)])
+        keyboard.append([KeyboardButton(PREMIUM_SUPPORT_EN if lang == 'en' else PREMIUM_SUPPORT)])
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
 
 
@@ -84,11 +124,10 @@ def is_valid_trc20_address(address: str) -> bool:
 
 
 def build_recharge_menu_text(config: AgentRuntimeConfig) -> str:
-    address = html.escape(config.trc20_address or '未配置', quote=False)
     return (
-        f'<b>{html.escape(config.agent_name, quote=False)} 充值中心</b>\n\n'
+        f'[emoji:5197474438970363734:💳]{config.agent_name} 充值中心\n\n'
         '当前阶段先接入 TRC20 充值订单与账本。\n'
-        f'收款地址：<code>{address}</code>\n\n'
+        f'[emoji:5080312910866024090:💵]收款地址：{config.trc20_address or "未配置"}\n\n'
         '选择下方金额后会生成代理充值订单。'
     )
 
@@ -103,8 +142,8 @@ def build_recharge_menu_keyboard(config: AgentRuntimeConfig) -> InlineKeyboardMa
             row = []
     if row:
         keyboard.append(row)
-    keyboard.append([InlineKeyboardButton('📦查看待支付订单', callback_data='agent_topup_pending')])
-    keyboard.append([InlineKeyboardButton('🏠返回首页', callback_data='agent_home')])
+        keyboard.append([InlineKeyboardButton('[emoji:5282843764451195532:🖥]查看待支付订单', callback_data='agent_topup_pending')])
+    keyboard.append([InlineKeyboardButton('[emoji:5954227490179255253:🔵]返回首页', callback_data='agent_home')])
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -117,14 +156,14 @@ def build_topup_order_text(order: dict, config: AgentRuntimeConfig) -> str:
         'processing': '处理中',
     }
     return (
-        f'<b>代理充值订单</b>\n\n'
-        f'订单号：<code>{html.escape(str(order.get("order_id") or ""), quote=False)}</code>\n'
-        f'状态：{state_map.get(str(order.get("state") or "pending"), str(order.get("state") or "pending"))}\n'
-        f'充值方式：<code>{html.escape(str(order.get("type") or "trc20").upper(), quote=False)}</code>\n'
-        f'应付金额：<code>{html.escape(str(order.get("pay_amount_text") or order.get("pay_amount") or 0), quote=False)} {html.escape(str(order.get("currency") or "USDT"), quote=False)}</code>\n'
-        f'收款地址：<code>{html.escape(str(order.get("to_address") or config.trc20_address or "未配置"), quote=False)}</code>\n'
-        f'创建时间：<code>{html.escape(str(order.get("created_at") or ""), quote=False)}</code>\n'
-        f'过期时间：<code>{html.escape(str(order.get("expire_at") or ""), quote=False)}</code>\n\n'
+        f'[emoji:5197474438970363734:💳]代理充值订单\n\n'
+        f'[emoji:5954227490179255253:🔵]订单号：{order.get("order_id") or ""}\n'
+        f'[emoji:5301246586918024418:⚠️]状态：{state_map.get(str(order.get("state") or "pending"), str(order.get("state") or "pending"))}\n'
+        f'[emoji:5080312910866024090:💵]充值方式：{str(order.get("type") or "trc20").upper()}\n'
+        f'[emoji:4965219701572503640:💰]应付金额：{order.get("pay_amount_text") or order.get("pay_amount") or 0} {order.get("currency") or "USDT"}\n'
+        f'[emoji:6314528083277778985:🏦]收款地址：{order.get("to_address") or config.trc20_address or "未配置"}\n'
+        f'[emoji:5028418466000930064:📆]创建时间：{order.get("created_at") or ""}\n'
+        f'[emoji:5382194935057372936:⏱️]过期时间：{order.get("expire_at") or ""}\n\n'
         '说明：下一步会把真实链上监听和代理充值确认接到这条订单链路上。'
     )
 
@@ -133,9 +172,9 @@ def build_topup_order_keyboard(order: dict) -> InlineKeyboardMarkup:
     order_id = str(order.get('order_id') or '')
     keyboard = []
     if order.get('state') == 'pending':
-        keyboard.append([InlineKeyboardButton('♻️刷新订单状态', callback_data=f'agent_topup_view:{order_id}')])
-    keyboard.append([InlineKeyboardButton('💸继续充值', callback_data='agent_recharge_menu')])
-    keyboard.append([InlineKeyboardButton('🏠返回首页', callback_data='agent_home')])
+        keyboard.append([InlineKeyboardButton('[emoji:5217818964612108191:✨]刷新订单状态', callback_data=f'agent_topup_view:{order_id}')])
+    keyboard.append([InlineKeyboardButton('[emoji:5197474438970363734:💳]继续充值', callback_data='agent_recharge_menu')])
+    keyboard.append([InlineKeyboardButton('[emoji:5954227490179255253:🔵]返回首页', callback_data='agent_home')])
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -165,13 +204,13 @@ def build_welcome_text(config: AgentRuntimeConfig, user_row: dict) -> str:
     username_text = f'@{html.escape(username, quote=False)}' if username else '未设置'
     stats = get_agent_stats(config.agent_bot_id)
     return (
-        f'<b>欢迎来到 {html.escape(config.agent_name, quote=False)}</b>\n\n'
-        f'代理标识：<code>{html.escape(config.agent_bot_id, quote=False)}</code>\n'
-        f'你的账号：<code>{user_row.get("user_id")}</code>\n'
+        f'[emoji:5222044641200720562:🌸]欢迎来到 {config.agent_name}\n\n'
+        f'[emoji:5954227490179255253:🔵]代理标识：{config.agent_bot_id}\n'
+        f'[emoji:5929391996408959380:🏞]你的账号：{user_row.get("user_id")}\n'
         f'用户名：{username_text}\n'
-        f'当前余额：<code>{user_row.get("USDT", 0)} USDT</code>\n\n'
-        f'当前代理用户数：<code>{stats.get("user_count", 0)}</code>\n'
-        f'订单记录数：<code>{stats.get("purchase_records", 0)}</code>\n\n'
+        f'[emoji:4972482444025398275:👛]当前余额：{user_row.get("USDT", 0)} USDT\n\n'
+        f'[emoji:6321041414067068140:👤]当前代理用户数：{stats.get("user_count", 0)}\n'
+        f'[emoji:5312361253610475399:🛒]订单记录数：{stats.get("purchase_records", 0)}\n\n'
         f'代理分销服务已接入商品列表骨架，下一步继续接充值、下单与结算。'
     )
 
@@ -240,7 +279,7 @@ def build_category_rows(agent_bot_id: str) -> list[dict]:
 
 def build_goods_catalog_text(config: AgentRuntimeConfig) -> str:
     return (
-        f'<b>{html.escape(config.agent_name, quote=False)} 商品目录</b>\n\n'
+        f'[emoji:5312361253610475399:🛒]{config.agent_name} 商品目录\n\n'
         '下面显示的是当前代理可售分类。\n'
         '商品结构跟主号铺同步，价格优先读取代理覆盖。'
     )
@@ -277,9 +316,9 @@ def build_product_list_payload(config: AgentRuntimeConfig, uid: str) -> tuple[di
 
 def build_product_list_text(category_name: str, products: list[dict]) -> str:
     if not products:
-        return f'<b>分类：{html.escape(category_name, quote=False)}</b>\n\n当前代理在这个分类下暂时没有可售商品。'
+        return f'[emoji:5954227490179255253:🔵]分类：{category_name}\n\n当前代理在这个分类下暂时没有可售商品。'
     return (
-        f'<b>分类：{html.escape(category_name, quote=False)}</b>\n\n'
+        f'[emoji:5954227490179255253:🔵]分类：{category_name}\n\n'
         f'共 {len(products)} 个可售商品，下面价格优先按代理覆盖显示。'
     )
 
@@ -290,7 +329,7 @@ def build_product_keyboard(uid: str, products: list[dict]) -> InlineKeyboardMark
         price_text = standard_num(item.get('price', 0))
         button_text = f"{item.get('projectname')}    ${price_text}    [ {item.get('stock', 0)} ]"
         keyboard.append([InlineKeyboardButton(button_text, callback_data=f"agent_goods:{item['nowuid']}")])
-    keyboard.append([InlineKeyboardButton('⬅️返回分类', callback_data='agent_catalog')])
+    keyboard.append([InlineKeyboardButton('[emoji:5954227490179255253:🔵]返回分类', callback_data='agent_catalog')])
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -299,58 +338,58 @@ def build_product_detail_text(payload: dict) -> str:
     override_note = '代理自定义价' if 'price' in override else '跟随主号铺价格'
     source_name = payload.get('source_projectname') or payload.get('projectname')
     text = (
-        f'<b>{html.escape(str(payload.get("projectname") or "商品"), quote=False)}</b>\n\n'
-        f'商品ID：<code>{html.escape(str(payload.get("nowuid") or ""), quote=False)}</code>\n'
-        f'当前价格：<code>{standard_num(payload.get("price", 0))} USDT</code>\n'
-        f'当前库存：<code>{payload.get("stock", 0)}</code>\n'
+        f'{str(payload.get("projectname") or "商品")}\n\n'
+        f'[emoji:5954227490179255253:🔵]商品ID：{payload.get("nowuid") or ""}\n'
+        f'[emoji:4965219701572503640:💰]当前价格：{standard_num(payload.get("price", 0))} USDT\n'
+        f'[emoji:5282843764451195532:🖥]当前库存：{payload.get("stock", 0)}\n'
         f'价格来源：{override_note}\n'
-        f'主号铺名称：{html.escape(str(source_name), quote=False)}\n'
-        f'主号铺基准价：<code>{standard_num(payload.get("source_price", 0))} USDT</code>\n\n'
+        f'主号铺名称：{source_name}\n'
+        f'主号铺基准价：{standard_num(payload.get("source_price", 0))} USDT\n\n'
         '下单链路下一步继续接；这一步先把代理商品展示和价格覆盖跑通。'
     )
     if override.get('display_name'):
-        text += f'\n代理显示名：{html.escape(str(override.get("display_name")), quote=False)}'
+        text += f'\n代理显示名：{override.get("display_name")}'
     return text
 
 
 def build_product_detail_keyboard(uid: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton('✅立即购买 1 件', callback_data=f'agent_buy:{uid}')],
-        [InlineKeyboardButton('⬅️返回商品列表', callback_data=f'agent_cate:{uid}')],
-        [InlineKeyboardButton('🏠返回分类目录', callback_data='agent_catalog')],
+        [InlineKeyboardButton('[emoji:5451937962629544243:🛍]立即购买 1 件', callback_data=f'agent_buy:{uid}')],
+        [InlineKeyboardButton('[emoji:5954227490179255253:🔵]返回商品列表', callback_data=f'agent_cate:{uid}')],
+        [InlineKeyboardButton('[emoji:5954227490179255253:🔵]返回分类目录', callback_data='agent_catalog')],
     ])
 
 
 def build_purchase_confirm_text(payload: dict, user_row: dict) -> str:
     return (
-        f'<b>确认购买</b>\n\n'
-        f'商品：{html.escape(str(payload.get("projectname") or "商品"), quote=False)}\n'
-        f'数量：<code>1</code>\n'
-        f'单价：<code>{standard_num(payload.get("price", 0))} USDT</code>\n'
-        f'需支付：<code>{standard_num(payload.get("price", 0))} USDT</code>\n'
-        f'当前余额：<code>{standard_num(user_row.get("USDT", 0))} USDT</code>\n'
-        f'当前库存：<code>{payload.get("stock", 0)}</code>\n\n'
+        f'[emoji:5451937962629544243:🛍]确认购买\n\n'
+        f'商品：{payload.get("projectname") or "商品"}\n'
+        f'数量：1\n'
+        f'单价：{standard_num(payload.get("price", 0))} USDT\n'
+        f'需支付：{standard_num(payload.get("price", 0))} USDT\n'
+        f'当前余额：{standard_num(user_row.get("USDT", 0))} USDT\n'
+        f'当前库存：{payload.get("stock", 0)}\n\n'
         '这一步先按单件购买跑通，后面再扩成数量输入与真实发货。'
     )
 
 
 def build_purchase_confirm_keyboard(nowuid: str, uid: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton('确认购买✅', callback_data=f'agent_buy_confirm:{nowuid}')],
-        [InlineKeyboardButton('⬅️返回商品详情', callback_data=f'agent_goods:{nowuid}')],
-        [InlineKeyboardButton('🏠返回分类目录', callback_data='agent_catalog')],
+        [InlineKeyboardButton('[emoji:5220064167356025824:⭐️]确认购买', callback_data=f'agent_buy_confirm:{nowuid}')],
+        [InlineKeyboardButton('[emoji:5954227490179255253:🔵]返回商品详情', callback_data=f'agent_goods:{nowuid}')],
+        [InlineKeyboardButton('[emoji:5954227490179255253:🔵]返回分类目录', callback_data='agent_catalog')],
     ])
 
 
 def build_purchase_result_text(order: dict) -> str:
     return (
-        f'<b>代理下单成功</b>\n\n'
-        f'订单号：<code>{html.escape(str(order.get("order_id") or ""), quote=False)}</code>\n'
-        f'商品：{html.escape(str(order.get("product_name") or "商品"), quote=False)}\n'
-        f'数量：<code>{order.get("quantity", 1)}</code>\n'
-        f'扣款：<code>{standard_num(order.get("total_amount", 0))} USDT</code>\n'
-        f'余额：<code>{standard_num(order.get("balance_after", 0))} USDT</code>\n'
-        f'状态：<code>{html.escape(str(order.get("state") or "reserved"), quote=False)}</code>\n\n'
+        f'[emoji:5193209274452425995:🎉]代理下单成功\n\n'
+        f'订单号：{order.get("order_id") or ""}\n'
+        f'商品：{order.get("product_name") or "商品"}\n'
+        f'数量：{order.get("quantity", 1)}\n'
+        f'扣款：{standard_num(order.get("total_amount", 0))} USDT\n'
+        f'余额：{standard_num(order.get("balance_after", 0))} USDT\n'
+        f'状态：{order.get("state") or "reserved"}\n\n'
         '当前已完成：代理订单、扣款、库存预占。下一步继续接真实发货与售后退款。'
     )
 
@@ -362,28 +401,23 @@ async def agent_orders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
     rows = list(tenant_orders.find({'tenant_id': config.agent_bot_id, 'user_id': tg_user.id}, sort=[('created_ts_ms', -1)], limit=10))
     if not rows:
-        await update.effective_chat.send_message('当前还没有代理订单记录。')
+        await reply_rendered(update, '[emoji:5312361253610475399:🛒]当前还没有代理订单记录。')
         return
-    lines = ['<b>最近代理订单</b>']
+    lines = ['[emoji:5312361253610475399:🛒]最近代理订单']
     for row in rows:
         lines.extend([
             '',
-            f'订单号：<code>{html.escape(str(row.get("order_id") or ""), quote=False)}</code>',
-            f'商品：{html.escape(str(row.get("product_name") or "商品"), quote=False)}',
-            f'金额：<code>{standard_num(row.get("total_amount", 0))} USDT</code>',
-            f'状态：<code>{html.escape(str(row.get("state") or ""), quote=False)}</code>',
+            f'订单号：{row.get("order_id") or ""}',
+            f'商品：{row.get("product_name") or "商品"}',
+            f'金额：{standard_num(row.get("total_amount", 0))} USDT',
+            f'状态：{row.get("state") or ""}',
         ])
-    await update.effective_chat.send_message('\n'.join(lines), parse_mode='HTML')
+    await reply_rendered(update, '\n'.join(lines))
 
 
 async def send_catalog(chat_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
     config: AgentRuntimeConfig = context.application.bot_data['agent_config']
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text=build_goods_catalog_text(config),
-        parse_mode='HTML',
-        reply_markup=build_category_keyboard(config),
-    )
+    await send_rendered(context.bot, chat_id, build_goods_catalog_text(config), reply_markup=build_category_keyboard(config))
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -401,9 +435,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         getattr(tg_user, 'language_code', None) or config.default_lang,
         state='1',
     )
-    await update.effective_chat.send_message(
+    await reply_rendered(
+        update,
         build_home_text(config, user_row or {'user_id': tg_user.id, 'USDT': 0, 'username': tg_user.username}),
-        parse_mode='HTML',
         reply_markup=build_home_keyboard(config, lang=(user_row or {}).get('lang', config.default_lang)),
     )
 
@@ -414,11 +448,7 @@ async def send_home(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if tg_user is None or update.effective_chat is None:
         return
     user_row = get_agent_bot_user(config.agent_bot_id, tg_user.id) or {'user_id': tg_user.id, 'USDT': 0, 'username': tg_user.username}
-    await update.effective_chat.send_message(
-        build_home_text(config, user_row),
-        parse_mode='HTML',
-        reply_markup=build_home_keyboard(config, lang=user_row.get('lang', config.default_lang)),
-    )
+    await reply_rendered(update, build_home_text(config, user_row), reply_markup=build_home_keyboard(config, lang=user_row.get('lang', config.default_lang)))
 
 
 async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -428,25 +458,20 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
     user_row = get_agent_bot_user(config.agent_bot_id, tg_user.id) or {}
     text = (
-        f'<b>代理个人中心</b>\n\n'
-        f'代理标识：<code>{html.escape(config.agent_bot_id, quote=False)}</code>\n'
-        f'用户ID：<code>{tg_user.id}</code>\n'
-        f'余额：<code>{standard_num(user_row.get("USDT", 0))} USDT</code>\n'
-        f'总购数量：<code>{user_row.get("zgsl", 0)}</code>\n'
-        f'总购金额：<code>{standard_num(user_row.get("zgje", 0))} USDT</code>'
+        f'[emoji:5929391996408959380:🏞]代理个人中心\n\n'
+        f'[emoji:5954227490179255253:🔵]代理标识：{config.agent_bot_id}\n'
+        f'[emoji:5929391996408959380:🏞]用户ID：{tg_user.id}\n'
+        f'[emoji:4972482444025398275:👛]余额：{standard_num(user_row.get("USDT", 0))} USDT\n'
+        f'[emoji:6273995106810863535:🌑]总购数量：{user_row.get("zgsl", 0)}\n'
+        f'[emoji:5028746137645876535:📈]总购金额：{standard_num(user_row.get("zgje", 0))} USDT'
     )
-    await update.effective_chat.send_message(text, parse_mode='HTML')
+    await reply_rendered(update, text)
 
 
 async def send_recharge_menu(chat_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
     config: AgentRuntimeConfig = context.application.bot_data['agent_config']
     expire_tenant_topup_orders(config.agent_bot_id)
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text=build_recharge_menu_text(config),
-        parse_mode='HTML',
-        reply_markup=build_recharge_menu_keyboard(config),
-    )
+    await send_rendered(context.bot, chat_id, build_recharge_menu_text(config), reply_markup=build_recharge_menu_keyboard(config))
 
 
 async def send_pending_topup(chat_id: int, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -454,14 +479,9 @@ async def send_pending_topup(chat_id: int, user_id: int, context: ContextTypes.D
     expire_tenant_topup_orders(config.agent_bot_id)
     order = get_latest_pending_topup_order(config.agent_bot_id, user_id, payment_type='trc20')
     if order is None:
-        await context.bot.send_message(chat_id=chat_id, text='当前没有待支付的代理充值订单。')
+        await send_rendered(context.bot, chat_id, '[emoji:5301246586918024418:⚠️]当前没有待支付的代理充值订单。')
         return
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text=build_topup_order_text(order, config),
-        parse_mode='HTML',
-        reply_markup=build_topup_order_keyboard(order),
-    )
+    await send_rendered(context.bot, chat_id, build_topup_order_text(order, config), reply_markup=build_topup_order_keyboard(order))
 
 
 async def agent_credit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -596,39 +616,21 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await query.answer()
     config: AgentRuntimeConfig = context.application.bot_data['agent_config']
     if data == 'agent_catalog':
-        await query.edit_message_text(
-            text=build_goods_catalog_text(config),
-            parse_mode='HTML',
-            reply_markup=build_category_keyboard(config),
-        )
+        await edit_rendered(query, build_goods_catalog_text(config), reply_markup=build_category_keyboard(config))
         return
     if data == 'agent_home':
         user_row = get_agent_bot_user(config.agent_bot_id, query.from_user.id) or {'user_id': query.from_user.id, 'USDT': 0, 'username': query.from_user.username}
-        await query.edit_message_text(
-            text=build_home_text(config, user_row),
-            parse_mode='HTML',
-        )
+        await edit_rendered(query, build_home_text(config, user_row))
         return
     if data == 'agent_recharge_menu':
-        await query.edit_message_text(
-            text=build_recharge_menu_text(config),
-            parse_mode='HTML',
-            reply_markup=build_recharge_menu_keyboard(config),
-        )
+        await edit_rendered(query, build_recharge_menu_text(config), reply_markup=build_recharge_menu_keyboard(config))
         return
     if data == 'agent_topup_pending':
         order = get_latest_pending_topup_order(config.agent_bot_id, query.from_user.id, payment_type='trc20')
         if order is None:
-            await query.edit_message_text(
-                text='当前没有待支付的代理充值订单。',
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('💸去创建充值订单', callback_data='agent_recharge_menu')]]),
-            )
+            await edit_rendered(query, '[emoji:5301246586918024418:⚠️]当前没有待支付的代理充值订单。', reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('[emoji:5197474438970363734:💳]去创建充值订单', callback_data='agent_recharge_menu')]]))
             return
-        await query.edit_message_text(
-            text=build_topup_order_text(order, config),
-            parse_mode='HTML',
-            reply_markup=build_topup_order_keyboard(order),
-        )
+        await edit_rendered(query, build_topup_order_text(order, config), reply_markup=build_topup_order_keyboard(order))
         return
     if data.startswith('agent_topup_view:'):
         order_id = data.split(':', 1)[1]
@@ -636,18 +638,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if order is None or str(order.get('order_id')) != order_id:
             order = topup_orders.find_one({'order_id': order_id, 'tenant_id': config.agent_bot_id, 'user_id': query.from_user.id})
         if order is None:
-            await query.edit_message_text('充值订单不存在或已被清理。')
+            await edit_rendered(query, '[emoji:5301246586918024418:⚠️]充值订单不存在或已被清理。')
             return
-        await query.edit_message_text(
-            text=build_topup_order_text(order, config),
-            parse_mode='HTML',
-            reply_markup=build_topup_order_keyboard(order),
-        )
+        await edit_rendered(query, build_topup_order_text(order, config), reply_markup=build_topup_order_keyboard(order))
         return
     if data.startswith('agent_topup_amount:'):
         amount = float(data.split(':', 1)[1])
         if not is_valid_trc20_address(config.trc20_address):
-            await query.edit_message_text('代理 TRC20 收款地址未配置，先在 agent_service/.env 里补 AGENT_TRC20_ADDRESS。')
+            await edit_rendered(query, '[emoji:5220214598585568818:🚨]代理 TRC20 收款地址未配置，先在 agent_service/.env 里补 AGENT_TRC20_ADDRESS。')
             return
         order = create_tenant_topup_order(
             config.agent_bot_id,
@@ -661,36 +659,24 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             expire_minutes=10,
             extra={'source': 'agent_service'},
         )
-        await query.edit_message_text(
-            text=build_topup_order_text(order, config),
-            parse_mode='HTML',
-            reply_markup=build_topup_order_keyboard(order),
-        )
+        await edit_rendered(query, build_topup_order_text(order, config), reply_markup=build_topup_order_keyboard(order))
         return
     if data.startswith('agent_cate:'):
         uid = data.split(':', 1)[1]
         category, products = build_product_list_payload(config, uid)
         if category is None:
-            await query.edit_message_text('分类不存在或已删除。')
+            await edit_rendered(query, '[emoji:5301246586918024418:⚠️]分类不存在或已删除。')
             return
-        await query.edit_message_text(
-            text=build_product_list_text(str(category.get('projectname') or '商品分类'), products),
-            parse_mode='HTML',
-            reply_markup=build_product_keyboard(uid, products),
-        )
+        await edit_rendered(query, build_product_list_text(str(category.get('projectname') or '商品分类'), products), reply_markup=build_product_keyboard(uid, products))
         return
     if data.startswith('agent_goods:'):
         nowuid = data.split(':', 1)[1]
         product = ejfl.find_one({'nowuid': nowuid})
         if product is None or not is_product_enabled_for_agent(config.agent_bot_id, nowuid):
-            await query.edit_message_text('商品不存在、已删除或当前代理未开放。')
+            await edit_rendered(query, '[emoji:5301246586918024418:⚠️]商品不存在、已删除或当前代理未开放。')
             return
         payload = resolve_agent_product_payload(config.agent_bot_id, product)
-        await query.edit_message_text(
-            text=build_product_detail_text(payload),
-            parse_mode='HTML',
-            reply_markup=build_product_detail_keyboard(str(product.get('uid') or '')),
-        )
+        await edit_rendered(query, build_product_detail_text(payload), reply_markup=build_product_detail_keyboard(str(product.get('uid') or '')))
         return
 
 
@@ -699,20 +685,21 @@ async def message_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     text = str(update.effective_message.text or '').strip() if update.effective_message else ''
     if not text:
         return
-    if text in (MENU_GOODS_ZH, MENU_GOODS_EN):
+    normalized = normalize_menu_text(text)
+    if normalized in {normalize_menu_text(MENU_GOODS_ZH), normalize_menu_text(MENU_GOODS_EN), normalize_menu_text('商品列表'), normalize_menu_text('Product Catalog')}:
         await send_catalog(update.effective_chat.id, context)
         return
-    if text in (MENU_PROFILE_ZH, MENU_PROFILE_EN):
+    if normalized in {normalize_menu_text(MENU_PROFILE_ZH), normalize_menu_text(MENU_PROFILE_EN), normalize_menu_text('个人中心'), normalize_menu_text('Profile')}:
         await show_profile(update, context)
         return
-    if text in (MENU_SUPPORT_ZH, MENU_SUPPORT_EN):
+    if normalized in {normalize_menu_text(MENU_SUPPORT_ZH), normalize_menu_text(MENU_SUPPORT_EN), normalize_menu_text('联系客服'), normalize_menu_text('Contact Support')}:
         target = config.customer_service or '暂未配置'
-        await update.effective_chat.send_message(f'当前代理客服：{target}')
+        await reply_rendered(update, f'[emoji:5954078884310814346:☎️]当前代理客服：{target}')
         return
-    if text in (MENU_RECHARGE_ZH, MENU_RECHARGE_EN):
+    if normalized in {normalize_menu_text(MENU_RECHARGE_ZH), normalize_menu_text(MENU_RECHARGE_EN), normalize_menu_text('我要充值'), normalize_menu_text('Recharge')}:
         await send_recharge_menu(update.effective_chat.id, context)
         return
-    await update.effective_chat.send_message('代理服务已启动。现在可以先看商品目录；充值、下单、结算下一步继续接。')
+    await reply_rendered(update, '[emoji:5222044641200720562:🌸]代理服务已启动。现在可以先看商品目录；充值、下单、结算下一步继续接。')
 
 
 def main() -> None:
