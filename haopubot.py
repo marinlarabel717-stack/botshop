@@ -245,7 +245,8 @@ _translation_memory_cache = {}
 _translation_client = None
 _user_lang_cache = {}
 _localized_button_cache = {}
-_translation_warm_jobs = set()
+_translation_warm_jobs = {}
+_translation_warm_done = set()
 
 
 ADMIN_EMOJI_USERLIST = '[emoji:6321041414067068140:👤]'
@@ -564,8 +565,11 @@ def set_user_lang(user_id, lang):
 
 def toggle_user_lang(user_id):
     lang = 'en' if get_user_lang(user_id) == 'zh' else 'zh'
+    if lang == 'en':
+        warm_storefront_translation_cache(user_id=user_id, lang=lang, wait=True)
     lang = set_user_lang(user_id, lang)
-    warm_storefront_translation_cache(user_id=user_id, lang=lang)
+    if lang == 'en':
+        warm_storefront_translation_cache(user_id=user_id, lang=lang)
     return lang
 
 
@@ -603,15 +607,23 @@ def collect_storefront_translation_texts(limit=800):
     return texts
 
 
-def warm_storefront_translation_cache(user_id=None, lang=None):
+def warm_storefront_translation_cache(user_id=None, lang=None, wait=False, force=False):
     lang = normalize_lang_code(lang or (get_user_lang(user_id) if user_id is not None else DEFAULT_LANG))
     if lang != 'en':
         return
 
     job_key = f'storefront:{lang}'
-    if job_key in _translation_warm_jobs:
+    if not force and job_key in _translation_warm_done:
         return
-    _translation_warm_jobs.add(job_key)
+
+    existing_event = _translation_warm_jobs.get(job_key)
+    if existing_event is not None:
+        if wait:
+            existing_event.wait()
+        return
+
+    done_event = threading.Event()
+    _translation_warm_jobs[job_key] = done_event
 
     def worker():
         try:
@@ -620,8 +632,14 @@ def warm_storefront_translation_cache(user_id=None, lang=None):
                     translate_text(text, lang)
                 except Exception:
                     logging.warning('Warm translation failed for text=%r', text, exc_info=True)
+            _translation_warm_done.add(job_key)
         finally:
-            _translation_warm_jobs.discard(job_key)
+            done_event.set()
+            _translation_warm_jobs.pop(job_key, None)
+
+    if wait:
+        worker()
+        return
 
     threading.Thread(target=worker, daemon=True).start()
 
@@ -706,7 +724,7 @@ def localize_button_label(source_text, user_id=None, lang=None):
 
     emoji_id, alt, emoji_style, rest = parse_dynamic_emoji_prefix(body_text)
     if emoji_id:
-        translated_body = strip_button_label_decoration(get_ui_text(fixed_key, lang=lang)) if fixed_key else localize_dynamic_text(rest, user_id=user_id, lang=lang)
+        translated_body = strip_button_label_decoration(get_ui_text(fixed_key, lang=lang)) if fixed_key else localize_dynamic_text_fast(rest, user_id=user_id, lang=lang)
         emoji_prefix = f'[emoji:{emoji_id}:{alt}'
         if emoji_style:
             emoji_prefix += f':{emoji_style}'
@@ -716,7 +734,7 @@ def localize_button_label(source_text, user_id=None, lang=None):
 
     known_emoji_id, emoji_text, clean_text = extract_known_button_icon(body_text)
     if emoji_text:
-        translated_body = strip_button_label_decoration(get_ui_text(fixed_key, lang=lang)) if fixed_key else localize_dynamic_text(clean_text, user_id=user_id, lang=lang)
+        translated_body = strip_button_label_decoration(get_ui_text(fixed_key, lang=lang)) if fixed_key else localize_dynamic_text_fast(clean_text, user_id=user_id, lang=lang)
         if body_text.strip().startswith(emoji_text):
             result = f'{style_prefix}{emoji_text}{translated_body}'.strip()
             return cache_localized_button_result(cache_key, original_text, result, lang, fixed_key=fixed_key)
@@ -727,7 +745,7 @@ def localize_button_label(source_text, user_id=None, lang=None):
     if fixed_key:
         result = f'{style_prefix}{get_ui_text(fixed_key, lang=lang)}'.strip()
         return cache_localized_button_result(cache_key, original_text, result, lang, fixed_key=fixed_key)
-    result = f'{style_prefix}{localize_dynamic_text(body_text, user_id=user_id, lang=lang)}'.strip()
+    result = f'{style_prefix}{localize_dynamic_text_fast(body_text, user_id=user_id, lang=lang)}'.strip()
     return cache_localized_button_result(cache_key, original_text, result, lang, fixed_key=fixed_key)
 
 
@@ -6584,6 +6602,7 @@ async def on_post_init(application):
     global APP_EVENT_LOOP
     APP_EVENT_LOOP = asyncio.get_running_loop()
     start_okpay_callback_server(SyncTelegramProxy(application.bot, lambda: APP_EVENT_LOOP))
+    warm_storefront_translation_cache(lang='en')
 
 
 def create_trc20_deposit_order(context, user_id, amount):
@@ -7482,7 +7501,11 @@ def textkeyboard(update: Update, context: CallbackContext):
 
         if matches_ui_text(text, 'language_switch_zh') or matches_ui_text(text, 'language_switch_en'):
             new_lang = 'zh' if matches_ui_text(text, 'language_switch_zh') else 'en'
+            if new_lang == 'en':
+                warm_storefront_translation_cache(user_id=user_id, lang=new_lang, wait=True)
             set_user_lang(user_id, new_lang)
+            if new_lang == 'en':
+                warm_storefront_translation_cache(user_id=user_id, lang=new_lang)
             context.bot.send_message(chat_id=user_id, text=get_ui_text('language_switch_done', lang=new_lang))
             send_user_home(context, user_id)
             return
