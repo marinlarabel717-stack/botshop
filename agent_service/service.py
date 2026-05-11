@@ -719,16 +719,20 @@ def build_purchase_confirm_keyboard(config: AgentRuntimeConfig, nowuid: str, uid
     ])
 
 
-def build_purchase_result_text(order: dict) -> str:
+def build_purchase_result_text(config: AgentRuntimeConfig, order: dict, user_id: int) -> str:
+    deducted_text = standard_num(order.get('total_amount', 0))
+    remaining_text = standard_num(order.get('balance_after', 0))
+    lang = get_agent_lang(config, user_id=user_id)
+    if lang == 'en':
+        return (
+            '[emoji:5193209274452425995:🎉]Purchase Successful\n\n'
+            f'Deducted from Balance: {deducted_text} USDT\n'
+            f'Remaining Balance: {remaining_text} USDT'
+        )
     return (
-        f'[emoji:5220195537520711716:⚡️]订单已创建，正在发货\n\n'
-        f'订单号：{order.get("order_id") or ""}\n'
-        f'商品：{order.get("product_name") or "商品"}\n'
-        f'数量：{order.get("quantity", 1)}\n'
-        f'扣款：{standard_num(order.get("total_amount", 0))} USDT\n'
-        f'余额：{standard_num(order.get("balance_after", 0))} USDT\n'
-        f'状态：{order.get("state") or "reserved"}\n\n'
-        '接下来会自动执行真实发货；如商品支持检测，会先检测再按结果退款。'
+        '[emoji:5193209274452425995:🎉]购买成功\n\n'
+        f'已从余额中扣除：{deducted_text} USDT\n'
+        f'当前余额：{remaining_text} USDT'
     )
 
 
@@ -743,39 +747,55 @@ def build_purchase_status_text(config: AgentRuntimeConfig, status: str, user_id:
     return mapping.get(status, f'下单失败：{status}')
 
 
-def build_agent_account_check_progress_text(total_count: int, checked_count: int, alive_count: int, invalid_count: int, frozen_count: int, timeout_count: int) -> str:
+def build_agent_account_check_progress_text(config: AgentRuntimeConfig, total_count: int, checked_count: int, alive_count: int, invalid_count: int, frozen_count: int, timeout_count: int, user_id: int) -> str:
+    lang = get_agent_lang(config, user_id=user_id)
+    if lang == 'en':
+        return (
+            '[emoji:6237934454019461140:🧠]Checking account status, please wait...\n\n'
+            f'Checked: {checked_count} / {total_count}'
+        )
     return (
-        '[emoji:6237934454019461140:🧠]账号检测中\n\n'
-        f'总数：{total_count}\n'
-        f'已检测：{checked_count}\n'
-        f'可用：{alive_count}\n'
-        f'失效：{invalid_count}\n'
-        f'冻结：{frozen_count}\n'
-        f'超时：{timeout_count}'
+        '[emoji:6237934454019461140:🧠]正在检测账号，请稍候...\n\n'
+        f'已检测：{checked_count} / {total_count}'
     )
 
 
-def build_agent_delivery_result_text(order: dict, total_count: int, alive_count: int, invalid_count: int, frozen_count: int, timeout_count: int, refund_amount: float, balance_after: float) -> str:
+def build_agent_delivery_result_text(config: AgentRuntimeConfig, order: dict, total_count: int, alive_count: int, invalid_count: int, frozen_count: int, timeout_count: int, refund_amount: float, balance_after: float, user_id: int) -> str:
     charged_amount = float(standard_num(float(order.get('total_amount', 0) or 0) - float(refund_amount or 0)))
-    lines = [
-        '[emoji:5193209274452425995:🎉]购买成功',
-        '',
-        f'订单号：{order.get("order_id") or ""}',
-        f'商品：{order.get("product_name") or "商品"}',
-        f'总数：{total_count}',
-        f'有效：{alive_count}',
-        f'失效：{invalid_count}',
-        f'冻结：{frozen_count}',
-    ]
+    refund_text = standard_num(refund_amount)
+    remaining_text = standard_num(balance_after)
+    lang = get_agent_lang(config, user_id=user_id)
+    lines = []
+    if alive_count == 0 and timeout_count == 0:
+        lines.append('[emoji:6213214271531126888:🐛]All checked accounts were invalid. Refund issued.' if lang == 'en' else '[emoji:6213214271531126888:🐛]全部检测账号均无效，已退款')
+    else:
+        lines.append('[emoji:5193209274452425995:🎉]Purchase Successful' if lang == 'en' else '[emoji:5193209274452425995:🎉]购买成功')
+    lines.append('')
+    if lang == 'en':
+        lines.extend([
+            f'Total Accounts: {total_count}',
+            f'Valid Accounts: {alive_count}',
+            f'Invalid Accounts: {invalid_count}',
+            f'Frozen Accounts: {frozen_count}',
+        ])
+    else:
+        lines.extend([
+            f'总账号数：{total_count}',
+            f'有效账号：{alive_count}',
+            f'无效账号：{invalid_count}',
+            f'冻结账号：{frozen_count}',
+        ])
     if timeout_count:
-        lines.append(f'超时：{timeout_count}')
-    lines.extend([
-        f'实际扣款：{standard_num(charged_amount)} USDT',
-        f'退款：{standard_num(refund_amount)} USDT',
-        f'余额：{standard_num(balance_after)} USDT',
-    ])
+        lines.append(f'Timed-out Accounts: {timeout_count}' if lang == 'en' else f'超时账号：{timeout_count}')
+    lines.append(f'Deducted from Balance: {charged_amount} USDT' if lang == 'en' else f'已从余额中扣除：{charged_amount} USDT')
+    if refund_amount:
+        lines.append(f'Refunded to Balance: {refund_text} USDT' if lang == 'en' else f'已退款回余额：{refund_text} USDT')
+    lines.append(f'Remaining Balance: {remaining_text} USDT' if lang == 'en' else f'当前余额：{remaining_text} USDT')
     if timeout_count:
-        lines.extend(['', '[emoji:5382194935057372936:⏱️]超时账号已随文件一起发出，如需售后请联系客服。'])
+        lines.extend([
+            '',
+            '[emoji:5382194935057372936:⏱️]Timed-out accounts were delivered with the file. Please contact support if needed.' if lang == 'en' else '[emoji:5382194935057372936:⏱️]超时账号已随文件一起发出，如需售后请联系客服。'
+        ])
     return '\n'.join(lines)
 
 
@@ -861,7 +881,7 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
     progress_message = None
 
     if use_account_check:
-        progress_message = await send_rendered(context.bot, user_id, build_agent_account_check_progress_text(total_count, 0, 0, 0, 0, 0))
+        progress_message = await send_rendered(context.bot, user_id, build_agent_account_check_progress_text(config, total_count, 0, 0, 0, 0, 0, user_id))
         for index, item in enumerate(selected_docs, start=1):
             projectname = str(item.get('projectname') or '')
             entry_type, target_path = resolve_inventory_check_target(leixing, nowuid, projectname)
@@ -886,7 +906,7 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
                 timeout_items.append(item)
             if progress_message is not None:
                 try:
-                    rendered_text, entities = render_text(build_agent_account_check_progress_text(total_count, index, len(alive_items), len(invalid_items), len(frozen_items), len(timeout_items)))
+                    rendered_text, entities = render_text(build_agent_account_check_progress_text(config, total_count, index, len(alive_items), len(invalid_items), len(frozen_items), len(timeout_items), user_id))
                     await context.bot.edit_message_text(chat_id=user_id, message_id=progress_message.message_id, text=rendered_text, entities=entities)
                 except Exception:
                     logger.warning('update agent account-check progress failed: tenant=%s order=%s', config.agent_bot_id, order_id, exc_info=True)
@@ -928,7 +948,7 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
         final_state = 'refunded'
     elif refund_amount > 0:
         final_state = 'partial_refunded'
-    final_text = build_agent_delivery_result_text(order, total_count, len(alive_items), len(invalid_items), len(frozen_items), len(timeout_items), refund_amount, balance_after)
+    final_text = build_agent_delivery_result_text(config, order, total_count, len(alive_items), len(invalid_items), len(frozen_items), len(timeout_items), refund_amount, balance_after, user_id)
     if progress_message is not None:
         try:
             rendered_text, entities = render_text(final_text)
@@ -1490,7 +1510,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 return
             set_agent_sign(config.agent_bot_id, query.from_user.id, 0)
             context.application.create_task(deliver_agent_order(context, config, order.get('order_id')))
-            await edit_rendered(query, build_purchase_result_text(order), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_agent_ui_text(config, 'main_menu', user_id=query.from_user.id), callback_data='agent_home')]]))
+            await edit_rendered(query, build_purchase_result_text(config, order, query.from_user.id), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_agent_ui_text(config, 'main_menu', user_id=query.from_user.id), callback_data='agent_home')]]))
         except Exception as exc:
             logger.exception('agent buy confirm failed: tenant=%s user=%s data=%s', config.agent_bot_id, query.from_user.id, data)
             await reply_rendered(update, f'[emoji:5301246586918024418:⚠️]下单失败：{strip_basic_html(str(exc))}', reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_agent_ui_text(config, 'main_menu', user_id=query.from_user.id), callback_data='agent_home')]]))
