@@ -31,10 +31,13 @@ class AgentRuntimeConfig:
     agent_username: str
     customer_service: str
     default_lang: str = 'zh'
+    admin_ids: tuple[int, ...] = ()
 
     @classmethod
     def from_env(cls) -> 'AgentRuntimeConfig':
         load_agent_env()
+        admin_ids_raw = str(os.getenv('AGENT_ADMIN_IDS', os.getenv('ADMIN_IDS', '')) or '').strip()
+        admin_ids = tuple(int(item.strip()) for item in admin_ids_raw.split(',') if item.strip().isdigit())
         return cls(
             agent_bot_id=str(os.getenv('AGENT_BOT_ID', '') or '').strip(),
             bot_token=str(os.getenv('AGENT_BOT_TOKEN', '') or '').strip(),
@@ -42,6 +45,7 @@ class AgentRuntimeConfig:
             agent_username=str(os.getenv('AGENT_USERNAME', '') or '').strip().lstrip('@'),
             customer_service=str(os.getenv('AGENT_CUSTOMER_SERVICE', '') or '').strip(),
             default_lang=str(os.getenv('AGENT_DEFAULT_LANG', 'zh') or 'zh').strip() or 'zh',
+            admin_ids=admin_ids,
         )
 
     def validate(self) -> None:
@@ -49,4 +53,3 @@ class AgentRuntimeConfig:
             raise RuntimeError('缺少 AGENT_BOT_ID，请先在 agent_service/.env 中配置代理 bot 标识')
         if not self.bot_token:
             raise RuntimeError('缺少 AGENT_BOT_TOKEN，请先在 agent_service/.env 中配置代理 bot Token')
-
