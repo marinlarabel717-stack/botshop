@@ -53,7 +53,7 @@ from mongo import (
     update_agent_withdrawal_status,
     update_tenant_order,
 )
-from account_health_check import check_account_inventory_item, get_account_check_runtime_status
+from account_health_check import check_account_inventory_item_with_ttl_update, get_account_check_runtime_status
 from haopubot import (
     ACCOUNT_CHECK_ENABLED,
     ACCOUNT_CHECK_SUPPORTED_TYPES,
@@ -790,11 +790,11 @@ def build_agent_account_check_progress_text(config: AgentRuntimeConfig, total_co
     lang = get_agent_lang(config, user_id=user_id)
     if lang == 'en':
         return (
-            '[emoji:6237934454019461140:🧠]Checking account status, please wait...\n\n'
+            '[emoji:6237934454019461140:🧠]Logging in and updating 24-month delete-after-inactive setting, please wait...\n\n'
             f'Checked: {checked_count} / {total_count}'
         )
     return (
-        '[emoji:6237934454019461140:🧠]正在检测账号，请稍候...\n\n'
+        '[emoji:6237934454019461140:🧠]正在登录账号并校验 24 个月未登录自动删除设置，请稍候...\n\n'
         f'已检测：{checked_count} / {total_count}'
     )
 
@@ -880,41 +880,6 @@ def get_agent_account_check_concurrency(total_count: int) -> int:
 
 
 AGENT_ACCOUNT_CHECK_MAX_RETRIES = 2
-AGENT_EXPLICIT_INVALID_REASONS = {
-    'session_not_authorized',
-    'account_not_found',
-    'session_file_missing',
-    'tdata_folder_missing',
-    'tdata_not_loaded',
-}
-AGENT_INVALID_REASON_MARKERS = (
-    'auth key unregistered',
-    'user deactivated',
-    'user deactivated ban',
-    'phone number banned',
-    'session password needed',
-    'account banned',
-    'account was deleted',
-)
-
-
-def normalize_agent_check_result(check_result: dict | None) -> dict:
-    result = dict(check_result or {})
-    status = str(result.get('status') or '').strip().lower()
-    reason = str(result.get('reason') or '').strip()
-    lower_reason = reason.lower()
-    if status != 'invalid':
-        return result
-    if reason in AGENT_EXPLICIT_INVALID_REASONS:
-        return result
-    if any(marker in lower_reason for marker in AGENT_INVALID_REASON_MARKERS):
-        return result
-    result['status'] = 'timeout'
-    if reason:
-        result['reason'] = f'agent_downgraded_from_invalid:{reason}'
-    else:
-        result['reason'] = 'agent_downgraded_from_invalid:unknown'
-    return result
 
 
 def build_agent_delivery_file(leixing: str, user_id: int, nowuid: str, selected_docs: list[dict]) -> str | None:
@@ -986,14 +951,20 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
                 attempts += 1
                 async with semaphore:
                     try:
-                        check_result = await asyncio.to_thread(check_account_inventory_item, entry_type, str(target_path), ACCOUNT_CHECK_TIMEOUT_SECONDS)
+                        check_result = await asyncio.to_thread(check_account_inventory_item_with_ttl_update, entry_type, str(target_path), ACCOUNT_CHECK_TIMEOUT_SECONDS)
                     except Exception as exc:
                         check_result = {'status': 'timeout', 'reason': str(exc) or exc.__class__.__name__}
-                check_result = normalize_agent_check_result(check_result)
-                if check_result.get('status') != 'timeout' or attempts > AGENT_ACCOUNT_CHECK_MAX_RETRIES:
+                if check_result.get('status') != 'timeout':
+                    break
+                if attempts > AGENT_ACCOUNT_CHECK_MAX_RETRIES:
+                    timeout_reason = str(check_result.get('reason', '') or '')
+                    check_result = {
+                        'status': 'invalid',
+                        'reason': f'agent_ttl_check_timeout_after_retries:{timeout_reason}' if timeout_reason else 'agent_ttl_check_timeout_after_retries',
+                    }
                     break
                 logger.warning(
-                    'agent account check timeout, retrying: tenant=%s order=%s hbid=%s attempt=%s/%s path=%s reason=%s',
+                    'agent ttl-check timeout, retrying: tenant=%s order=%s hbid=%s attempt=%s/%s path=%s reason=%s',
                     config.agent_bot_id,
                     order_id,
                     item.get('hbid'),
