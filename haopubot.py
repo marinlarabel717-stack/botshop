@@ -1056,6 +1056,7 @@ restock_notices = mydb['restock_notices']
 restock_requests = mydb['restock_requests']
 translation_cache = mydb['fyb']
 translation_overrides = mydb['fyb_override']
+account_check_refunds = mydb['account_check_refunds']
 
 
 def ensure_clone_indexes():
@@ -1089,6 +1090,17 @@ def ensure_restock_request_indexes():
         )
     except Exception:
         pass
+
+
+def ensure_account_check_refund_indexes():
+    try:
+        account_check_refunds.create_index([('order_id', 1)], name='uniq_account_check_refund_order', unique=True)
+    except Exception:
+        pass
+    try:
+        account_check_refunds.create_index([('user_id', 1), ('created_at', -1)], name='account_check_refund_user_created')
+    except Exception:
+        pass
     try:
         restock_requests.create_index([('created_at', -1)], name='restock_request_created')
     except Exception:
@@ -1109,6 +1121,7 @@ def ensure_translation_indexes():
 ensure_clone_indexes()
 ensure_restock_notice_indexes()
 ensure_restock_request_indexes()
+ensure_account_check_refund_indexes()
 ensure_translation_indexes()
 
 
@@ -2615,6 +2628,66 @@ def reserve_inventory_items(base_query, count, user_id, order_id, timer):
     return reserved_docs
 
 
+def release_reserved_inventory_items(selected_docs, user_id, order_id):
+    selected_docs = list(selected_docs or [])
+    if not selected_docs:
+        return
+    hb.update_many(
+        {
+            '_id': {'$in': [doc['_id'] for doc in selected_docs if doc.get('_id') is not None]},
+            'gmid': user_id,
+            'delivery_order_id': order_id,
+            'state': 1,
+        },
+        {
+            '$set': {'state': 0},
+            '$unset': {
+                'yssj': '',
+                'gmid': '',
+                'delivery_order_id': '',
+                'delivery_check_state': '',
+                'delivery_check_reason': '',
+                'delivery_check_timer': '',
+            }
+        }
+    )
+
+
+def reserve_inventory_and_charge(base_query, count, user_id, order_id, timer, total_amount):
+    selected_docs = reserve_inventory_items(base_query, count, user_id, order_id, timer)
+    if len(selected_docs) < count:
+        return [], None, 'stock'
+
+    updated_user = charge_user_for_purchase(user_id, total_amount, count)
+    if not updated_user:
+        release_reserved_inventory_items(selected_docs, user_id, order_id)
+        return [], None, 'balance'
+    return selected_docs, updated_user, 'ok'
+
+
+def charge_user_for_purchase(user_id, total_amount, quantity):
+    normalized_amount = standard_num(total_amount)
+    amount_value = float(normalized_amount) if str(normalized_amount).count('.') > 0 else int(normalized_amount)
+    quantity = int(quantity or 0)
+    if amount_value <= 0 or quantity <= 0:
+        return None
+    return user.find_one_and_update(
+        {
+            'user_id': user_id,
+            'USDT': {'$gte': amount_value},
+        },
+        {
+            '$inc': {
+                'USDT': -amount_value,
+                'zgje': amount_value,
+                'zgsl': quantity,
+            },
+            '$set': {'sign': 0}
+        },
+        return_document=ReturnDocument.AFTER,
+    )
+
+
 def build_inventory_entry_file_path(leixing, nowuid, projectname):
     if leixing == '协议号':
         return find_existing_storage_path('协议号', nowuid, f'{projectname}.session')
@@ -2684,11 +2757,29 @@ def refund_invalid_accounts(user_id, refund_amount, order_id):
     if refund_amount <= 0:
         current_user = user.find_one({'user_id': user_id}) or {}
         return float(current_user.get('USDT', 0))
-    current_user = user.find_one({'user_id': user_id}) or {}
-    current_balance = float(current_user.get('USDT', 0))
-    new_balance = standard_num(current_balance + refund_amount)
-    new_balance = float(new_balance) if str(new_balance).count('.') > 0 else int(new_balance)
-    user.update_one({'user_id': user_id}, {'$set': {'USDT': new_balance}})
+    created_at = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+    try:
+        account_check_refunds.insert_one({
+            'order_id': str(order_id),
+            'user_id': user_id,
+            'refund_amount': refund_amount,
+            'created_at': created_at,
+            'state': 'pending',
+        })
+    except DuplicateKeyError:
+        current_user = user.find_one({'user_id': user_id}) or {}
+        return float(current_user.get('USDT', 0))
+
+    updated_user = user.find_one_and_update(
+        {'user_id': user_id},
+        {'$inc': {'USDT': refund_amount}},
+        return_document=ReturnDocument.AFTER,
+    ) or {}
+    new_balance = float(updated_user.get('USDT', 0))
+    account_check_refunds.update_one(
+        {'order_id': str(order_id)},
+        {'$set': {'state': 'applied', 'applied_at': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()), 'balance_after': new_balance}}
+    )
     timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
     user_logging(order_id, '账号检测退款', user_id, refund_amount, timer)
     return float(new_balance)
@@ -6655,11 +6746,26 @@ def qrgaimai(update: Update, context: CallbackContext):
     fullname = query.from_user.full_name.replace('<', '').replace('>', '')
     username = query.from_user.username
     data = query.data.replace('qrgaimai ', '')
-    nowuid = data.split(':')[0]
-    gmsl = int(data.split(':')[1])
-    zxymoney = float(data.split(':')[2])
+    data_parts = data.split(':')
+    nowuid = data_parts[0]
+    gmsl = int(data_parts[1]) if len(data_parts) > 1 and str(data_parts[1]).isdigit() else 0
     user_list = user.find_one({'user_id': user_id})
     USDT = user_list['USDT']
+    if gmsl <= 0:
+        context.bot.send_message(chat_id=user_id, text=translate_text('购买数量只能输入大于0的整数', lang))
+        user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+        return
+
+    ejfl_list = ejfl.find_one({'nowuid': nowuid})
+    if not ejfl_list:
+        context.bot.send_message(chat_id=user_id, text=translate_text('未找到这个商品', lang))
+        user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+        return
+
+    unit_price_raw = ejfl_list.get('money', 0)
+    unit_price_decimal = Decimal(str(unit_price_raw or 0))
+    zxymoney = standard_num(unit_price_decimal * Decimal(str(gmsl)))
+    zxymoney = float(zxymoney) if str(zxymoney).count('.') > 0 else int(zxymoney)
     kc = len(list(hb.find({'nowuid': nowuid, 'state': 0})))
     if kc < gmsl:
         context.bot.send_message(chat_id=user_id, text=translate_text('当前库存不足', lang))
@@ -6669,9 +6775,7 @@ def qrgaimai(update: Update, context: CallbackContext):
     if USDT >= zxymoney:
         now_price = standard_num(float(USDT) - float(zxymoney))
         now_price = float(now_price) if str((now_price)).count('.') > 0 else int(standard_num(now_price))
-        
-        ejfl_list = ejfl.find_one({'nowuid': nowuid})
-        
+
         fhtype = hb.find_one({'nowuid': nowuid})['leixing']
         projectname = ejfl_list['projectname']
         erjiprojectname = ejfl_list['projectname']
@@ -6686,40 +6790,43 @@ def qrgaimai(update: Update, context: CallbackContext):
             notice_text = translate_text(notice_text, 'en')
         account_check_runtime = get_account_check_runtime_status(fhtype) if fhtype in ACCOUNT_CHECK_SUPPORTED_TYPES else {'ready': False, 'reason': 'unsupported_entry_type'}
         use_account_check = ACCOUNT_CHECK_ENABLED and fhtype in ACCOUNT_CHECK_SUPPORTED_TYPES and bool(account_check_runtime.get('ready'))
-        if not use_account_check:
-            context.bot.send_message(chat_id=user_id, text=success_text, parse_mode='HTML', disable_web_page_preview=True)
-            if ACCOUNT_CHECK_ENABLED and fhtype in ACCOUNT_CHECK_SUPPORTED_TYPES and not account_check_runtime.get('ready'):
-                runtime_reason = str(account_check_runtime.get('reason', 'account_check_runtime_unavailable'))
-                warning_text = (
-                    f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 检测环境未就绪，本次未执行账号检测，已按原始库存直发。</b>\n\n'
-                    f'<b>原因：</b> <code>{runtime_reason}</code>'
-                )
-                if lang == 'en':
-                    warning_text = translate_text(warning_text, 'en')
-                send_html_message(context.bot, user_id, warning_text)
-                for admin_user in list(user.find({'state': '4'})):
-                    try:
-                        send_html_message(
-                            context.bot,
-                            admin_user['user_id'],
-                            f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 账号检测环境未就绪</b>\n\n商品类型: {fhtype}\n用户ID: <code>{user_id}</code>\n原因: <code>{runtime_reason}</code>'
-                        )
-                    except Exception:
-                        pass
+        runtime_reason = ''
+        if ACCOUNT_CHECK_ENABLED and fhtype in ACCOUNT_CHECK_SUPPORTED_TYPES and not account_check_runtime.get('ready'):
+            runtime_reason = str(account_check_runtime.get('reason', 'account_check_runtime_unavailable'))
         if fhtype == '协议号':
             order_id = create_delivery_order_id()
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            selected_docs = reserve_inventory_items({'nowuid': nowuid}, gmsl, user_id, order_id, timer)
-            if len(selected_docs) < gmsl:
+            selected_docs, charged_user, reserve_state = reserve_inventory_and_charge({'nowuid': nowuid}, gmsl, user_id, order_id, timer, zxymoney)
+            if reserve_state == 'stock':
                 context.bot.send_message(chat_id=user_id, text=translate_text('当前库存不足', lang))
                 user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                 return
-
-            zgje = user_list['zgje']
-            zgsl = user_list['zgsl']
-            user.update_one({'user_id': user_id},
-                            {"$set": {'USDT': now_price, 'zgje': zgje + zxymoney, 'zgsl': zgsl + gmsl}})
-            user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+            if reserve_state == 'balance' or not charged_user:
+                context.bot.send_message(chat_id=user_id, text=translate_text('❌ 余额不足，请及时充值！', lang))
+                user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                return
+            actual_balance = standard_num(charged_user.get('USDT', now_price))
+            actual_balance = float(actual_balance) if str(actual_balance).count('.') > 0 else int(actual_balance)
+            success_text = build_purchase_success_header(zxymoney, actual_balance, user_id=user_id)
+            if not use_account_check:
+                context.bot.send_message(chat_id=user_id, text=success_text, parse_mode='HTML', disable_web_page_preview=True)
+                if runtime_reason:
+                    warning_text = (
+                        f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 检测环境未就绪，本次未执行账号检测，已按原始库存直发。</b>\n\n'
+                        f'<b>原因：</b> <code>{runtime_reason}</code>'
+                    )
+                    if lang == 'en':
+                        warning_text = translate_text(warning_text, 'en')
+                    send_html_message(context.bot, user_id, warning_text)
+                    for admin_user in list(user.find({'state': '4'})):
+                        try:
+                            send_html_message(
+                                context.bot,
+                                admin_user['user_id'],
+                                f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 账号检测环境未就绪</b>\n\n商品类型: {fhtype}\n用户ID: <code>{user_id}</code>\n原因: <code>{runtime_reason}</code>'
+                            )
+                        except Exception:
+                            pass
             del_message(query.message)
             folder_names = [doc['projectname'] for doc in selected_docs]
 
@@ -6787,17 +6894,19 @@ def qrgaimai(update: Update, context: CallbackContext):
         elif fhtype == '谷歌':
             order_id = create_delivery_order_id()
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            selected_docs = reserve_inventory_items({'nowuid': nowuid, 'leixing': '谷歌'}, gmsl, user_id, order_id, timer)
-            if len(selected_docs) < gmsl:
+            selected_docs, charged_user, reserve_state = reserve_inventory_and_charge({'nowuid': nowuid, 'leixing': '谷歌'}, gmsl, user_id, order_id, timer, zxymoney)
+            if reserve_state == 'stock':
                 context.bot.send_message(chat_id=user_id, text=translate_text('当前库存不足', lang))
                 user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                 return
-
-            zgje = user_list['zgje']
-            zgsl = user_list['zgsl']
-            user.update_one({'user_id': user_id},
-                            {"$set": {'USDT': now_price, 'zgje': zgje + zxymoney, 'zgsl': zgsl + gmsl}})
-            user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+            if reserve_state == 'balance' or not charged_user:
+                context.bot.send_message(chat_id=user_id, text=translate_text('❌ 余额不足，请及时充值！', lang))
+                user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                return
+            actual_balance = standard_num(charged_user.get('USDT', now_price))
+            actual_balance = float(actual_balance) if str(actual_balance).count('.') > 0 else int(actual_balance)
+            success_text = build_purchase_success_header(zxymoney, actual_balance, user_id=user_id)
+            context.bot.send_message(chat_id=user_id, text=success_text, parse_mode='HTML', disable_web_page_preview=True)
             del_message(query.message)
 
             folder_names = []
@@ -6849,17 +6958,19 @@ def qrgaimai(update: Update, context: CallbackContext):
         elif fhtype == 'API':
             order_id = create_delivery_order_id()
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            selected_docs = reserve_inventory_items({'nowuid': nowuid}, gmsl, user_id, order_id, timer)
-            if len(selected_docs) < gmsl:
+            selected_docs, charged_user, reserve_state = reserve_inventory_and_charge({'nowuid': nowuid}, gmsl, user_id, order_id, timer, zxymoney)
+            if reserve_state == 'stock':
                 context.bot.send_message(chat_id=user_id, text=translate_text('当前库存不足', lang))
                 user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                 return
-
-            zgje = user_list['zgje']
-            zgsl = user_list['zgsl']
-            user.update_one({'user_id': user_id},
-                            {"$set": {'USDT': now_price, 'zgje': zgje + zxymoney, 'zgsl': zgsl + gmsl}})
-            user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+            if reserve_state == 'balance' or not charged_user:
+                context.bot.send_message(chat_id=user_id, text=translate_text('❌ 余额不足，请及时充值！', lang))
+                user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                return
+            actual_balance = standard_num(charged_user.get('USDT', now_price))
+            actual_balance = float(actual_balance) if str(actual_balance).count('.') > 0 else int(actual_balance)
+            success_text = build_purchase_success_header(zxymoney, actual_balance, user_id=user_id)
+            context.bot.send_message(chat_id=user_id, text=success_text, parse_mode='HTML', disable_web_page_preview=True)
             del_message(query.message)
 
             folder_names = [j['projectname'] for j in selected_docs]
@@ -6903,17 +7014,19 @@ def qrgaimai(update: Update, context: CallbackContext):
         elif fhtype == '会员链接':
             order_id = create_delivery_order_id()
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            selected_docs = reserve_inventory_items({'nowuid': nowuid}, gmsl, user_id, order_id, timer)
-            if len(selected_docs) < gmsl:
+            selected_docs, charged_user, reserve_state = reserve_inventory_and_charge({'nowuid': nowuid}, gmsl, user_id, order_id, timer, zxymoney)
+            if reserve_state == 'stock':
                 context.bot.send_message(chat_id=user_id, text=translate_text('当前库存不足', lang))
                 user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                 return
-
-            zgje = user_list['zgje']
-            zgsl = user_list['zgsl']
-            user.update_one({'user_id': user_id},
-                            {"$set": {'USDT': now_price, 'zgje': zgje + zxymoney, 'zgsl': zgsl + gmsl}})
-            user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+            if reserve_state == 'balance' or not charged_user:
+                context.bot.send_message(chat_id=user_id, text=translate_text('❌ 余额不足，请及时充值！', lang))
+                user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                return
+            actual_balance = standard_num(charged_user.get('USDT', now_price))
+            actual_balance = float(actual_balance) if str(actual_balance).count('.') > 0 else int(actual_balance)
+            success_text = build_purchase_success_header(zxymoney, actual_balance, user_id=user_id)
+            context.bot.send_message(chat_id=user_id, text=success_text, parse_mode='HTML', disable_web_page_preview=True)
             del_message(query.message)
             folder_names = [j['projectname'] for j in selected_docs]
 
@@ -6951,17 +7064,37 @@ def qrgaimai(update: Update, context: CallbackContext):
         else:
             order_id = create_delivery_order_id()
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            selected_docs = reserve_inventory_items({'nowuid': nowuid}, gmsl, user_id, order_id, timer)
-            if len(selected_docs) < gmsl:
+            selected_docs, charged_user, reserve_state = reserve_inventory_and_charge({'nowuid': nowuid}, gmsl, user_id, order_id, timer, zxymoney)
+            if reserve_state == 'stock':
                 context.bot.send_message(chat_id=user_id, text=translate_text('当前库存不足', lang))
                 user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                 return
-
-            zgje = user_list['zgje']
-            zgsl = user_list['zgsl']
-            user.update_one({'user_id': user_id},
-                            {"$set": {'USDT': now_price, 'zgje': zgje + zxymoney, 'zgsl': zgsl + gmsl}})
-            user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+            if reserve_state == 'balance' or not charged_user:
+                context.bot.send_message(chat_id=user_id, text=translate_text('❌ 余额不足，请及时充值！', lang))
+                user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                return
+            actual_balance = standard_num(charged_user.get('USDT', now_price))
+            actual_balance = float(actual_balance) if str(actual_balance).count('.') > 0 else int(actual_balance)
+            success_text = build_purchase_success_header(zxymoney, actual_balance, user_id=user_id)
+            if not use_account_check:
+                context.bot.send_message(chat_id=user_id, text=success_text, parse_mode='HTML', disable_web_page_preview=True)
+                if runtime_reason:
+                    warning_text = (
+                        f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 检测环境未就绪，本次未执行账号检测，已按原始库存直发。</b>\n\n'
+                        f'<b>原因：</b> <code>{runtime_reason}</code>'
+                    )
+                    if lang == 'en':
+                        warning_text = translate_text(warning_text, 'en')
+                    send_html_message(context.bot, user_id, warning_text)
+                    for admin_user in list(user.find({'state': '4'})):
+                        try:
+                            send_html_message(
+                                context.bot,
+                                admin_user['user_id'],
+                                f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 账号检测环境未就绪</b>\n\n商品类型: {fhtype}\n用户ID: <code>{user_id}</code>\n原因: <code>{runtime_reason}</code>'
+                            )
+                        except Exception:
+                            pass
             del_message(query.message)
 
             folder_names = [doc['projectname'] for doc in selected_docs]
@@ -7493,7 +7626,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                         fstext = get_ui_text('purchase_confirm_text', viewer_user_id=user_id, projectname=localize_catalog_name(projectname, user_id), gmsl=gmsl, zxymoney=zxymoney, USDT=USDT)
                         keyboard = [
                             [InlineKeyboardButton(get_ui_text('cancel_trade', viewer_user_id=user_id), callback_data=f'close {user_id}'),
-                             InlineKeyboardButton(get_ui_text('confirm_purchase', viewer_user_id=user_id), callback_data=f'qrgaimai {nowuid}:{gmsl}:{zxymoney}')],
+                             InlineKeyboardButton(get_ui_text('confirm_purchase', viewer_user_id=user_id), callback_data=f'qrgaimai {nowuid}:{gmsl}')],
                             [InlineKeyboardButton(get_ui_text('main_menu', viewer_user_id=user_id), callback_data='backzcd')]
 
                         ]
