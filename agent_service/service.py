@@ -847,8 +847,9 @@ def build_agent_delivery_result_text(config: AgentRuntimeConfig, order: dict, to
 
 
 def build_agent_delivery_admin_notice(order: dict, user_row: dict, total_count: int, alive_count: int, invalid_count: int, frozen_count: int, timeout_count: int, refund_amount: float, first_invalid_reason: str = '', first_frozen_reason: str = '', first_invalid_entry_type: str = '', first_invalid_path: str = '', first_frozen_entry_type: str = '', first_frozen_path: str = '') -> str:
-    username = str(user_row.get('username') or '').strip()
+    username = str(user_row.get('username') or order.get('username') or '').strip().lstrip('@')
     username_text = f'@{username}' if username else '未设置'
+    charged_amount = standard_num(float(order.get('total_amount', 0) or 0) - float(refund_amount or 0))
     lines = [
         '[emoji:5312361253610475399:🛒]代理订单通知',
         '',
@@ -857,11 +858,13 @@ def build_agent_delivery_admin_notice(order: dict, user_row: dict, total_count: 
         f'用户ID：{order.get("user_id") or ""}',
         f'订单号：{order.get("order_id") or ""}',
         f'商品：{order.get("category_name") or ""}/{order.get("product_name") or "商品"}',
+        '',
         f'总数：{total_count}',
         f'有效：{alive_count}',
         f'失效：{invalid_count}',
         f'冻结：{frozen_count}',
         f'超时：{timeout_count}',
+        f'扣款：{charged_amount} USDT',
         f'退款：{standard_num(refund_amount)} USDT',
     ]
     return '\n'.join(lines)
@@ -1698,6 +1701,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         except Exception:
             pass
         try:
+            ensure_agent_user_exists(
+                config.agent_bot_id,
+                query.from_user.id,
+                query.from_user.username,
+                (query.from_user.full_name or '').replace('<', '').replace('>', ''),
+                query.from_user.last_name,
+                getattr(query.from_user, 'language_code', None) or config.default_lang,
+                state='1',
+            )
             order, status = create_tenant_purchase_order(config.agent_bot_id, query.from_user.id, nowuid, quantity=quantity)
             if order is None:
                 await reply_rendered(update, build_purchase_status_text(config, status, query.from_user.id), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_agent_ui_text(config, 'main_menu', user_id=query.from_user.id), callback_data='agent_home')]]))
