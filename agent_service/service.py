@@ -904,15 +904,38 @@ def get_agent_account_check_concurrency(total_count: int) -> int:
 AGENT_ACCOUNT_CHECK_MAX_RETRIES = 2
 
 
+def resolve_agent_inventory_check_target(leixing: str, nowuid: str, projectname: str):
+    projectname = str(projectname or '').strip()
+    folder_path = find_existing_storage_path('号包', nowuid, projectname)
+    if folder_path.exists() and folder_path.is_dir():
+        tdata_path = folder_path / 'tdata'
+        if tdata_path.exists() and tdata_path.is_dir():
+            return '直登号', tdata_path
+        session_files = sorted(folder_path.glob('*.session'))
+        if session_files:
+            return '协议号', session_files[0]
+    session_path = find_existing_storage_path('协议号', nowuid, f'{projectname}.session')
+    if session_path.exists():
+        return '协议号', session_path
+    return resolve_inventory_check_target(leixing, nowuid, projectname)
+
+
+def infer_agent_delivery_type(leixing: str, nowuid: str, project_names: list[str]) -> str:
+    if any(find_existing_storage_path('号包', nowuid, projectname).exists() for projectname in project_names):
+        return '直登号'
+    if any(find_existing_storage_path('协议号', nowuid, f'{projectname}.session').exists() or find_existing_storage_path('协议号', nowuid, f'{projectname}.json').exists() for projectname in project_names):
+        return '协议号'
+    return leixing
+
+
 def build_agent_delivery_file(leixing: str, user_id: int, nowuid: str, selected_docs: list[dict]) -> str | None:
     selected_docs = list(selected_docs or [])
     if not selected_docs:
         return None
     project_names = [str(item.get('projectname') or '') for item in selected_docs if item.get('projectname')]
-    if leixing == '协议号':
-        return str(build_delivery_zip(leixing, user_id, nowuid, project_names))
-    if any(find_existing_storage_path('直登号', nowuid, projectname).exists() for projectname in project_names):
-        return str(build_delivery_zip(leixing, user_id, nowuid, project_names))
+    actual_delivery_type = infer_agent_delivery_type(leixing, nowuid, project_names)
+    if actual_delivery_type in {'协议号', '直登号'}:
+        return str(build_delivery_zip(actual_delivery_type, user_id, nowuid, project_names))
     if leixing == 'API':
         return write_text_temp_file(str(user_id), '.txt', '\n'.join(project_names))
     if selected_docs and isinstance(selected_docs[0].get('data'), dict):
@@ -968,7 +991,18 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
 
         async def run_agent_check(item: dict):
             projectname = str(item.get('projectname') or '')
-            entry_type, target_path = resolve_inventory_check_target(leixing, nowuid, projectname)
+            entry_type, target_path = resolve_agent_inventory_check_target(leixing, nowuid, projectname)
+            runtime_status = get_account_check_runtime_status(entry_type)
+            if not runtime_status.get('ready'):
+                check_result = {
+                    'status': 'timeout',
+                    'reason': f"runtime_not_ready:{runtime_status.get('reason', 'unknown')}",
+                    'entry_type': entry_type,
+                    'path': str(target_path),
+                    'attempts': 1,
+                    'max_retries': AGENT_ACCOUNT_CHECK_MAX_RETRIES,
+                }
+                return item, projectname, check_result
             attempts = 0
             check_result = {'status': 'timeout', 'reason': 'empty_check_result'}
             while True:
