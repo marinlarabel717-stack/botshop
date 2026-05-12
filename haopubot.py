@@ -2733,6 +2733,15 @@ def build_admin_dashboard_text(user_count, total_balance):
 DEFAULT_BUY_NOTICE_TEXT = '<b>您购买的商品已打包完成，请查收！ 欢迎下次光临 ❣️</b>'
 
 
+def ensure_buy_notice_bold(text):
+    value = str(text or '').strip()
+    if not value:
+        return DEFAULT_BUY_NOTICE_TEXT
+    if re.search(r'<\s*/?\s*[a-zA-Z][^>]*>', value):
+        return value
+    return f'<b>{html.escape(value, quote=False)}</b>'
+
+
 def normalize_buy_notice_compare_text(text):
     text = str(text or '')
     text = text.replace('\xa0', ' ')
@@ -2741,13 +2750,13 @@ def normalize_buy_notice_compare_text(text):
 
 
 def get_buy_notice_text(product_text=''):
-    global_text = str(get_text_config('购买提醒', DEFAULT_BUY_NOTICE_TEXT) or '').strip() or DEFAULT_BUY_NOTICE_TEXT
+    global_text = ensure_buy_notice_bold(get_text_config('购买提醒', DEFAULT_BUY_NOTICE_TEXT))
     product_text = str(product_text or '').strip()
     if not product_text:
         return global_text
     if normalize_buy_notice_compare_text(product_text) == normalize_buy_notice_compare_text(DEFAULT_BUY_NOTICE_TEXT):
         return global_text
-    return product_text
+    return ensure_buy_notice_bold(product_text)
 
 
 def build_purchase_success_header(deducted_amount, remaining_amount, user_id=None):
@@ -8423,7 +8432,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                     context.bot.send_message(chat_id=user_id, text=f'当前充值地址为: {text}', parse_mode='HTML')
                 elif sign == 'setbuynotice':
-                    set_text_config('购买提醒', stored_text)
+                    set_text_config('购买提醒', ensure_buy_notice_bold(stored_text))
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                     title_text, notice_text = build_buy_notice_config_text()
                     context.bot.send_message(chat_id=user_id, text='购买提醒文案已保存', parse_mode='HTML')
