@@ -2043,24 +2043,38 @@ def rename_directory(old_path, new_path):
         print(f"Folder '{old_path}' does not exist")
 
 
-TRANSFER_CLAIM_EXPIRE_SECONDS = 5 * 60
+TRANSFER_CLAIM_EXPIRE_SECONDS = 2 * 60 * 60
 
 
 def get_transfer_expire_ts(transfer_row):
     row = transfer_row or {}
+    created_ts = 0
+    try:
+        created_ts = int(row.get('created_ts') or 0)
+    except Exception:
+        created_ts = 0
+
+    computed_expire_ts = 0
+    if created_ts > 0:
+        computed_expire_ts = created_ts + TRANSFER_CLAIM_EXPIRE_SECONDS
+    else:
+        timer_text = str(row.get('timer') or '').strip()
+        if timer_text:
+            try:
+                computed_expire_ts = int(time.mktime(time.strptime(timer_text, '%Y-%m-%d %H:%M:%S'))) + TRANSFER_CLAIM_EXPIRE_SECONDS
+            except Exception:
+                computed_expire_ts = 0
+
     try:
         expire_ts = int(row.get('expire_ts') or 0)
-        if expire_ts > 0:
-            return expire_ts
     except Exception:
-        pass
-    timer_text = str(row.get('timer') or '').strip()
-    if timer_text:
-        try:
-            return int(time.mktime(time.strptime(timer_text, '%Y-%m-%d %H:%M:%S'))) + TRANSFER_CLAIM_EXPIRE_SECONDS
-        except Exception:
-            pass
-    return 0
+        expire_ts = 0
+
+    if expire_ts > 0 and computed_expire_ts > 0:
+        return max(expire_ts, computed_expire_ts)
+    if expire_ts > 0:
+        return expire_ts
+    return computed_expire_ts
 
 
 def is_transfer_expired(transfer_row, now_ts=None):
@@ -2144,7 +2158,7 @@ def inline_query(update: Update, context: CallbackContext):
             zztext = f'''
 <b>转账给你 {query} U</b>
 
-请在5分钟内领取
+请在2小时内领取
             '''
             results = [
                 InlineQueryResultArticle(
@@ -2296,9 +2310,9 @@ def shokuan(update: Update, context: CallbackContext):
         return
     if fb_state == 2 or is_transfer_expired(fb_list, now_ts):
         zhuanz.update_one({'uid': uid, 'state': {'$ne': 1}}, {"$set": {"state": 2, 'expired_at': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(now_ts))}})
-        query.answer('❌ 领取失败，该转账已超过5分钟，已自动失效', show_alert=bool("true"))
+        query.answer('❌ 领取失败，该转账已超过2小时，已自动失效', show_alert=bool("true"))
         try:
-            query.edit_message_text('❌ 该转账已超过5分钟，已自动失效')
+            query.edit_message_text('❌ 该转账已超过2小时，已自动失效')
         except Exception:
             pass
         return
