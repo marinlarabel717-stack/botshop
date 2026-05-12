@@ -1920,10 +1920,43 @@ class SyncTelegramProxy:
                     'edit_message_text', 'edit_message_caption', 'edit_message_reply_markup',
                     'answer', 'answer_callback_query', 'delete_message'
                 }
+                timeout_defaults = {
+                    'send_document': {'connect_timeout': 20, 'read_timeout': 120, 'write_timeout': 120, 'pool_timeout': 20},
+                    'send_photo': {'connect_timeout': 20, 'read_timeout': 60, 'write_timeout': 60, 'pool_timeout': 20},
+                    'send_animation': {'connect_timeout': 20, 'read_timeout': 120, 'write_timeout': 120, 'pool_timeout': 20},
+                    'send_media_group': {'connect_timeout': 20, 'read_timeout': 120, 'write_timeout': 120, 'pool_timeout': 20},
+                    'send_message': {'connect_timeout': 15, 'read_timeout': 45, 'write_timeout': 45, 'pool_timeout': 15},
+                    'edit_message_text': {'connect_timeout': 15, 'read_timeout': 45, 'write_timeout': 45, 'pool_timeout': 15},
+                    'edit_message_caption': {'connect_timeout': 15, 'read_timeout': 45, 'write_timeout': 45, 'pool_timeout': 15},
+                    'edit_message_reply_markup': {'connect_timeout': 15, 'read_timeout': 45, 'write_timeout': 45, 'pool_timeout': 15},
+                    'answer': {'connect_timeout': 10, 'read_timeout': 20, 'write_timeout': 20, 'pool_timeout': 10},
+                    'answer_callback_query': {'connect_timeout': 10, 'read_timeout': 20, 'write_timeout': 20, 'pool_timeout': 10},
+                    'delete_message': {'connect_timeout': 10, 'read_timeout': 20, 'write_timeout': 20, 'pool_timeout': 10},
+                }
                 last_exc = None
-                max_attempts = 2 if target_name in transient_methods else 1
+                max_attempts = 3 if target_name in {'send_document', 'send_photo', 'send_animation', 'send_media_group', 'answer', 'answer_callback_query', 'delete_message'} else (2 if target_name in transient_methods else 1)
+                for timeout_key, timeout_value in timeout_defaults.get(target_name, {}).items():
+                    kwargs.setdefault(timeout_key, timeout_value)
+
+                def rewind_retry_streams():
+                    candidates = list(args) + list(kwargs.values())
+                    for candidate in candidates:
+                        file_obj = getattr(candidate, 'fp', None)
+                        if file_obj is not None and hasattr(file_obj, 'seek'):
+                            try:
+                                file_obj.seek(0)
+                            except Exception:
+                                pass
+                        if hasattr(candidate, 'seek'):
+                            try:
+                                candidate.seek(0)
+                            except Exception:
+                                pass
+
                 for attempt in range(max_attempts):
                     try:
+                        if attempt > 0:
+                            rewind_retry_streams()
                         result = attr(*args, **kwargs)
                         if inspect.isawaitable(result):
                             result = asyncio.run_coroutine_threadsafe(result, self._get_loop()).result()
@@ -1944,7 +1977,7 @@ class SyncTelegramProxy:
                     except (TimedOut, NetworkError) as exc:
                         last_exc = exc
                         if attempt + 1 < max_attempts:
-                            time.sleep(1)
+                            time.sleep(min(3, 1 + attempt))
                             continue
                         logging.warning('Telegram transient error on %s: %s', target_name, exc)
                         return None
