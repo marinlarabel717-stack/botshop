@@ -2967,6 +2967,58 @@ def build_inventory_entry_file_path(leixing, nowuid, projectname):
     return find_existing_storage_path('号包', nowuid, projectname)
 
 
+def collect_delivery_source_paths(leixing, nowuid, entry_name):
+    paths = []
+    if leixing == '协议号':
+        for suffix in ('.json', '.session'):
+            source_path = find_existing_storage_path('协议号', nowuid, f'{entry_name}{suffix}')
+            if source_path.exists() and source_path.is_file():
+                paths.append(source_path)
+        return paths
+
+    folder_path = find_existing_storage_path('号包', nowuid, entry_name)
+    if not folder_path.exists() or not folder_path.is_dir():
+        return paths
+
+    for candidate in folder_path.rglob('*'):
+        if candidate.is_file():
+            paths.append(candidate)
+    return paths
+
+
+def build_delivery_zip(leixing, user_id, nowuid, entry_names):
+    shijiancuo = int(time.time())
+    missing_entries = []
+    added_files = 0
+    if leixing == '协议号':
+        zip_filename = find_existing_storage_path('协议号发货', f'{user_id}_{shijiancuo}.zip')
+        zip_filename.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for file_name in entry_names:
+                source_paths = collect_delivery_source_paths(leixing, nowuid, file_name)
+                if not source_paths:
+                    missing_entries.append(str(file_name))
+                    continue
+                for source_path in source_paths:
+                    zipf.write(source_path, source_path.name)
+                    added_files += 1
+        return zip_filename, added_files, missing_entries
+
+    zip_filename = find_existing_storage_path('发货', f'{user_id}_{shijiancuo}.zip')
+    zip_filename.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for folder_name in entry_names:
+            source_paths = collect_delivery_source_paths(leixing, nowuid, folder_name)
+            if not source_paths:
+                missing_entries.append(str(folder_name))
+                continue
+            full_folder_path = find_existing_storage_path('号包', nowuid, folder_name)
+            for file_path in source_paths:
+                zipf.write(file_path, os.path.join(str(folder_name), os.path.relpath(file_path, full_folder_path)))
+                added_files += 1
+    return zip_filename, added_files, missing_entries
+
+
 def resolve_inventory_check_target(leixing, nowuid, projectname):
     if leixing == '协议号':
         return leixing, build_inventory_entry_file_path(leixing, nowuid, projectname)
@@ -3083,33 +3135,6 @@ def finalize_account_check_message(bot, user_id, progress_message_id, final_text
     except Exception:
         logging.exception('Failed to send account-check completion message for user %s', user_id)
         return 'failed'
-
-
-def build_delivery_zip(leixing, user_id, nowuid, entry_names):
-    shijiancuo = int(time.time())
-    if leixing == '协议号':
-        zip_filename = find_existing_storage_path('协议号发货', f'{user_id}_{shijiancuo}.zip')
-        zip_filename.parent.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for file_name in entry_names:
-                for suffix in ('.json', '.session'):
-                    source_path = find_existing_storage_path('协议号', nowuid, f'{file_name}{suffix}')
-                    if source_path.exists():
-                        zipf.write(source_path, source_path.name)
-        return zip_filename
-
-    zip_filename = find_existing_storage_path('发货', f'{user_id}_{shijiancuo}.zip')
-    zip_filename.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        for folder_name in entry_names:
-            full_folder_path = find_existing_storage_path('号包', nowuid, folder_name)
-            if not full_folder_path.exists():
-                continue
-            for root, dirs, files in os.walk(full_folder_path):
-                for file in files:
-                    file_path = Path(root) / file
-                    zipf.write(file_path, os.path.join(str(folder_name), os.path.relpath(file_path, full_folder_path)))
-    return zip_filename
 
 
 def run_single_account_check(leixing, nowuid, item, timeout_seconds):
@@ -3258,11 +3283,33 @@ def deliver_accounts_with_check(context, user_id, fullname, username, nowuid, er
     timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
     delivery_record_text = final_text
     if delivery_names:
-        zip_filename = build_delivery_zip(leixing, user_id, nowuid, delivery_names)
-        goumaijilua(leixing, order_id, user_id, erjiprojectname, str(zip_filename), delivery_record_text, timer)
-        bot.send_document(chat_id=user_id, document=open(zip_filename, 'rb'))
-        if notice_text:
-            send_html_message(bot, user_id, notice_text)
+        zip_filename, added_files, missing_entries = build_delivery_zip(leixing, user_id, nowuid, delivery_names)
+        if missing_entries:
+            logging.warning(
+                'delivery package missing inventory files: leixing=%s nowuid=%s user_id=%s entries=%s',
+                leixing,
+                nowuid,
+                user_id,
+                ', '.join(missing_entries),
+            )
+
+        if added_files <= 0:
+            failure_text = '这批库存文件没找到，暂时没法发货，请联系客服处理。'
+            logging.error(
+                'delivery package is empty: leixing=%s nowuid=%s user_id=%s requested=%s',
+                leixing,
+                nowuid,
+                user_id,
+                ', '.join(map(str, delivery_names)),
+            )
+            goumaijilua(leixing, order_id, user_id, erjiprojectname, '', f'{delivery_record_text}\n\n{failure_text}', timer)
+            bot.send_message(chat_id=user_id, text=failure_text)
+        else:
+            goumaijilua(leixing, order_id, user_id, erjiprojectname, str(zip_filename), delivery_record_text, timer)
+            with open(zip_filename, 'rb') as document_fp:
+                bot.send_document(chat_id=user_id, document=document_fp)
+            if notice_text:
+                send_html_message(bot, user_id, notice_text)
     else:
         goumaijilua(leixing, order_id, user_id, erjiprojectname, '', delivery_record_text, timer)
 
@@ -7418,16 +7465,38 @@ def create_okpay_deposit_order(context, user_id, amount):
 
 
 def dabaohao(context, user_id, folder_names, leixing, nowuid, erjiprojectname, notice_text, yssj):
-    zip_filename = build_delivery_zip(leixing, user_id, nowuid, folder_names)
+    zip_filename, added_files, missing_entries = build_delivery_zip(leixing, user_id, nowuid, folder_names)
     current_time = datetime.datetime.now()
 
     formatted_time = current_time.strftime("%Y%m%d%H%M%S")
     timestamp = str(current_time.timestamp()).replace(".", "")
     bianhao = formatted_time + timestamp
     timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-    goumaijilua(leixing, bianhao, user_id, erjiprojectname, str(zip_filename), notice_text, timer)
+    if missing_entries:
+        logging.warning(
+            'delivery package missing inventory files: leixing=%s nowuid=%s user_id=%s entries=%s',
+            leixing,
+            nowuid,
+            user_id,
+            ', '.join(missing_entries),
+        )
 
-    context.bot.send_document(chat_id=user_id, document=open(zip_filename, "rb"))
+    if added_files <= 0:
+        failure_text = '这批库存文件没找到，暂时没法发货，请联系客服处理。'
+        logging.error(
+            'delivery package is empty: leixing=%s nowuid=%s user_id=%s requested=%s',
+            leixing,
+            nowuid,
+            user_id,
+            ', '.join(map(str, folder_names)),
+        )
+        goumaijilua(leixing, bianhao, user_id, erjiprojectname, '', failure_text, timer)
+        context.bot.send_message(chat_id=user_id, text=failure_text)
+        return
+
+    goumaijilua(leixing, bianhao, user_id, erjiprojectname, str(zip_filename), notice_text, timer)
+    with open(zip_filename, "rb") as document_fp:
+        context.bot.send_document(chat_id=user_id, document=document_fp)
     if notice_text:
         context.bot.send_message(chat_id=user_id, text=notice_text, parse_mode='HTML', disable_web_page_preview=True)
 
@@ -8771,17 +8840,31 @@ def textkeyboard(update: Update, context: CallbackContext):
                     # 解压缩文件
                     count = 0
                     timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                    extracted_folder_names = set()
                     with zipfile.ZipFile(new_file_path, 'r') as zip_ref:
                         for file_info in zip_ref.infolist():
                             match = re.match(r'^([^/]+)/.*$', file_info.filename)
                             if match:
-                                extracted_folder_name = match.group(1)
-
-                                if hb.find_one({'nowuid': nowuid, 'projectname': extracted_folder_name}) is None:
-                                    count += 1
-                                    hbid = generate_24bit_uid()
-                                    shangchuanhaobao('直登号',uid, nowuid, hbid, extracted_folder_name, timer)
+                                extracted_folder_names.add(match.group(1))
                             zip_ref.extract(file_info, f'号包/{nowuid}')
+
+                    for extracted_folder_name in sorted(extracted_folder_names):
+                        source_paths = collect_delivery_source_paths('直登号', nowuid, extracted_folder_name)
+                        if not source_paths:
+                            logging.warning(
+                                'skip empty direct inventory upload: nowuid=%s projectname=%s',
+                                nowuid,
+                                extracted_folder_name,
+                            )
+                            empty_folder_path = find_existing_storage_path('号包', nowuid, extracted_folder_name)
+                            if empty_folder_path.exists() and empty_folder_path.is_dir():
+                                shutil.rmtree(empty_folder_path, ignore_errors=True)
+                            continue
+
+                        if hb.find_one({'nowuid': nowuid, 'projectname': extracted_folder_name}) is None:
+                            count += 1
+                            hbid = generate_24bit_uid()
+                            shangchuanhaobao('直登号',uid, nowuid, hbid, extracted_folder_name, timer)
 
                     update.message.reply_text(f'解压并处理完成！本次上传了{count}个号')
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
