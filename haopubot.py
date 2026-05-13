@@ -2287,20 +2287,22 @@ def inline_query(update: Update, context: CallbackContext):
                 qbname = i['fullname'].replace('<', '').replace('>', '')
                 qbtimer = i['timer'][-8:]
                 qbmoney = i['money']
+                safe_qbname = html.escape(qbname, quote=False)
                 if str(count) in jiangpai.keys():
 
                     qbrtext.append(
-                        f'{jiangpai[str(count)]} <code>{qbmoney}</code>({qbtimer}) USDT💰 - <a href="tg://user?id={qbid}">{qbname}</a>')
+                        f'{jiangpai[str(count)]} <code>{qbmoney}</code>({qbtimer}) USDT💰 - {safe_qbname}')
                 else:
                     qbrtext.append(
-                        f'<code>{qbmoney}</code>({qbtimer}) USDT💰 - <a href="tg://user?id={qbid}">{qbname}</a>')
+                        f'<code>{qbmoney}</code>({qbtimer}) USDT💰 - {safe_qbname}')
                 count += 1
             qbrtext = '\n'.join(qbrtext)
 
             syhb = hbsl - len(qb_list)
 
+            safe_fullname = html.escape(fullname, quote=False)
             fstext = f'''
-🧧 <a href="tg://user?id={user_id}">{fullname}</a> 发送了一个红包
+🧧 {safe_fullname} 发送了一个红包
 💵总金额:{hbmoney} USDT💰 剩余:{syhb}/{hbsl}
 
 {qbrtext}
@@ -2410,8 +2412,9 @@ def shokuan(update: Update, context: CallbackContext):
     now_money = standard_num(USDT + fb_money)
     now_money = float(now_money) if str((now_money)).count('.') > 0 else int(standard_num(now_money))
     user.update_one({'user_id': user_id}, {"$set": {'USDT': now_money}})
+    safe_fullname = html.escape(fullname, quote=False)
     fstext = f'''
-<a href="tg://user?id={user_id}">{fullname}</a> 已领取 <b>{fb_money}</b> USDT
+{safe_fullname} 已领取 <b>{fb_money}</b> USDT
     '''
     url = helpers.create_deep_linked_url(context.bot.username, str(user_id))
     keyboard = [[InlineKeyboardButton(f"{context.bot.first_name}", url=url)]]
@@ -2514,17 +2517,19 @@ def lqhb(update: Update, context: CallbackContext):
         qbname = i['fullname'].replace('<', '').replace('>', '')
         qbtimer = i['timer'][-8:]
         qbmoney = i['money']
+        safe_qbname = html.escape(qbname, quote=False)
         if str(count) in jiangpai.keys():
 
             qbrtext.append(
-                f'{jiangpai[str(count)]} <code>{qbmoney}</code>({qbtimer}) USDT💰 - <a href="tg://user?id={qbid}">{qbname}</a>')
+                f'{jiangpai[str(count)]} <code>{qbmoney}</code>({qbtimer}) USDT💰 - {safe_qbname}')
         else:
-            qbrtext.append(f'<code>{qbmoney}</code>({qbtimer}) USDT💰 - <a href="tg://user?id={qbid}">{qbname}</a>')
+            qbrtext.append(f'<code>{qbmoney}</code>({qbtimer}) USDT💰 - {safe_qbname}')
         count += 1
     qbrtext = '\n'.join(qbrtext)
 
+    safe_fb_fullname = html.escape(fb_fullname, quote=False)
     fstext = f'''
-🧧 <a href="tg://user?id={fb_id}">{fb_fullname}</a> 发送了一个红包
+🧧 {safe_fb_fullname} 发送了一个红包
 💵总金额:{hbmoney} USDT💰 剩余:{syhb}/{hbsl}
 
 {qbrtext}
@@ -2572,17 +2577,19 @@ def xzhb(update: Update, context: CallbackContext):
             qbname = i['fullname'].replace('<', '').replace('>', '')
             qbtimer = i['timer'][-8:]
             qbmoney = i['money']
+            safe_qbname = html.escape(qbname, quote=False)
             if str(count) in jiangpai.keys():
 
                 qbrtext.append(
-                    f'{jiangpai[str(count)]} <code>{qbmoney}</code>({qbtimer}) USDT💰 - <a href="tg://user?id={qbid}">{qbname}</a>')
+                    f'{jiangpai[str(count)]} <code>{qbmoney}</code>({qbtimer}) USDT💰 - {safe_qbname}')
             else:
-                qbrtext.append(f'<code>{qbmoney}</code>({qbtimer}) USDT💰 - <a href="tg://user?id={qbid}">{qbname}</a>')
+                qbrtext.append(f'<code>{qbmoney}</code>({qbtimer}) USDT💰 - {safe_qbname}')
             count += 1
         qbrtext = '\n'.join(qbrtext)
 
+        safe_fb_fullname = html.escape(fb_fullname, quote=False)
         fstext = f'''
-🧧 <a href="tg://user?id={fb_id}">{fb_fullname}</a> 发送了一个红包
+🧧 {safe_fb_fullname} 发送了一个红包
 🕦 时间:{timer}
 💵 总金额:{hbmoney} USDT
 状态:进行中
@@ -2605,17 +2612,19 @@ def xzhb(update: Update, context: CallbackContext):
             qbname = i['fullname'].replace('<', '').replace('>', '')
             qbtimer = i['timer'][-8:]
             qbmoney = i['money']
+            safe_qbname = html.escape(qbname, quote=False)
             if str(count) in jiangpai.keys():
 
                 qbrtext.append(
-                    f'{jiangpai[str(count)]} <code>{qbmoney}</code>({qbtimer}) USDT💰 - <a href="tg://user?id={qbid}">{qbname}</a>')
+                    f'{jiangpai[str(count)]} <code>{qbmoney}</code>({qbtimer}) USDT💰 - {safe_qbname}')
             else:
-                qbrtext.append(f'<code>{qbmoney}</code>({qbtimer}) USDT💰 - <a href="tg://user?id={qbid}">{qbname}</a>')
+                qbrtext.append(f'<code>{qbmoney}</code>({qbtimer}) USDT💰 - {safe_qbname}')
             count += 1
         qbrtext = '\n'.join(qbrtext)
 
+        safe_fb_fullname = html.escape(fb_fullname, quote=False)
         fstext = f'''
-🧧 <a href="tg://user?id={fb_id}">{fb_fullname}</a> 发送了一个红包
+🧧 {safe_fb_fullname} 发送了一个红包
 🕦 时间:{timer}
 💵 总金额:{hbmoney} USDT
 状态:已结束
@@ -3569,9 +3578,18 @@ def kaiqisifa(update: Update, context: CallbackContext):
         except BadRequest as exc:
             if 'Message is not modified' not in str(exc):
                 raise
-        context.job_queue.run_once(sync_job(usersifa), 1, data={"user_id": user_id}, name=f'sifa')
-        message_id = context.bot.send_message(chat_id=user_id, text='开启私发')
-        context.user_data['sifa'] = message_id
+        total_users = user.count_documents({})
+        progress_message = context.bot.send_message(
+            chat_id=user_id,
+            text=f'私信进行中\n\n正在发送0/{total_users}（每10秒刷新一次进度）'
+        )
+        context.job_queue.run_once(
+            sync_job(usersifa),
+            1,
+            data={"user_id": user_id, "progress_message_id": progress_message.message_id},
+            name=f'sifa'
+        )
+        context.user_data['sifa'] = progress_message
     else:
         message_id = context.bot.send_message(chat_id=user_id, text='私发进行中')
         time.sleep(3)
@@ -3581,46 +3599,64 @@ def usersifa(context: CallbackContext):
     job = context.job
     bot_id = context.bot.id
     guanli_id = job.data['user_id']
+    progress_message_id = job.data.get('progress_message_id')
     count = 0
     shibai = 0
+    processed = 0
     fqdtw_list = sftw.find_one({'bot_id': bot_id,'projectname': f'图文1🔽'})
     file_id = fqdtw_list['file_id']
     file_text = fqdtw_list['text']
     file_type = fqdtw_list['send_type']
     key_text = fqdtw_list['key_text']
     keyboard = load_saved_inline_keyboard(fqdtw_list.get('keyboard'), fqdtw_list.get('key_text'))
-    
-    
+    user_list = list(user.find({}))
+    total_users = len(user_list)
+    last_progress_at = 0
+
+    def update_sifa_progress(final=False):
+        if not progress_message_id:
+            return
+        if final:
+            text = f'私信已完成\n成功:{count}\n失败:{shibai}'
+        else:
+            text = f'私信进行中\n\n正在发送{processed}/{total_users}（每10秒刷新一次进度）'
+        try:
+            context.bot.edit_message_text(chat_id=guanli_id, message_id=progress_message_id, text=text)
+        except Exception:
+            pass
+
     keyboard.append([InlineKeyboardButton('✅已读（点击销毁此消息）', callback_data=f'close 12321')])
-    for i in list(user.find({})):
+    for i in user_list:
         if file_type == 'text':
             try:
-                
-                message_id = context.bot.send_message(chat_id=i['user_id'], text=file_text,
-                                                      reply_markup=InlineKeyboardMarkup(keyboard))
+                context.bot.send_message(chat_id=i['user_id'], text=file_text,
+                                         reply_markup=InlineKeyboardMarkup(keyboard))
                 count += 1
             except:
                 shibai += 1
         else:
             if file_type == 'photo':
                 try:
-                    
-                    message_id = context.bot.send_photo(chat_id=i['user_id'], caption=file_text, photo=file_id,
-                                                        reply_markup=InlineKeyboardMarkup(keyboard))
+                    context.bot.send_photo(chat_id=i['user_id'], caption=file_text, photo=file_id,
+                                           reply_markup=InlineKeyboardMarkup(keyboard))
                     count += 1
                 except:
                     shibai += 1
             else:
                 try:
-                    
-                    message_id = context.bot.sendAnimation(chat_id=i['user_id'], caption=file_text, animation=file_id,
-                                                           reply_markup=InlineKeyboardMarkup(keyboard))
+                    context.bot.sendAnimation(chat_id=i['user_id'], caption=file_text, animation=file_id,
+                                              reply_markup=InlineKeyboardMarkup(keyboard))
                     count += 1
                 except:
                     shibai += 1
+        processed += 1
+        now_ts = time.time()
+        if processed >= total_users or now_ts - last_progress_at >= 10:
+            update_sifa_progress(final=False)
+            last_progress_at = now_ts
         time.sleep(3)
     sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {"state": 1}})
-    context.bot.send_message(chat_id=guanli_id, text=f'私发完毕\n成功:{count}\n失败:{shibai}')
+    update_sifa_progress(final=True)
     keyboard = [
         [InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}图文设置', callback_data='tuwen'),
          InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}按钮设置', callback_data='anniu')],
@@ -8311,8 +8347,9 @@ def textkeyboard(update: Update, context: CallbackContext):
                         now_money = float(now_money) if str((now_money)).count('.') > 0 else int(
                             standard_num(now_money))
                         user.update_one({'user_id': user_id}, {"$set": {'USDT': now_money}})
+                        safe_fullname = html.escape(fullname, quote=False)
                         fstext = f'''
-🧧 <a href="tg://user?id={user_id}">{fullname}</a> 发送了一个红包
+🧧 {safe_fullname} 发送了一个红包
 💵总金额:{money} USDT💰 剩余:{hbsl}/{hbsl}
 
 ✅ 红包添加成功，请点击按钮发送
