@@ -103,6 +103,22 @@ except Exception:
     APP_VERSION = '0.1.0'
 
 
+def get_sifa_delay_seconds(send_type='text'):
+    send_type = str(send_type or 'text').strip().lower()
+    if send_type == 'text':
+        default_value = '0.6'
+        env_key = 'SIFA_TEXT_DELAY_SECONDS'
+    else:
+        default_value = '1.0'
+        env_key = 'SIFA_MEDIA_DELAY_SECONDS'
+    raw_value = str(os.getenv(env_key, default_value) or default_value).strip()
+    try:
+        value = float(raw_value)
+    except Exception:
+        value = float(default_value)
+    return max(0.0, value)
+
+
 DEFAULT_CLONE_WELCOME_TEXT = (
     '<b>🔥 欢迎使用号铺机器人\n\n'
     '‼️请先由管理员在后台完成以下配置：\n\n'
@@ -3612,6 +3628,7 @@ def usersifa(context: CallbackContext):
     user_list = list(user.find({}))
     total_users = len(user_list)
     last_progress_at = 0
+    send_delay_seconds = get_sifa_delay_seconds(file_type)
 
     def update_sifa_progress(final=False):
         if not progress_message_id:
@@ -3654,7 +3671,8 @@ def usersifa(context: CallbackContext):
         if processed >= total_users or now_ts - last_progress_at >= 10:
             update_sifa_progress(final=False)
             last_progress_at = now_ts
-        time.sleep(3)
+        if send_delay_seconds > 0:
+            time.sleep(send_delay_seconds)
     sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {"state": 1}})
     update_sifa_progress(final=True)
     keyboard = [
