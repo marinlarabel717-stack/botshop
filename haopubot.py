@@ -2076,7 +2076,7 @@ def rename_directory(old_path, new_path):
         print(f"Folder '{old_path}' does not exist")
 
 
-TRANSFER_CLAIM_EXPIRE_SECONDS = 2 * 60 * 60
+TRANSFER_CLAIM_EXPIRE_SECONDS = 12 * 60 * 60
 
 
 def get_transfer_expire_ts(transfer_row):
@@ -2191,7 +2191,7 @@ def inline_query(update: Update, context: CallbackContext):
             zztext = f'''
 <b>转账给你 {query} U</b>
 
-请在2小时内领取
+请在12小时内领取
             '''
             results = [
                 InlineQueryResultArticle(
@@ -2345,9 +2345,9 @@ def shokuan(update: Update, context: CallbackContext):
         return
     if fb_state == 2 or is_transfer_expired(fb_list, now_ts):
         zhuanz.update_one({'uid': uid, 'state': {'$ne': 1}}, {"$set": {"state": 2, 'expired_at': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(now_ts))}})
-        query.answer('❌ 领取失败，该转账已超过2小时，已自动失效', show_alert=bool("true"))
+        query.answer('❌ 领取失败，该转账已超过12小时，已自动失效', show_alert=bool("true"))
         try:
-            query.edit_message_text('❌ 该转账已超过2小时，已自动失效')
+            query.edit_message_text('❌ 该转账已超过12小时，已自动失效')
         except Exception:
             pass
         return
