@@ -3,7 +3,7 @@ import io
 import datetime, qrcode, socket, struct, threading, hashlib, uuid
 import inspect
 import random
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import telegram
 import os
 import sys
@@ -1226,6 +1226,7 @@ ACCOUNT_CHECK_ENABLED = parse_env_bool(os.getenv('ACCOUNT_CHECK_ENABLED', 'true'
 ACCOUNT_CHECK_TIMEOUT_SECONDS = max(5, int(os.getenv('ACCOUNT_CHECK_TIMEOUT_SECONDS', '25') or '25'))
 ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS = max(3, int(os.getenv('ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS', '10') or '10'))
 ACCOUNT_CHECK_PROGRESS_STEP = max(1, int(os.getenv('ACCOUNT_CHECK_PROGRESS_STEP', '3') or '3'))
+ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS = 2.0
 ACCOUNT_CHECK_SUPPORTED_TYPES = {'协议号', '直登号'}
 ACCOUNT_BAN_ROOT = BASE_DIR / 'ban'
 TRC20_USDT_CONTRACT = os.getenv('TRC20_USDT_CONTRACT', 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t').strip()
@@ -2834,17 +2835,43 @@ def build_purchase_success_header(deducted_amount, remaining_amount, user_id=Non
     )
 
 
-def build_account_check_progress_text(total_count, checked_count, alive_count=0, invalid_count=0, frozen_count=0, timeout_count=0, user_id=None):
+def format_account_check_elapsed(elapsed_seconds):
+    total_seconds = max(0, int(elapsed_seconds or 0))
+    minutes, seconds = divmod(total_seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours > 0:
+        return f'{hours}h {minutes}m {seconds}s'
+    if minutes > 0:
+        return f'{minutes}m {seconds}s'
+    return f'{seconds}s'
+
+
+def build_account_check_progress_text(total_count, checked_count, alive_count=0, invalid_count=0, frozen_count=0, timeout_count=0, in_progress_count=0, queued_count=0, elapsed_seconds=None, user_id=None):
     lang = get_user_lang(user_id) if user_id is not None else 'zh'
+    elapsed_text = format_account_check_elapsed(elapsed_seconds)
     if lang == 'en':
-        return (
-            f'<b>{ACCOUNT_CHECK_EMOJI_PROGRESS} Checking account status, please wait...</b>\n\n'
-            f'<b>{ACCOUNT_CHECK_EMOJI_TOTAL} Checked:</b> {checked_count} / {total_count}'
-        )
-    return (
-        f'<b>{ACCOUNT_CHECK_EMOJI_PROGRESS} 正在检查账号状态，请稍等！</b>\n\n'
-        f'<b>{ACCOUNT_CHECK_EMOJI_TOTAL} 已检测：</b> {checked_count} / {total_count}'
-    )
+        lines = [
+            f'<b>{ACCOUNT_CHECK_EMOJI_PROGRESS} Checking account status, please wait...</b>',
+            '',
+            f'<b>{ACCOUNT_CHECK_EMOJI_TOTAL} Checked:</b> {checked_count} / {total_count}',
+            f'<b>{ACCOUNT_CHECK_EMOJI_PROGRESS} In progress:</b> {max(0, int(in_progress_count or 0))}',
+        ]
+        if queued_count > 0:
+            lines.append(f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} Queued:</b> {queued_count}')
+        if elapsed_seconds is not None:
+            lines.append(f'<b>{ACCOUNT_CHECK_EMOJI_TOTAL} Elapsed:</b> {elapsed_text}')
+        return '\n'.join(lines)
+    lines = [
+        f'<b>{ACCOUNT_CHECK_EMOJI_PROGRESS} 正在检查账号状态，请稍等！</b>',
+        '',
+        f'<b>{ACCOUNT_CHECK_EMOJI_TOTAL} 已检测：</b> {checked_count} / {total_count}',
+        f'<b>{ACCOUNT_CHECK_EMOJI_PROGRESS} 检测中：</b> {max(0, int(in_progress_count or 0))}',
+    ]
+    if queued_count > 0:
+        lines.append(f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 排队中：</b> {queued_count}')
+    if elapsed_seconds is not None:
+        lines.append(f'<b>{ACCOUNT_CHECK_EMOJI_TOTAL} 已用时：</b> {elapsed_text}')
+    return '\n'.join(lines)
 
 
 def build_account_check_result_text(total_count, alive_count, invalid_count, frozen_count, timeout_count, deducted_amount, refund_amount, remaining_amount, user_id=None):
@@ -3230,71 +3257,133 @@ def deliver_accounts_with_check(context, user_id, fullname, username, nowuid, er
     frozen_items = []
     timeout_items = []
     checked_count = 0
-    last_progress_ts = 0
+    progress_started_at = time.monotonic()
+    progress_state = {
+        'running_count': 0,
+        'alive_count': 0,
+        'invalid_count': 0,
+        'frozen_count': 0,
+        'timeout_count': 0,
+    }
+    progress_lock = threading.Lock()
+    last_progress_ts = 0.0
+
+    def push_progress(force=False):
+        nonlocal last_progress_ts
+        now_ts = time.monotonic()
+        if not force and now_ts - last_progress_ts < ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS:
+            return
+        with progress_lock:
+            running_count = max(0, int(progress_state['running_count']))
+            alive_count = int(progress_state['alive_count'])
+            invalid_count = int(progress_state['invalid_count'])
+            frozen_count = int(progress_state['frozen_count'])
+            timeout_count = int(progress_state['timeout_count'])
+        queued_count = max(0, total_count - checked_count - running_count)
+        try:
+            edit_html_message(
+                bot,
+                user_id,
+                progress_message_id,
+                build_account_check_progress_text(
+                    total_count,
+                    checked_count,
+                    alive_count,
+                    invalid_count,
+                    frozen_count,
+                    timeout_count,
+                    in_progress_count=running_count,
+                    queued_count=queued_count,
+                    elapsed_seconds=now_ts - progress_started_at,
+                    user_id=user_id,
+                )
+            )
+        except Exception:
+            logging.warning('Failed to update account-check progress for user %s at %s/%s', user_id, checked_count, total_count, exc_info=True)
+        last_progress_ts = now_ts
+
+    def run_single_account_check_tracked(item):
+        with progress_lock:
+            progress_state['running_count'] += 1
+        try:
+            return run_single_account_check(leixing, nowuid, item, ACCOUNT_CHECK_TIMEOUT_SECONDS)
+        finally:
+            with progress_lock:
+                progress_state['running_count'] = max(0, progress_state['running_count'] - 1)
 
     max_workers = get_account_check_concurrency(total_count)
     with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix='acct-check') as executor:
         future_map = {
-            executor.submit(run_single_account_check, leixing, nowuid, item, ACCOUNT_CHECK_TIMEOUT_SECONDS): item
+            executor.submit(run_single_account_check_tracked, item): item
             for item in selected_items
         }
-        for future in as_completed(future_map):
-            item = future_map[future]
-            projectname = item['projectname']
-            try:
-                _, projectname, check_result = future.result()
-            except Exception as exc:
-                check_result = {'status': 'timeout', 'reason': str(exc) or exc.__class__.__name__}
-            checked_count += 1
-
-            hb.update_one(
-                {'hbid': item['hbid']},
-                {'$set': {
-                    'delivery_order_id': order_id,
-                    'delivery_check_state': check_result.get('status', 'timeout'),
-                    'delivery_check_reason': str(check_result.get('reason', ''))[:500],
-                    'delivery_check_timer': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                }}
+        pending_futures = set(future_map.keys())
+        while pending_futures:
+            done_futures, pending_futures = wait(
+                pending_futures,
+                timeout=ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS,
+                return_when=FIRST_COMPLETED,
             )
-
-            item_meta = {
-                'hbid': item['hbid'],
-                'projectname': projectname,
-                'status': check_result.get('status', 'timeout'),
-                'reason': check_result.get('reason', ''),
-            }
-            if check_result.get('status') == 'alive':
-                alive_items.append(item_meta)
-            elif check_result.get('status') == 'frozen':
-                item_meta.update({
-                    'freeze_since_date': check_result.get('freeze_since_date', 0),
-                    'freeze_until_date': check_result.get('freeze_until_date', 0),
-                    'freeze_since_text': check_result.get('freeze_since_text', ''),
-                    'freeze_until_text': check_result.get('freeze_until_text', ''),
-                    'freeze_appeal_url': check_result.get('freeze_appeal_url', ''),
-                })
-                frozen_items.append(archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, item_meta))
-            elif check_result.get('status') == 'invalid':
-                invalid_items.append(archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, item_meta))
-            else:
-                timeout_items.append(item_meta)
-
-            should_push_progress = (
-                checked_count == total_count
-                or checked_count % ACCOUNT_CHECK_PROGRESS_STEP == 0
-                or time.time() - last_progress_ts >= ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS
-            )
-            if should_push_progress:
+            if not done_futures:
+                push_progress(force=True)
+                continue
+            for future in done_futures:
+                item = future_map[future]
+                projectname = item['projectname']
                 try:
-                    edit_html_message(
-                        bot,
-                        user_id,
-                        progress_message_id,
-                        build_account_check_progress_text(total_count, checked_count, len(alive_items), len(invalid_items), len(frozen_items), len(timeout_items), user_id=user_id)
-                    )
-                except Exception:
-                    logging.warning('Failed to update account-check progress for user %s at %s/%s', user_id, checked_count, total_count, exc_info=True)
-                last_progress_ts = time.time()
+                    _, projectname, check_result = future.result()
+                except Exception as exc:
+                    check_result = {'status': 'timeout', 'reason': str(exc) or exc.__class__.__name__}
+                checked_count += 1
+
+                hb.update_one(
+                    {'hbid': item['hbid']},
+                    {'$set': {
+                        'delivery_order_id': order_id,
+                        'delivery_check_state': check_result.get('status', 'timeout'),
+                        'delivery_check_reason': str(check_result.get('reason', ''))[:500],
+                        'delivery_check_timer': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                    }}
+                )
+
+                item_meta = {
+                    'hbid': item['hbid'],
+                    'projectname': projectname,
+                    'status': check_result.get('status', 'timeout'),
+                    'reason': check_result.get('reason', ''),
+                }
+                if check_result.get('status') == 'alive':
+                    alive_items.append(item_meta)
+                    with progress_lock:
+                        progress_state['alive_count'] += 1
+                elif check_result.get('status') == 'frozen':
+                    item_meta.update({
+                        'freeze_since_date': check_result.get('freeze_since_date', 0),
+                        'freeze_until_date': check_result.get('freeze_until_date', 0),
+                        'freeze_since_text': check_result.get('freeze_since_text', ''),
+                        'freeze_until_text': check_result.get('freeze_until_text', ''),
+                        'freeze_appeal_url': check_result.get('freeze_appeal_url', ''),
+                    })
+                    frozen_items.append(archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, item_meta))
+                    with progress_lock:
+                        progress_state['frozen_count'] += 1
+                elif check_result.get('status') == 'invalid':
+                    invalid_items.append(archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, item_meta))
+                    with progress_lock:
+                        progress_state['invalid_count'] += 1
+                else:
+                    timeout_items.append(item_meta)
+                    with progress_lock:
+                        progress_state['timeout_count'] += 1
+
+                should_push_progress = (
+                    checked_count == total_count
+                    or checked_count % ACCOUNT_CHECK_PROGRESS_STEP == 0
+                    or time.monotonic() - last_progress_ts >= ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS
+                    or time.monotonic() - last_progress_ts >= ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS
+                )
+                if should_push_progress:
+                    push_progress(force=True)
 
     invalid_count = len(invalid_items)
     frozen_count = len(frozen_items)

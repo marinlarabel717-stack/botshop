@@ -56,6 +56,7 @@ from mongo import (
 from account_health_check import check_account_inventory_item_with_ttl_update, get_account_check_runtime_status
 from haopubot import (
     ACCOUNT_CHECK_ENABLED,
+    ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS,
     ACCOUNT_CHECK_SUPPORTED_TYPES,
     ACCOUNT_CHECK_TIMEOUT_SECONDS,
     ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS,
@@ -67,6 +68,7 @@ from haopubot import (
     build_delivery_zip,
     create_delivery_order_id,
     find_existing_storage_path,
+    format_account_check_elapsed,
     get_buy_notice_text,
     get_message_storage_text,
     get_source_admin_user_ids,
@@ -898,17 +900,32 @@ def build_purchase_status_text(config: AgentRuntimeConfig, status: str, user_id:
     return mapping.get(status, f'下单失败：{status}')
 
 
-def build_agent_account_check_progress_text(config: AgentRuntimeConfig, total_count: int, checked_count: int, alive_count: int, invalid_count: int, frozen_count: int, timeout_count: int, user_id: int) -> str:
+def build_agent_account_check_progress_text(config: AgentRuntimeConfig, total_count: int, checked_count: int, alive_count: int, invalid_count: int, frozen_count: int, timeout_count: int, user_id: int, in_progress_count: int = 0, queued_count: int = 0, elapsed_seconds: float | None = None) -> str:
     lang = get_agent_lang(config, user_id=user_id)
+    elapsed_text = format_account_check_elapsed(elapsed_seconds)
     if lang == 'en':
-        return (
-            '[emoji:6237934454019461140:🧠]Logging in and updating 24-month delete-after-inactive setting, please wait...\n\n'
-            f'Checked: {checked_count} / {total_count}'
-        )
-    return (
-        '[emoji:6237934454019461140:🧠]正在检测账号状态 请稍等\n\n'
-        f'已检测：{checked_count} / {total_count}'
-    )
+        lines = [
+            '[emoji:6237934454019461140:🧠]Logging in and updating 24-month delete-after-inactive setting, please wait...',
+            '',
+            f'Checked: {checked_count} / {total_count}',
+            f'In progress: {max(0, int(in_progress_count or 0))}',
+        ]
+        if queued_count > 0:
+            lines.append(f'Queued: {queued_count}')
+        if elapsed_seconds is not None:
+            lines.append(f'Elapsed: {elapsed_text}')
+        return '\n'.join(lines)
+    lines = [
+        '[emoji:6237934454019461140:🧠]正在检测账号状态 请稍等',
+        '',
+        f'已检测：{checked_count} / {total_count}',
+        f'检测中：{max(0, int(in_progress_count or 0))}',
+    ]
+    if queued_count > 0:
+        lines.append(f'排队中：{queued_count}')
+    if elapsed_seconds is not None:
+        lines.append(f'已用时：{elapsed_text}')
+    return '\n'.join(lines)
 
 
 def summarize_agent_check_reason(reason: str, limit: int = 120) -> str:
@@ -1085,6 +1102,14 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
     if use_account_check:
         progress_message = await send_rendered(context.bot, user_id, build_agent_account_check_progress_text(config, total_count, 0, 0, 0, 0, 0, user_id))
         checked_count = 0
+        progress_started_at = time.monotonic()
+        progress_state = {
+            'running_count': 0,
+            'alive_count': 0,
+            'invalid_count': 0,
+            'frozen_count': 0,
+            'timeout_count': 0,
+        }
         last_progress_ts = 0.0
         first_invalid_reason = ''
         first_invalid_entry_type = ''
@@ -1093,6 +1118,36 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
         first_frozen_entry_type = ''
         first_frozen_path = ''
         semaphore = asyncio.Semaphore(get_agent_account_check_concurrency(total_count))
+
+        async def push_progress(force: bool = False):
+            nonlocal last_progress_ts
+            if progress_message is None:
+                return
+            now_ts = time.monotonic()
+            if not force and now_ts - last_progress_ts < ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS:
+                return
+            running_count = max(0, int(progress_state['running_count']))
+            queued_count = max(0, total_count - checked_count - running_count)
+            try:
+                rendered_text, entities = render_text(
+                    build_agent_account_check_progress_text(
+                        config,
+                        total_count,
+                        checked_count,
+                        progress_state['alive_count'],
+                        progress_state['invalid_count'],
+                        progress_state['frozen_count'],
+                        progress_state['timeout_count'],
+                        user_id,
+                        in_progress_count=running_count,
+                        queued_count=queued_count,
+                        elapsed_seconds=now_ts - progress_started_at,
+                    )
+                )
+                await context.bot.edit_message_text(chat_id=user_id, message_id=progress_message.message_id, text=rendered_text, entities=entities)
+            except Exception:
+                logger.warning('update agent account-check progress failed: tenant=%s order=%s', config.agent_bot_id, order_id, exc_info=True)
+            last_progress_ts = now_ts
 
         async def run_agent_check(item: dict):
             projectname = str(item.get('projectname') or '')
@@ -1113,10 +1168,13 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
             while True:
                 attempts += 1
                 async with semaphore:
+                    progress_state['running_count'] += 1
                     try:
                         check_result = await asyncio.to_thread(check_account_inventory_item_with_ttl_update, entry_type, str(target_path), ACCOUNT_CHECK_TIMEOUT_SECONDS)
                     except Exception as exc:
                         check_result = {'status': 'timeout', 'reason': str(exc) or exc.__class__.__name__}
+                    finally:
+                        progress_state['running_count'] = max(0, progress_state['running_count'] - 1)
                 if check_result.get('status') != 'timeout':
                     break
                 if attempts > AGENT_ACCOUNT_CHECK_MAX_RETRIES:
@@ -1141,68 +1199,77 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
             check_result['max_retries'] = AGENT_ACCOUNT_CHECK_MAX_RETRIES
             return item, projectname, check_result
 
-        tasks = [asyncio.create_task(run_agent_check(item)) for item in selected_docs]
+        pending_tasks = {asyncio.create_task(run_agent_check(item)) for item in selected_docs}
         try:
-            for future in asyncio.as_completed(tasks):
-                item, projectname, check_result = await future
-                checked_count += 1
-                reason_text = str(check_result.get('reason', '') or '')
-                attempts = int(check_result.get('attempts', 1) or 1)
-                if check_result.get('status') == 'timeout' and attempts > 1:
-                    reason_text = f'{reason_text} | retries={attempts - 1}'.strip(' |')
-                logger.warning(
-                    'agent ttl-check result: tenant=%s order=%s hbid=%s project=%s entry_type=%s status=%s attempts=%s path=%s reason=%s',
-                    config.agent_bot_id,
-                    order_id,
-                    item.get('hbid'),
-                    projectname,
-                    check_result.get('entry_type') or '',
-                    check_result.get('status', 'timeout'),
-                    attempts,
-                    check_result.get('path') or '',
-                    reason_text,
+            while pending_tasks:
+                done_tasks, pending_tasks = await asyncio.wait(
+                    pending_tasks,
+                    timeout=ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS,
+                    return_when=asyncio.FIRST_COMPLETED,
                 )
-                hb.update_one(
-                    {'_id': item.get('_id')},
-                    {'$set': {
-                        'delivery_check_state': check_result.get('status', 'timeout'),
-                        'delivery_check_reason': reason_text[:500],
-                        'delivery_check_timer': beijing_now_str(),
-                    }}
-                )
-                meta = {'hbid': item.get('hbid'), 'projectname': projectname, 'status': check_result.get('status', 'timeout'), 'reason': reason_text, 'attempts': attempts}
-                status = check_result.get('status')
-                if status == 'alive':
-                    alive_items.append(item)
-                elif status == 'invalid':
-                    if not first_invalid_reason and reason_text:
-                        first_invalid_reason = reason_text
-                        first_invalid_entry_type = str(check_result.get('entry_type') or '')
-                        first_invalid_path = str(check_result.get('path') or '')
-                    invalid_items.append(archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, meta))
-                elif status == 'frozen':
-                    if not first_frozen_reason and reason_text:
-                        first_frozen_reason = reason_text
-                        first_frozen_entry_type = str(check_result.get('entry_type') or '')
-                        first_frozen_path = str(check_result.get('path') or '')
-                    frozen_items.append(archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, meta))
-                else:
-                    timeout_items.append(item)
+                if not done_tasks:
+                    await push_progress(force=True)
+                    continue
+                for future in done_tasks:
+                    item, projectname, check_result = await future
+                    checked_count += 1
+                    reason_text = str(check_result.get('reason', '') or '')
+                    attempts = int(check_result.get('attempts', 1) or 1)
+                    if check_result.get('status') == 'timeout' and attempts > 1:
+                        reason_text = f'{reason_text} | retries={attempts - 1}'.strip(' |')
+                    logger.warning(
+                        'agent ttl-check result: tenant=%s order=%s hbid=%s project=%s entry_type=%s status=%s attempts=%s path=%s reason=%s',
+                        config.agent_bot_id,
+                        order_id,
+                        item.get('hbid'),
+                        projectname,
+                        check_result.get('entry_type') or '',
+                        check_result.get('status', 'timeout'),
+                        attempts,
+                        check_result.get('path') or '',
+                        reason_text,
+                    )
+                    hb.update_one(
+                        {'_id': item.get('_id')},
+                        {'$set': {
+                            'delivery_check_state': check_result.get('status', 'timeout'),
+                            'delivery_check_reason': reason_text[:500],
+                            'delivery_check_timer': beijing_now_str(),
+                        }}
+                    )
+                    meta = {'hbid': item.get('hbid'), 'projectname': projectname, 'status': check_result.get('status', 'timeout'), 'reason': reason_text, 'attempts': attempts}
+                    status = check_result.get('status')
+                    if status == 'alive':
+                        alive_items.append(item)
+                        progress_state['alive_count'] += 1
+                    elif status == 'invalid':
+                        if not first_invalid_reason and reason_text:
+                            first_invalid_reason = reason_text
+                            first_invalid_entry_type = str(check_result.get('entry_type') or '')
+                            first_invalid_path = str(check_result.get('path') or '')
+                        invalid_items.append(archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, meta))
+                        progress_state['invalid_count'] += 1
+                    elif status == 'frozen':
+                        if not first_frozen_reason and reason_text:
+                            first_frozen_reason = reason_text
+                            first_frozen_entry_type = str(check_result.get('entry_type') or '')
+                            first_frozen_path = str(check_result.get('path') or '')
+                        frozen_items.append(archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, meta))
+                        progress_state['frozen_count'] += 1
+                    else:
+                        timeout_items.append(item)
+                        progress_state['timeout_count'] += 1
 
-                should_push_progress = (
-                    checked_count == total_count
-                    or checked_count % ACCOUNT_CHECK_PROGRESS_STEP == 0
-                    or time.time() - last_progress_ts >= ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS
-                )
-                if progress_message is not None and should_push_progress:
-                    try:
-                        rendered_text, entities = render_text(build_agent_account_check_progress_text(config, total_count, checked_count, len(alive_items), len(invalid_items), len(frozen_items), len(timeout_items), user_id))
-                        await context.bot.edit_message_text(chat_id=user_id, message_id=progress_message.message_id, text=rendered_text, entities=entities)
-                    except Exception:
-                        logger.warning('update agent account-check progress failed: tenant=%s order=%s', config.agent_bot_id, order_id, exc_info=True)
-                    last_progress_ts = time.time()
+                    should_push_progress = (
+                        checked_count == total_count
+                        or checked_count % ACCOUNT_CHECK_PROGRESS_STEP == 0
+                        or time.monotonic() - last_progress_ts >= ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS
+                        or time.monotonic() - last_progress_ts >= ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS
+                    )
+                    if should_push_progress:
+                        await push_progress(force=True)
         finally:
-            for task in tasks:
+            for task in pending_tasks:
                 if not task.done():
                     task.cancel()
     else:
