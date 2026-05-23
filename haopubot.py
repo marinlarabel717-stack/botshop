@@ -45,6 +45,16 @@ from pymongo.errors import DuplicateKeyError
 BASE_DIR = Path(__file__).resolve().parent
 VERSION_FILE = BASE_DIR / 'VERSION'
 
+TELEGRAM_TRANSIENT_WINDOW_SECONDS = 120
+TELEGRAM_TRANSIENT_OPEN_THRESHOLD = 12
+TELEGRAM_TRANSIENT_COOLDOWN_SECONDS = 180
+TELEGRAM_TRANSIENT_LOG_SUPPRESS_SECONDS = 30
+
+_telegram_transient_lock = threading.Lock()
+_telegram_transient_events = []
+_telegram_transient_cooldown_until = 0.0
+_telegram_transient_last_log_at = {}
+
 
 def _configured_storage_roots(folder_name):
     folder_name = str(folder_name or '').strip()
@@ -1687,11 +1697,69 @@ def send_key_save_success_notice(context, chat_id):
     )
 
 
+def _prune_telegram_transient_events(now):
+    global _telegram_transient_events
+    _telegram_transient_events = [ts for ts in _telegram_transient_events if now - ts <= TELEGRAM_TRANSIENT_WINDOW_SECONDS]
+
+
+def note_telegram_transient_error(label, exc):
+    global _telegram_transient_cooldown_until
+    now = time.monotonic()
+    open_notice = None
+    should_log_error = False
+
+    with _telegram_transient_lock:
+        _prune_telegram_transient_events(now)
+        _telegram_transient_events.append(now)
+        error_count = len(_telegram_transient_events)
+
+        if error_count >= TELEGRAM_TRANSIENT_OPEN_THRESHOLD and now >= _telegram_transient_cooldown_until:
+            _telegram_transient_cooldown_until = now + TELEGRAM_TRANSIENT_COOLDOWN_SECONDS
+            open_notice = (error_count, TELEGRAM_TRANSIENT_WINDOW_SECONDS, TELEGRAM_TRANSIENT_COOLDOWN_SECONDS)
+
+        last_log_at = _telegram_transient_last_log_at.get(label, 0.0)
+        if now - last_log_at >= TELEGRAM_TRANSIENT_LOG_SUPPRESS_SECONDS:
+            _telegram_transient_last_log_at[label] = now
+            should_log_error = True
+
+    if open_notice:
+        count, window_seconds, cooldown_seconds = open_notice
+        logging.warning(
+            'Telegram transient circuit opened after %s errors in %ss; optional sends/deletes will cool down for %ss',
+            count,
+            window_seconds,
+            cooldown_seconds,
+        )
+
+    if should_log_error:
+        logging.warning('Telegram transient error on %s: %s', label, exc)
+
+
+def should_skip_optional_telegram_action(label):
+    now = time.monotonic()
+    should_log_skip = False
+    remaining_seconds = 0
+    with _telegram_transient_lock:
+        if now >= _telegram_transient_cooldown_until:
+            return False
+        remaining_seconds = max(1, int(_telegram_transient_cooldown_until - now))
+        last_log_at = _telegram_transient_last_log_at.get(f'{label}:skip', 0.0)
+        if now - last_log_at >= TELEGRAM_TRANSIENT_LOG_SUPPRESS_SECONDS:
+            _telegram_transient_last_log_at[f'{label}:skip'] = now
+            should_log_skip = True
+
+    if should_log_skip:
+        logging.warning('Telegram transient circuit active, skip optional %s for %ss', label, remaining_seconds)
+    return True
+
+
 def safe_send_message(context, chat_id, text='', **kwargs):
+    if should_skip_optional_telegram_action('send_message'):
+        return None
     try:
         return context.bot.send_message(chat_id=chat_id, text=text or '', **kwargs)
     except (TimedOut, NetworkError) as exc:
-        logging.warning('Telegram transient error on send_message: %s', exc)
+        note_telegram_transient_error('send_message', exc)
         return None
     except BadRequest as exc:
         if 'message is not modified' in str(exc).lower():
@@ -1702,11 +1770,13 @@ def safe_send_message(context, chat_id, text='', **kwargs):
 def safe_delete_message(bot, chat_id, message_id, log_label='delete_message'):
     if not chat_id or not message_id:
         return False
+    if should_skip_optional_telegram_action(log_label):
+        return False
     try:
         bot.delete_message(chat_id=chat_id, message_id=message_id)
         return True
     except (TimedOut, NetworkError) as exc:
-        logging.warning('Telegram transient error on %s: %s', log_label, exc)
+        note_telegram_transient_error(log_label, exc)
         return False
     except BadRequest as exc:
         exc_text = str(exc).lower()
@@ -2032,7 +2102,7 @@ class SyncTelegramProxy:
                         if attempt + 1 < max_attempts:
                             time.sleep(min(3, 1 + attempt))
                             continue
-                        logging.warning('Telegram transient error on %s: %s', target_name, exc)
+                        note_telegram_transient_error(target_name, exc)
                         return None
                 if last_exc is not None:
                     raise last_exc
@@ -2108,7 +2178,7 @@ def sync_job(callback):
 async def global_error_handler(update, context):
     err = context.error
     if isinstance(err, (NetworkError, TimedOut)):
-        logging.warning('Telegram network error: %s', err)
+        note_telegram_transient_error('global_error_handler', err)
         return
     logging.exception('Unhandled bot error', exc_info=err)
 
@@ -9388,10 +9458,12 @@ def textkeyboard(update: Update, context: CallbackContext):
 
 
 def del_message(message):
+    if should_skip_optional_telegram_action('message.delete'):
+        return
     try:
         message.delete()
     except (TimedOut, NetworkError) as exc:
-        logging.warning('Telegram transient error on message.delete: %s', exc)
+        note_telegram_transient_error('message.delete', exc)
     except BadRequest as exc:
         exc_text = str(exc).lower()
         if 'message to delete not found' in exc_text or "message can't be deleted" in exc_text or 'message can\'t be deleted' in exc_text:
