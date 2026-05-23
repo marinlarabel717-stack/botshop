@@ -1699,6 +1699,30 @@ def safe_send_message(context, chat_id, text='', **kwargs):
         raise
 
 
+def safe_delete_message(bot, chat_id, message_id, log_label='delete_message'):
+    if not chat_id or not message_id:
+        return False
+    try:
+        bot.delete_message(chat_id=chat_id, message_id=message_id)
+        return True
+    except (TimedOut, NetworkError) as exc:
+        logging.warning('Telegram transient error on %s: %s', log_label, exc)
+        return False
+    except BadRequest as exc:
+        exc_text = str(exc).lower()
+        if (
+            'message to delete not found' in exc_text
+            or "message can't be deleted" in exc_text
+            or 'message can\'t be deleted' in exc_text
+            or 'message identifier is not specified' in exc_text
+            or 'message id invalid' in exc_text
+        ):
+            return False
+        raise
+    except Forbidden:
+        return False
+
+
 def should_preserve_sign_on_menu_match(sign):
     if not sign:
         return False
@@ -3224,10 +3248,7 @@ def finalize_account_check_message(bot, user_id, progress_message_id, final_text
 
     try:
         send_html_message(bot, user_id, final_text)
-        try:
-            bot.delete_message(chat_id=user_id, message_id=progress_message_id)
-        except Exception:
-            logging.warning('Failed to delete stale account-check progress message for user %s', user_id, exc_info=True)
+        safe_delete_message(bot, user_id, progress_message_id, 'delete_account_check_progress')
         return 'sent'
     except Exception:
         logging.exception('Failed to send account-check completion message for user %s', user_id)
@@ -4442,7 +4463,7 @@ def close(update: Update, context: CallbackContext):
     user_id = query.from_user.id
 
     user.update_one({'user_id': user_id}, {'$set': {'sign': 0}})
-    context.bot.delete_message(chat_id=query.from_user.id, message_id=query.message.message_id)
+    safe_delete_message(context.bot, query.from_user.id, query.message.message_id, 'delete_close_panel_message')
 
 
 def paixurow(update: Update, context: CallbackContext):
@@ -8276,7 +8297,7 @@ def qxdingdan(update: Update, context: CallbackContext):
         {'bianhao': order_id, 'user_id': user_id, 'state': TOPUP_STATE_PENDING},
         {'$set': {'state': TOPUP_STATE_CANCELED, 'canceled_timer': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()), 'cancel_reason': 'user_canceled'}}
     )
-    context.bot.delete_message(chat_id=query.from_user.id, message_id=query.message.message_id)
+    safe_delete_message(context.bot, query.from_user.id, query.message.message_id, 'delete_cancel_topup_message')
 
 
 def okpay_paid(update: Update, context: CallbackContext):
@@ -8517,10 +8538,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                     if is_number(text):
                         del_message(update.message)
                         del_message_id = sign.replace('okzdycz ', '')
-                        try:
-                            context.bot.deleteMessage(chat_id=user_id, message_id=del_message_id)
-                        except:
-                            pass
+                        safe_delete_message(context.bot, user_id, del_message_id, 'delete_okpay_custom_amount_prompt')
                         money = float(text)
                         user.update_one({'user_id': user_id}, {"$set": {"sign": 0}})
                         create_okpay_deposit_order(context, user_id, money)
@@ -8533,10 +8551,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                     if is_number(text):
                         del_message(update.message)
                         del_message_id = sign.replace('zdycz ', '')
-                        try:
-                            context.bot.deleteMessage(chat_id=user_id, message_id=del_message_id)
-                        except:
-                            pass
+                        safe_delete_message(context.bot, user_id, del_message_id, 'delete_trc20_custom_amount_prompt')
                         money = float(text)
                         user.update_one({'user_id': user_id}, {"$set": {"sign": 0}})
                         create_trc20_deposit_order(context, user_id, money)
@@ -8552,10 +8567,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                     data = sign.replace('gmqq ', '')
                     nowuid = data.split(':')[0]
                     del_message_id = data.split(':')[1]
-                    try:
-                        context.bot.deleteMessage(chat_id=user_id, message_id=del_message_id)
-                    except:
-                        pass
+                    safe_delete_message(context.bot, user_id, del_message_id, 'delete_buy_prompt_message')
 
                     ejfl_list = ejfl.find_one({'nowuid': nowuid})
                     projectname = ejfl_list['projectname']
@@ -9378,8 +9390,15 @@ def textkeyboard(update: Update, context: CallbackContext):
 def del_message(message):
     try:
         message.delete()
-    except:
-        pass
+    except (TimedOut, NetworkError) as exc:
+        logging.warning('Telegram transient error on message.delete: %s', exc)
+    except BadRequest as exc:
+        exc_text = str(exc).lower()
+        if 'message to delete not found' in exc_text or "message can't be deleted" in exc_text or 'message can\'t be deleted' in exc_text:
+            return
+        raise
+    except Forbidden:
+        return
 
 
 def standard_num(num):
@@ -9453,10 +9472,7 @@ def jiexi(context: CallbackContext):
 
 [emoji:5445353829304387411:💳] 当前余额：<code>{now_price} USDT</code>
             '''
-            try:
-                context.bot.delete_message(chat_id=user_id, message_id=message_id)
-            except:
-                pass
+            safe_delete_message(context.bot, user_id, message_id, 'delete_recharge_success_message')
             try:
                 context.bot.send_message(chat_id=user_id, text=text,
                                          reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
@@ -9511,10 +9527,7 @@ def jianceguoqi(context: CallbackContext):
                                                       reply_markup=InlineKeyboardMarkup(keyboard))
                     elif i.get('type') == 'trc20':
                         if message_id:
-                            try:
-                                context.bot.delete_message(chat_id=user_id, message_id=message_id)
-                            except Exception:
-                                pass
+                            safe_delete_message(context.bot, user_id, message_id, 'delete_expired_trc20_order_message')
                         context.bot.send_message(
                             chat_id=user_id,
                             text='❌ TRC20充值订单已超时失效，请重新创建订单。\n\n超过 10 分钟后再转账，将不会自动到账。',
