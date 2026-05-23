@@ -1687,6 +1687,18 @@ def send_key_save_success_notice(context, chat_id):
     )
 
 
+def safe_send_message(context, chat_id, text='', **kwargs):
+    try:
+        return context.bot.send_message(chat_id=chat_id, text=text or '', **kwargs)
+    except (TimedOut, NetworkError) as exc:
+        logging.warning('Telegram transient error on send_message: %s', exc)
+        return None
+    except BadRequest as exc:
+        if 'message is not modified' in str(exc).lower():
+            return None
+        raise
+
+
 def should_preserve_sign_on_menu_match(sign):
     if not sign:
         return False
@@ -9043,7 +9055,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                             hbid = generate_24bit_uid()
                             shangchuanhaobao('直登号',uid, nowuid, hbid, extracted_folder_name, timer)
 
-                    update.message.reply_text(f'解压并处理完成！本次上传了{count}个号')
+                    safe_send_message(context, user_id, f'解压并处理完成！本次上传了{count}个号')
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                     notify_restock_if_needed(context, nowuid, previous_stock, count)
 
@@ -9063,7 +9075,7 @@ def textkeyboard(update: Update, context: CallbackContext):
 库存: {kc}
 已售: {ys}
                     '''
-                    context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
+                    safe_send_message(context, user_id, fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
                 elif 'update_gg' in sign:
                     nowuid = sign.replace('update_gg ', '')
@@ -9224,7 +9236,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                     for i in tj_dict:
                         count += 1
 
-                    update.message.reply_text(f'解压并处理完成！本次上传了{count}个协议号')
+                    safe_send_message(context, user_id, f'解压并处理完成！本次上传了{count}个协议号')
 
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                     notify_restock_if_needed(context, nowuid, previous_stock, count)
@@ -9245,7 +9257,7 @@ def textkeyboard(update: Update, context: CallbackContext):
 库存: {kc}
 已售: {ys}
                     '''
-                    context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
+                    safe_send_message(context, user_id, fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
             else:
                 caption = update.message.caption or ''
