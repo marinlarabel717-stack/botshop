@@ -180,10 +180,27 @@ TRANSLATION_EXACT_FALLBACKS = {
         '请输入OKPay充值金额': 'Please enter the OKPay recharge amount',
         '请输入数字': 'Please enter a number',
         '确认购买✅': 'Confirm ✅',
+        '全新注册 | 一手协议号（session+json）': 'NEW | Fresh Session (session+json)',
+        '全新注册 | 一手协议号(session+json)': 'NEW | Fresh Session (session+json)',
+        '全球TG | 二次协议号（session+json）': 'Global TG | Secondary (session+json)',
+        '全球TG | 二次协议号(session+json)': 'Global TG | Secondary (session+json)',
+        '【1-8年】老协议号（session+json）': '[1-8Y] Old Protocol (session+json)',
+        '【1-8年】老协议号(session+json)': '[1-8Y] Old Protocol (session+json)',
+        'TG周会员号 | 凭证 接预定': 'TG Premium | Voucher Presale',
+        'TG周会员号｜凭证 接预定': 'TG Premium | Voucher Presale',
     }
 }
 TRANSLATION_REPLACEMENT_FALLBACKS = {
     'en': OrderedDict([
+        ('【1-8年】', '[1-8Y] '),
+        ('（session+json）', ' (session+json)'),
+        ('全新注册', 'NEW'),
+        ('一手协议号', 'Fresh Session'),
+        ('全球TG', 'Global TG'),
+        ('二次协议号', 'Secondary'),
+        ('老协议号', 'Old Protocol'),
+        ('TG周会员号', 'TG Premium'),
+        ('凭证 接预定', 'Voucher Presale'),
         ('欢迎使用号铺机器人', 'Welcome to BotShop'),
         ('点击命令打开菜单', 'Tap the command to open the menu'),
         ('请选择充值方式', 'Please choose a recharge method'),
@@ -234,7 +251,7 @@ TRANSLATION_UI_TEXTS = {
     },
     'category_list_text': {
         'zh': '<b>🛒这是商品列表  选择你需要的商品：\n\n❗️没使用过的本店商品的，请先少量购买测试，以免造成不必要的争执！谢谢合作！\n\n❗️账户放久难免会死，有差异，请联系客服售后！望理解！</b>',
-        'en': '<b>🛒 Product Catalog — choose what you need:\n\n❗️If this is your first time buying this item, please place a small test order first to avoid unnecessary disputes. Thank you.\n\n❗️Accounts may change over time. If there is any issue, please contact support.</b>'
+        'en': '<b>🛒 Product Catalog\n\n❗️New item? Place a small test order first.\n\n❗️Accounts may change over time. Contact support if needed.</b>'
     },
     'category_empty_text': {
         'zh': '<b>⚠️ 当前这个分类暂时没有库存\n\n你可以返回上一层看看其他商品，或者稍后再来。</b>',
@@ -5889,7 +5906,9 @@ def catejflsp(update: Update, context: CallbackContext):
     keyboard = []
     for item in product_rows:
         price_text = standard_num(item['money'])
-        button_text = f"{localize_catalog_name(item['projectname'], user_id, lang=lang)} （{item['stock']}） - ${price_text}"
+        catalog_name = localize_catalog_name(item['projectname'], user_id, lang=lang)
+        button_name = shorten_catalog_button_label(catalog_name, lang=lang)
+        button_text = f"{button_name} [{item['stock']}] - ${price_text}"
         keyboard.append([InlineKeyboardButton(button_text, callback_data=f"gmsp {item['nowuid']}:{item['stock']}")])
 
     fstext = get_ui_text('category_list_text', viewer_user_id=user_id)
@@ -6751,6 +6770,17 @@ def localize_catalog_name(value, user_id, lang=None):
     return localize_button_label(str(value or '').strip() or '商品', user_id=user_id, lang=lang)
 
 
+def shorten_catalog_button_label(text, stock_count=None, lang=None):
+    text = re.sub(r'\s+', ' ', str(text or '').strip())
+    lang = normalize_lang_code(lang)
+    max_length = 30 if lang == 'en' else 24
+    suffix = f' [{int(stock_count)}]' if stock_count is not None else ''
+    if len(text) + len(suffix) <= max_length:
+        return f'{text}{suffix}'
+    keep = max(6, max_length - len(suffix) - 1)
+    return f'{text[:keep].rstrip()}…{suffix}'
+
+
 def build_category_catalog_keyboard(user_id):
     lang = get_user_lang(user_id)
     keylist = list(fenlei.find({}, sort=[('row', 1)]))
@@ -6762,7 +6792,8 @@ def build_category_catalog_keyboard(user_id):
         for child in list(ejfl.find({'uid': uid})):
             hsl += len(list(hb.find({'nowuid': child['nowuid'], 'state': 0})))
         projectname = localize_catalog_name(item.get('projectname'), user_id, lang=lang)
-        keyboard[row].append(InlineKeyboardButton(f'{projectname} [ {hsl} ]', callback_data=f'catejflsp {uid}:{hsl}'))
+        button_text = shorten_catalog_button_label(projectname, stock_count=hsl, lang=lang)
+        keyboard[row].append(InlineKeyboardButton(button_text, callback_data=f'catejflsp {uid}:{hsl}'))
     return [row for row in keyboard if row]
 
 
