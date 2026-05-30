@@ -6809,10 +6809,29 @@ def shorten_catalog_button_label(text, stock_count=None, lang=None):
     lang = normalize_lang_code(lang)
     max_length = 30 if lang == 'en' else 24
     suffix = f' [{int(stock_count)}]' if stock_count is not None else ''
-    if len(text) + len(suffix) <= max_length:
-        return f'{text}{suffix}'
-    keep = max(6, max_length - len(suffix) - 1)
-    return f'{text[:keep].rstrip()}…{suffix}'
+    prefix = ''
+    visible_text = text
+
+    emoji_id, alt, emoji_style, rest = parse_dynamic_emoji_prefix(text)
+    if emoji_id:
+        prefix = f'[emoji:{emoji_id}:{alt}'
+        if emoji_style:
+            prefix += f':{emoji_style}'
+        prefix += ']'
+        visible_text = re.sub(r'\s+', ' ', str(rest or '').strip())
+    else:
+        _, emoji_text, clean_text = extract_known_button_icon(text)
+        if emoji_text and text.strip().startswith(emoji_text):
+            prefix = emoji_text
+            visible_text = re.sub(r'\s+', ' ', str(clean_text or '').strip())
+
+    if len(visible_text) + len(suffix) <= max_length:
+        shortened = f'{visible_text}{suffix}'
+    else:
+        keep = max(6, max_length - len(suffix) - 1)
+        shortened = f'{visible_text[:keep].rstrip()}…{suffix}'
+
+    return f'{prefix}{shortened}' if prefix else shortened
 
 
 def build_category_catalog_keyboard(user_id):
