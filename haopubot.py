@@ -236,6 +236,8 @@ TRANSLATION_EXACT_FALLBACKS = {
         '全球TG | 二次协议号(session+json)': 'Global TG | Secondary (session+json)',
         '【1-8年】老协议号（session+json）': '[1-8Y] Old Protocol (session+json)',
         '【1-8年】老协议号(session+json)': '[1-8Y] Old Protocol (session+json)',
+        '【1-8年】协议老号（session+json）': '[1-8Y] Old Protocol (session+json)',
+        '【1-8年】协议老号(session+json)': '[1-8Y] Old Protocol (session+json)',
         'TG周会员号 | 凭证 接预定': 'TG Premium | Voucher Presale',
         'TG周会员号｜凭证 接预定': 'TG Premium | Voucher Presale',
     }
@@ -249,6 +251,7 @@ TRANSLATION_REPLACEMENT_FALLBACKS = {
         ('全球TG', 'Global TG'),
         ('二次协议号', 'Secondary'),
         ('老协议号', 'Old Protocol'),
+        ('协议老号', 'Old Protocol'),
         ('TG周会员号', 'TG Premium'),
         ('凭证 接预定', 'Voucher Presale'),
         ('欢迎使用号铺机器人', 'Welcome to BotShop'),
