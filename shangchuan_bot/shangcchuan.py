@@ -18,6 +18,34 @@ warnings.filterwarnings(
     module=r'zipfile',
 )
 
+
+def patch_zipfile_duplicate_name_warning() -> None:
+    if getattr(zipfile.ZipFile, '_duplicate_name_warning_patched', False):
+        return
+
+    def _writecheck_no_duplicate_warning(self, zinfo):
+        if self.mode not in ('w', 'x', 'a'):
+            raise ValueError("write() requires mode 'w', 'x', or 'a'")
+        if not self.fp:
+            raise ValueError("Attempt to write ZIP archive that was already closed")
+        zipfile._check_compression(zinfo.compress_type)
+        if not self._allowZip64:
+            requires_zip64 = None
+            if len(self.filelist) >= zipfile.ZIP_FILECOUNT_LIMIT:
+                requires_zip64 = 'Files count'
+            elif zinfo.file_size > zipfile.ZIP64_LIMIT:
+                requires_zip64 = 'Filesize'
+            elif zinfo.header_offset > zipfile.ZIP64_LIMIT:
+                requires_zip64 = 'Zipfile size'
+            if requires_zip64:
+                raise zipfile.LargeZipFile(requires_zip64 + ' would require ZIP64 extensions')
+
+    zipfile.ZipFile._writecheck = _writecheck_no_duplicate_warning
+    zipfile.ZipFile._duplicate_name_warning_patched = True
+
+
+patch_zipfile_duplicate_name_warning()
+
 from dotenv import load_dotenv
 from telegram import Bot, InlineKeyboardMarkup, InputFile, Update
 from telegram.ext import (
