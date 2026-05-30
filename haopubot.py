@@ -343,7 +343,11 @@ MOOD_EMOJI_STAR = '[emoji:5220064167356025824:⭐️]'
 MOOD_EMOJI_FAST = '[emoji:5220195537520711716:⚡️]'
 MOOD_EMOJI_FIRE = '[emoji:5220166546491459639:🔥]'
 
-ACCOUNT_CHECK_EMOJI_PROGRESS = '[emoji:5296562641613897196:🕜]'
+ACCOUNT_CHECK_EMOJI_PROGRESS = '⌛'
+ACCOUNT_CHECK_EMOJI_CHECKED = '[emoji:5429381339851796035:✅]'
+ACCOUNT_CHECK_EMOJI_IN_PROGRESS = '[emoji:5834734348884075863:👍]'
+ACCOUNT_CHECK_EMOJI_QUEUED = '[emoji:5255944891082492462:🟥]'
+ACCOUNT_CHECK_EMOJI_ELAPSED = '[emoji:5269337080147748373:⏰]'
 ACCOUNT_CHECK_EMOJI_ALIVE = '[emoji:5260463209562776385:✅]'
 ACCOUNT_CHECK_EMOJI_INVALID = '[emoji:5273914604752216432:❌]'
 ACCOUNT_CHECK_EMOJI_FROZEN = '[emoji:5449449325434266744:❄️]'
@@ -2996,26 +3000,26 @@ def build_account_check_progress_text(total_count, checked_count, alive_count=0,
     elapsed_text = format_account_check_elapsed(elapsed_seconds)
     if lang == 'en':
         lines = [
-            f'<b>{ACCOUNT_CHECK_EMOJI_PROGRESS} Checking account status, please wait...</b>',
+            f'<b>{ACCOUNT_CHECK_EMOJI_PROGRESS}</b>',
             '',
-            f'<b>{ACCOUNT_CHECK_EMOJI_TOTAL} Checked:</b> {checked_count} / {total_count}',
-            f'<b>{ACCOUNT_CHECK_EMOJI_PROGRESS} In progress:</b> {max(0, int(in_progress_count or 0))}',
+            f'<b>{ACCOUNT_CHECK_EMOJI_CHECKED}</b> {checked_count} / {total_count}',
+            f'<b>{ACCOUNT_CHECK_EMOJI_IN_PROGRESS}</b> {max(0, int(in_progress_count or 0))}',
         ]
         if queued_count > 0:
-            lines.append(f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} Queued:</b> {queued_count}')
+            lines.append(f'<b>{ACCOUNT_CHECK_EMOJI_QUEUED}</b> {queued_count}')
         if elapsed_seconds is not None:
-            lines.append(f'<b>{ACCOUNT_CHECK_EMOJI_TOTAL} Elapsed:</b> {elapsed_text}')
+            lines.append(f'<b>{ACCOUNT_CHECK_EMOJI_ELAPSED}</b> {elapsed_text}')
         return '\n'.join(lines)
     lines = [
-        f'<b>{ACCOUNT_CHECK_EMOJI_PROGRESS} 正在检查账号状态，请稍等！</b>',
+        f'<b>{ACCOUNT_CHECK_EMOJI_PROGRESS}</b>',
         '',
-        f'<b>{ACCOUNT_CHECK_EMOJI_TOTAL} 已检测：</b> {checked_count} / {total_count}',
-        f'<b>{ACCOUNT_CHECK_EMOJI_PROGRESS} 检测中：</b> {max(0, int(in_progress_count or 0))}',
+        f'<b>{ACCOUNT_CHECK_EMOJI_CHECKED}</b> {checked_count} / {total_count}',
+        f'<b>{ACCOUNT_CHECK_EMOJI_IN_PROGRESS}</b> {max(0, int(in_progress_count or 0))}',
     ]
     if queued_count > 0:
-        lines.append(f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 排队中：</b> {queued_count}')
+        lines.append(f'<b>{ACCOUNT_CHECK_EMOJI_QUEUED}</b> {queued_count}')
     if elapsed_seconds is not None:
-        lines.append(f'<b>{ACCOUNT_CHECK_EMOJI_TOTAL} 已用时：</b> {elapsed_text}')
+        lines.append(f'<b>{ACCOUNT_CHECK_EMOJI_ELAPSED}</b> {elapsed_text}')
     return '\n'.join(lines)
 
 
