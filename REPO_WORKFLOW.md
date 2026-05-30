@@ -7,8 +7,8 @@
 
 这个仓库已经配置了 `core.hooksPath=.githooks`：
 
-1. **每次 commit 前** 自动把 `VERSION` 的补丁号 `+1`
-2. **每次 commit 后** 自动 `git push origin 当前分支`
+1. **每次 commit 后** 自动 `git push origin 当前分支`
+2. `VERSION` 默认保持不变，只有明确需要时才手动修改
 
 ## 日常更新
 
@@ -21,6 +21,6 @@ git commit -m "你的修改说明"
 
 ## 注意
 
-- 只有 **commit** 才会触发自动版本号和自动推送
+- 只有 **commit** 才会触发自动推送
 - 单纯改文件但不 commit，不会自动推送
 - `.env` 已被 `.gitignore` 忽略，不会上传你的密钥
