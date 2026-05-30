@@ -4093,6 +4093,39 @@ def backgmjl(update: Update, context: CallbackContext):
                             disable_web_page_preview=True)
 
 
+def resolve_purchase_record_file_path(record_path, leixing=None):
+    record_path = str(record_path or '').strip()
+    if not record_path:
+        return None
+
+    candidate = Path(record_path).expanduser()
+    if candidate.exists() and candidate.is_file():
+        return candidate
+
+    file_name = candidate.name
+    if not file_name:
+        return None
+
+    folder_candidates = []
+    leixing = str(leixing or '').strip()
+    if leixing == '协议号':
+        folder_candidates.append('协议号发货')
+    elif leixing == '直登号':
+        folder_candidates.append('发货')
+    elif leixing == '谷歌':
+        folder_candidates.append('谷歌发货')
+    elif leixing == 'API链接':
+        folder_candidates.append('手机接码发货')
+
+    folder_candidates.extend(['协议号发货', '发货', '谷歌发货', '手机接码发货'])
+
+    for folder_name in unique_preserve_order(folder_candidates):
+        resolved = find_existing_storage_path(folder_name, file_name)
+        if resolved.exists() and resolved.is_file():
+            return resolved
+    return None
+
+
 def zcfshuo(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
@@ -4116,8 +4149,23 @@ def zcfshuo(update: Update, context: CallbackContext):
         keyboard = [[InlineKeyboardButton(translate_text('✅已读（点击销毁此消息）', lang), callback_data=f'close {user_id}')]]
         context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML', disable_web_page_preview=True,
                                  reply_markup=InlineKeyboardMarkup(keyboard))
+        resolved_path = resolve_purchase_record_file_path(zip_filename, leixing=leixing)
+        if not resolved_path:
+            missing_text = '该订单的发货文件已不在本地，请联系客服处理。'
+            if lang == 'en':
+                missing_text = 'The delivery file for this order is no longer available locally. Please contact support.'
+            context.bot.send_message(chat_id=user_id, text=missing_text)
+            logging.warning(
+                'purchase history document missing: bianhao=%s user_id=%s leixing=%s raw_path=%s',
+                bianhao,
+                user_id,
+                leixing,
+                zip_filename,
+            )
+            return
 
-        query.message.reply_document(open(zip_filename, "rb"))
+        with open(resolved_path, "rb") as document_fp:
+            query.message.reply_document(document_fp)
 
 
 USER_LIST_PAGE_SIZE = 10
