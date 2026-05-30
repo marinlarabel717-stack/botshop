@@ -107,6 +107,20 @@ def find_existing_storage_path(folder_name, *parts):
         if candidate.exists():
             return candidate
     return candidate_storage_roots(folder_name)[0].joinpath(*[str(part) for part in parts])
+
+
+def unique_preserve_order(values):
+    result = []
+    seen = set()
+    for value in values or []:
+        key = str(value)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(value)
+    return result
+
+
 try:
     APP_VERSION = VERSION_FILE.read_text(encoding='utf-8').strip()
 except Exception:
@@ -3224,6 +3238,8 @@ def build_delivery_zip(leixing, user_id, nowuid, entry_names):
     shijiancuo = int(time.time())
     missing_entries = []
     added_files = 0
+    entry_names = unique_preserve_order(entry_names)
+    archived_names = set()
     if leixing == '协议号':
         zip_filename = find_existing_storage_path('协议号发货', f'{user_id}_{shijiancuo}.zip')
         zip_filename.parent.mkdir(parents=True, exist_ok=True)
@@ -3234,7 +3250,19 @@ def build_delivery_zip(leixing, user_id, nowuid, entry_names):
                     missing_entries.append(str(file_name))
                     continue
                 for source_path in source_paths:
-                    zipf.write(source_path, source_path.name)
+                    arcname = source_path.name
+                    if arcname in archived_names:
+                        logging.warning(
+                            'skip duplicate delivery archive member: leixing=%s nowuid=%s user_id=%s arcname=%s entry=%s',
+                            leixing,
+                            nowuid,
+                            user_id,
+                            arcname,
+                            file_name,
+                        )
+                        continue
+                    zipf.write(source_path, arcname)
+                    archived_names.add(arcname)
                     added_files += 1
         return zip_filename, added_files, missing_entries
 
@@ -3248,7 +3276,19 @@ def build_delivery_zip(leixing, user_id, nowuid, entry_names):
                 continue
             full_folder_path = find_existing_storage_path('号包', nowuid, folder_name)
             for file_path in source_paths:
-                zipf.write(file_path, os.path.join(str(folder_name), os.path.relpath(file_path, full_folder_path)))
+                arcname = os.path.join(str(folder_name), os.path.relpath(file_path, full_folder_path))
+                if arcname in archived_names:
+                    logging.warning(
+                        'skip duplicate delivery archive member: leixing=%s nowuid=%s user_id=%s arcname=%s entry=%s',
+                        leixing,
+                        nowuid,
+                        user_id,
+                        arcname,
+                        folder_name,
+                    )
+                    continue
+                zipf.write(file_path, arcname)
+                archived_names.add(arcname)
                 added_files += 1
     return zip_filename, added_files, missing_entries
 
@@ -8326,19 +8366,11 @@ def qchuall(update: Update, context: CallbackContext):
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
             hb.delete_one({'hbid': hbid})
             folder_names.append(projectname)
-        shijiancuo = int(time.time())
-        zip_filename = f"./协议号发货/{user_id}_{shijiancuo}.zip"
-        with zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED) as zipf:
-            # 将每个文件及其内容添加到 zip 文件中
-            for file_name in folder_names:
-                # 检查是否存在以 .json 或 .session 结尾的文件
-                json_file_path = os.path.join(f"./协议号/{nowuid}", file_name + ".json")
-                session_file_path = os.path.join(f"./协议号/{nowuid}", file_name + ".session")
-                if os.path.exists(json_file_path):
-                    zipf.write(json_file_path, os.path.basename(json_file_path))
-                if os.path.exists(session_file_path):
-                    zipf.write(session_file_path, os.path.basename(session_file_path))
-        query.message.reply_document(open(zip_filename, "rb"))
+        zip_filename, added_files, _ = build_delivery_zip(fhtype, user_id, nowuid, folder_names)
+        if added_files > 0:
+            query.message.reply_document(open(zip_filename, "rb"))
+        else:
+            query.message.reply_text("这批库存文件没找到，暂时没法发货。")
 
     elif fhtype == 'API':
         for j in list(hb.find({"nowuid": nowuid, 'state': 0})):
@@ -8399,25 +8431,11 @@ def qchuall(update: Update, context: CallbackContext):
             hb.delete_one({'hbid': hbid})
             folder_names.append(projectname)
 
-        shijiancuo = int(time.time())
-        zip_filename = f"./发货/{user_id}_{shijiancuo}.zip"
-        with zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED) as zipf:
-            # 将每个文件夹及其内容添加到 zip 文件中
-            for folder_name in folder_names:
-                full_folder_path = os.path.join(f"./号包/{nowuid}", folder_name)
-                if os.path.exists(full_folder_path):
-                    # 添加文件夹及其内容
-                    for root, dirs, files in os.walk(full_folder_path):
-                        for file in files:
-                            file_path = os.path.join(root, file)
-                            # 使用相对路径在压缩包中添加文件，并设置压缩包内部的路径
-                            zipf.write(file_path,
-                                       os.path.join(folder_name, os.path.relpath(file_path, full_folder_path)))
-                else:
-                    # update.message.reply_text(f"文件夹 '{folder_name}' 不存在！")
-                    pass
-
-        query.message.reply_document(open(zip_filename, "rb"))
+        zip_filename, added_files, _ = build_delivery_zip(fhtype, user_id, nowuid, folder_names)
+        if added_files > 0:
+            query.message.reply_document(open(zip_filename, "rb"))
+        else:
+            query.message.reply_text("这批库存文件没找到，暂时没法发货。")
 
     ej_list = ejfl.find_one({'nowuid': nowuid})
     uid = ej_list['uid']
