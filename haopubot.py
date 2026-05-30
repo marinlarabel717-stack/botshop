@@ -6932,7 +6932,7 @@ def shorten_catalog_button_label(text, stock_count=None, lang=None):
     text = re.sub(r'\s+', ' ', str(text or '').strip())
     lang = normalize_lang_code(lang)
     max_length = 46 if lang == 'en' else 40
-    suffix = f' [{int(stock_count)}]' if stock_count is not None else ''
+    suffix = f' （{int(stock_count)}）' if stock_count is not None else ''
     prefix = ''
     visible_text = text
 
