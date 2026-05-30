@@ -6931,7 +6931,7 @@ def localize_catalog_name(value, user_id, lang=None):
 def shorten_catalog_button_label(text, stock_count=None, lang=None):
     text = re.sub(r'\s+', ' ', str(text or '').strip())
     lang = normalize_lang_code(lang)
-    max_length = 30 if lang == 'en' else 24
+    max_length = 46 if lang == 'en' else 40
     suffix = f' [{int(stock_count)}]' if stock_count is not None else ''
     prefix = ''
     visible_text = text
@@ -6949,11 +6949,33 @@ def shorten_catalog_button_label(text, stock_count=None, lang=None):
             prefix = emoji_text
             visible_text = re.sub(r'\s+', ' ', str(clean_text or '').strip())
 
+    visible_text = visible_text.strip()
     if len(visible_text) + len(suffix) <= max_length:
         shortened = f'{visible_text}{suffix}'
     else:
         keep = max(6, max_length - len(suffix) - 1)
-        shortened = f'{visible_text[:keep].rstrip()}…{suffix}'
+        bracket_match = re.match(r'^(.*?)(\s*[（(][^）)]*[）)])$', visible_text)
+        if bracket_match:
+            primary_name = bracket_match.group(1).rstrip()
+            bracket_text = bracket_match.group(2).strip()
+            if len(primary_name) + len(suffix) <= max_length:
+                remaining = max_length - len(primary_name) - len(suffix)
+                if remaining > 0:
+                    if len(bracket_text) <= remaining:
+                        shortened = f'{primary_name}{bracket_text}{suffix}'
+                    elif remaining >= 4:
+                        left_bracket = bracket_text[0]
+                        right_bracket = bracket_text[-1]
+                        inner_keep = max(1, remaining - 3)
+                        shortened = f'{primary_name}{left_bracket}{bracket_text[1:1 + inner_keep]}…{right_bracket}{suffix}'
+                    else:
+                        shortened = f'{primary_name}{suffix}'
+                else:
+                    shortened = f'{primary_name}{suffix}'
+            else:
+                shortened = f'{visible_text[:keep].rstrip()}…{suffix}'
+        else:
+            shortened = f'{visible_text[:keep].rstrip()}…{suffix}'
 
     return f'{prefix}{shortened}' if prefix else shortened
 
