@@ -6061,7 +6061,7 @@ def catejflsp(update: Update, context: CallbackContext):
         price_text = standard_num(item['money'])
         catalog_name = localize_catalog_name(item['projectname'], user_id, lang=lang)
         button_name = shorten_catalog_button_label(catalog_name, lang=lang)
-        button_text = f"{button_name} [{item['stock']}] - ${price_text}"
+        button_text = f"{button_name} （{item['stock']}） - ${price_text}"
         keyboard.append([InlineKeyboardButton(button_text, callback_data=f"gmsp {item['nowuid']}:{item['stock']}")])
 
     fstext = get_ui_text('category_list_text', viewer_user_id=user_id)
@@ -6935,7 +6935,7 @@ def shorten_catalog_button_label(text, stock_count=None, lang=None):
     text = re.sub(r'\s+', ' ', str(text or '').strip())
     lang = normalize_lang_code(lang)
     max_length = 46 if lang == 'en' else 40
-    suffix = f' （{int(stock_count)}）' if stock_count is not None else ''
+    suffix = f' [{int(stock_count)}]' if stock_count is not None else ''
     prefix = ''
     visible_text = text
 
