@@ -437,6 +437,7 @@ class ReturnBundle:
         self.duplicate_writer: Optional[zipfile.ZipFile] = None
         self.failed_writer: Optional[zipfile.ZipFile] = None
         self.counts = {'duplicate': 0, 'failed': 0}
+        self._seen_paths = {'duplicate': set(), 'failed': set()}
 
     def __enter__(self):
         self.duplicate_writer = zipfile.ZipFile(self.duplicate_path, 'w', zipfile.ZIP_DEFLATED)
@@ -453,15 +454,36 @@ class ReturnBundle:
         if self.counts['failed'] == 0 and self.failed_path.exists():
             self.failed_path.unlink(missing_ok=True)
 
+    def _unique_rel_path(self, bucket: str, rel_path: str) -> str:
+        rel_path = str(rel_path or '').strip().replace('\\', '/')
+        if not rel_path:
+            rel_path = 'unnamed.bin'
+        path_obj = Path(rel_path)
+        stem = path_obj.stem
+        suffix = path_obj.suffix
+        parent = '' if str(path_obj.parent) in {'', '.'} else f'{path_obj.parent.as_posix()}/'
+        candidate = f'{parent}{path_obj.name}'
+        seen = self._seen_paths[bucket]
+        if candidate not in seen:
+            seen.add(candidate)
+            return candidate
+        index = 2
+        while True:
+            candidate = f'{parent}{stem}__{index}{suffix}'
+            if candidate not in seen:
+                seen.add(candidate)
+                return candidate
+            index += 1
+
     def write_duplicate(self, rel_path: str, data: bytes) -> None:
         if not self.duplicate_writer:
             raise RuntimeError('duplicate bundle not opened')
-        self.duplicate_writer.writestr(rel_path, data)
+        self.duplicate_writer.writestr(self._unique_rel_path('duplicate', rel_path), data)
 
     def write_failed(self, rel_path: str, data: bytes) -> None:
         if not self.failed_writer:
             raise RuntimeError('failed bundle not opened')
-        self.failed_writer.writestr(rel_path, data)
+        self.failed_writer.writestr(self._unique_rel_path('failed', rel_path), data)
 
     def add_duplicate(self, reason: str, rel_path: str, data: bytes) -> None:
         self.counts['duplicate'] += 1
