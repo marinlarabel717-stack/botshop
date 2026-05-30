@@ -788,6 +788,24 @@ def cache_localized_button_result(cache_key, original_text, result, lang, fixed_
     return result
 
 
+def localize_button_body_text(text, user_id=None, lang=None):
+    lang = normalize_lang_code(lang or (get_user_lang(user_id) if user_id is not None else DEFAULT_LANG))
+    source_text = str(text or '')
+    if lang != 'en' or not source_text:
+        return source_text
+
+    localized = localize_dynamic_text_fast(source_text, user_id=user_id, lang=lang)
+    source_has_cjk = contains_cjk(source_text)
+    if not source_has_cjk:
+        return localized
+
+    normalized_source = normalize_menu_text(get_button_match_text(source_text))
+    normalized_localized = normalize_menu_text(get_button_match_text(localized))
+    if contains_cjk(localized) or (normalized_source and normalized_source == normalized_localized):
+        localized = localize_dynamic_text(source_text, user_id=user_id, lang=lang)
+    return localized
+
+
 def localize_button_label(source_text, user_id=None, lang=None):
     lang = normalize_lang_code(lang or (get_user_lang(user_id) if user_id is not None else DEFAULT_LANG))
     fixed_key = get_fixed_frontend_text_key(source_text)
@@ -809,7 +827,7 @@ def localize_button_label(source_text, user_id=None, lang=None):
 
     emoji_id, alt, emoji_style, rest = parse_dynamic_emoji_prefix(body_text)
     if emoji_id:
-        translated_body = strip_button_label_decoration(get_ui_text(fixed_key, lang=lang)) if fixed_key else localize_dynamic_text_fast(rest, user_id=user_id, lang=lang)
+        translated_body = strip_button_label_decoration(get_ui_text(fixed_key, lang=lang)) if fixed_key else localize_button_body_text(rest, user_id=user_id, lang=lang)
         emoji_prefix = f'[emoji:{emoji_id}:{alt}'
         if emoji_style:
             emoji_prefix += f':{emoji_style}'
@@ -819,7 +837,7 @@ def localize_button_label(source_text, user_id=None, lang=None):
 
     known_emoji_id, emoji_text, clean_text = extract_known_button_icon(body_text)
     if emoji_text:
-        translated_body = strip_button_label_decoration(get_ui_text(fixed_key, lang=lang)) if fixed_key else localize_dynamic_text_fast(clean_text, user_id=user_id, lang=lang)
+        translated_body = strip_button_label_decoration(get_ui_text(fixed_key, lang=lang)) if fixed_key else localize_button_body_text(clean_text, user_id=user_id, lang=lang)
         if body_text.strip().startswith(emoji_text):
             result = f'{style_prefix}{emoji_text}{translated_body}'.strip()
             return cache_localized_button_result(cache_key, original_text, result, lang, fixed_key=fixed_key)
@@ -830,7 +848,7 @@ def localize_button_label(source_text, user_id=None, lang=None):
     if fixed_key:
         result = f'{style_prefix}{get_ui_text(fixed_key, lang=lang)}'.strip()
         return cache_localized_button_result(cache_key, original_text, result, lang, fixed_key=fixed_key)
-    result = f'{style_prefix}{localize_dynamic_text_fast(body_text, user_id=user_id, lang=lang)}'.strip()
+    result = f'{style_prefix}{localize_button_body_text(body_text, user_id=user_id, lang=lang)}'.strip()
     return cache_localized_button_result(cache_key, original_text, result, lang, fixed_key=fixed_key)
 
 
