@@ -6188,7 +6188,7 @@ def build_area_code_search_keyboard(results, user_id):
         projectname = localize_catalog_name(item.get('projectname'), user_id)
         money = standard_num(item.get('money', 0))
         stock_count = int(item.get('stock_count') or 0)
-        label = f'{projectname} （{stock_count}） - ${money}'
+        label = f'{projectname} [{stock_count}] - ${money}'
         if len(label) > 60:
             label = label[:57] + '...'
         keyboard.append([InlineKeyboardButton(label, callback_data=f'gmsp {item["nowuid"]}:{stock_count}')])
