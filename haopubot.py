@@ -611,6 +611,10 @@ def get_cached_translation_text(text, target_lang='en'):
     return fallback_text
 
 
+def contains_cjk(text):
+    return bool(re.search(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]', str(text or '')))
+
+
 def get_ui_text(key, viewer_user_id=None, lang=None, **kwargs):
     lang = normalize_lang_code(lang or (get_user_lang(viewer_user_id) if viewer_user_id is not None else DEFAULT_LANG))
     bucket = TRANSLATION_UI_TEXTS.get(key, {})
@@ -6767,7 +6771,15 @@ def build_profile_keyboard(user_id):
 
 
 def localize_catalog_name(value, user_id, lang=None):
-    return localize_button_label(str(value or '').strip() or '商品', user_id=user_id, lang=lang)
+    text = str(value or '').strip() or '商品'
+    lang = normalize_lang_code(lang or get_user_lang(user_id))
+    if lang != 'en':
+        return text
+
+    localized = localize_button_label(text, user_id=user_id, lang=lang)
+    if contains_cjk(localized):
+        localized = localize_dynamic_text(text, user_id=user_id, lang=lang)
+    return localized
 
 
 def shorten_catalog_button_label(text, stock_count=None, lang=None):
