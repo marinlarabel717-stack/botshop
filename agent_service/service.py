@@ -905,26 +905,26 @@ def build_agent_account_check_progress_text(config: AgentRuntimeConfig, total_co
     elapsed_text = format_account_check_elapsed(elapsed_seconds)
     if lang == 'en':
         lines = [
-            '⌛',
+            '⌛ Checking account status, please wait...',
             '',
-            f'[emoji:5429381339851796035:✅] {checked_count} / {total_count}',
-            f'[emoji:5834734348884075863:👍] {max(0, int(in_progress_count or 0))}',
+            f'[emoji:5429381339851796035:✅] Checked: {checked_count} / {total_count}',
+            f'[emoji:5834734348884075863:👍] In progress: {max(0, int(in_progress_count or 0))}',
         ]
         if queued_count > 0:
-            lines.append(f'[emoji:5255944891082492462:🟥] {queued_count}')
+            lines.append(f'[emoji:5255944891082492462:🟥] Queued: {queued_count}')
         if elapsed_seconds is not None:
-            lines.append(f'[emoji:5269337080147748373:⏰] {elapsed_text}')
+            lines.append(f'[emoji:5269337080147748373:⏰] Elapsed: {elapsed_text}')
         return '\n'.join(lines)
     lines = [
-        '⌛',
+        '⌛ 正在检查账号状态，请稍等！',
         '',
-        f'[emoji:5429381339851796035:✅] {checked_count} / {total_count}',
-        f'[emoji:5834734348884075863:👍] {max(0, int(in_progress_count or 0))}',
+        f'[emoji:5429381339851796035:✅] 已检测：{checked_count} / {total_count}',
+        f'[emoji:5834734348884075863:👍] 检测中：{max(0, int(in_progress_count or 0))}',
     ]
     if queued_count > 0:
-        lines.append(f'[emoji:5255944891082492462:🟥] {queued_count}')
+        lines.append(f'[emoji:5255944891082492462:🟥] 排队中：{queued_count}')
     if elapsed_seconds is not None:
-        lines.append(f'[emoji:5269337080147748373:⏰] {elapsed_text}')
+        lines.append(f'[emoji:5269337080147748373:⏰] 已用时：{elapsed_text}')
     return '\n'.join(lines)
 
 
