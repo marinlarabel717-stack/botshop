@@ -13,6 +13,7 @@ from dotenv import load_dotenv, dotenv_values
 import requests
 import urllib.parse
 import html
+import warnings
 from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from multiprocessing import Process
@@ -41,6 +42,13 @@ import zipfile
 from pathlib import Path
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
+
+warnings.filterwarnings(
+    'ignore',
+    message=r'Duplicate name: .*',
+    category=UserWarning,
+    module=r'zipfile',
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 VERSION_FILE = BASE_DIR / 'VERSION'

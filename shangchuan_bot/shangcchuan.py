@@ -5,10 +5,18 @@ import re
 import sys
 import time
 import unicodedata
+import warnings
 import zipfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
+
+warnings.filterwarnings(
+    'ignore',
+    message=r'Duplicate name: .*',
+    category=UserWarning,
+    module=r'zipfile',
+)
 
 from dotenv import load_dotenv
 from telegram import Bot, InlineKeyboardMarkup, InputFile, Update
