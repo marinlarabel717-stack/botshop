@@ -2432,7 +2432,7 @@ def inline_query(update: Update, context: CallbackContext):
                 [InlineKeyboardButton(context.bot.first_name, url=url)]
             ]
             fstext = f'''
-⚠️操作失败，余额不足，💰当前余额：{USDT}U
+⚠️操作失败，余额不足，💰当前余额：{format_usdt_2(USDT)}U
             '''
 
             hyy, entities = get_welcome_content()
@@ -6910,7 +6910,7 @@ def build_user_profile_text(user_id, username, creation_time, zgsl, zgje, balanc
         creation_time=creation_time,
         zgsl=zgsl,
         zgje=standard_num(zgje),
-        USDT=balance,
+        USDT=format_usdt_2(balance),
     )
 
 
@@ -8873,7 +8873,7 @@ def textkeyboard(update: Update, context: CallbackContext):
 
                             return
 
-                        fstext = get_ui_text('purchase_confirm_text', viewer_user_id=user_id, projectname=localize_catalog_name(projectname, user_id), gmsl=gmsl, zxymoney=zxymoney, USDT=USDT)
+                        fstext = get_ui_text('purchase_confirm_text', viewer_user_id=user_id, projectname=localize_catalog_name(projectname, user_id), gmsl=gmsl, zxymoney=zxymoney, USDT=format_usdt_2(USDT))
                         keyboard = [
                             [InlineKeyboardButton(get_ui_text('cancel_trade', viewer_user_id=user_id), callback_data=f'close {user_id}'),
                              InlineKeyboardButton(get_ui_text('confirm_purchase', viewer_user_id=user_id), callback_data=f'qrgaimai {nowuid}:{gmsl}')],
@@ -9689,6 +9689,14 @@ def standard_num(num):
     return value.to_integral() if value == value.to_integral() else value.normalize()
 
 
+def format_usdt_2(value):
+    try:
+        amount = Decimal(str(value or 0)).quantize(Decimal('0.01'))
+    except Exception:
+        return '0.00'
+    return f'{amount:.2f}'
+
+
 def jiexi(context: CallbackContext):
     trc20 = get_trc20_address()
     if not is_valid_trc20_address(trc20):
@@ -9922,7 +9930,7 @@ def build_agent_admin_balance_notice(delta_amount, balance_after):
     delta_amount = float(delta_amount or 0)
     action_text = '通过管理员充值' if delta_amount >= 0 else '通过管理员扣款'
     amount_text = standard_num(abs(delta_amount))
-    balance_text = standard_num(balance_after)
+    balance_text = format_usdt_2(balance_after)
     return f'''
 <b>✅ {action_text}：{amount_text} USDT
 
@@ -10088,14 +10096,14 @@ def adm(update: Update, context: CallbackContext):
             fstext = f'''
 ID: {df_id}
 昵称: {fullname}
-余额: {USDT}
+余额: {format_usdt_2(USDT)}
             '''
             context.bot.send_message(chat_id=chat_id, text=fstext)
 
             fstext = f'''
 <b>✅    通过管理员充值：{money} USDT
 
-💳    您的余额：{USDT}  USDT</b>
+💳    您的余额：{format_usdt_2(USDT)}  USDT</b>
             '''
             context.bot.send_message(chat_id=df_id, text=fstext, parse_mode='HTML')
         else:
@@ -10117,14 +10125,14 @@ ID: {df_id}
             fstext = f'''
 ID: {df_id}
 昵称: {fullname}
-余额: {USDT}
+余额: {format_usdt_2(USDT)}
             '''
             context.bot.send_message(chat_id=chat_id, text=fstext)
 
             fstext = f'''
 <b>✅    通过管理员扣款：{money} USDT
 
-💳    您的余额：{USDT}  USDT</b>
+💳    您的余额：{format_usdt_2(USDT)}  USDT</b>
             '''
             context.bot.send_message(chat_id=df_id, text=fstext, parse_mode='HTML')
         return
