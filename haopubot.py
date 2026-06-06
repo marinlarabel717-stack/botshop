@@ -3447,6 +3447,40 @@ def finalize_account_check_message(bot, user_id, progress_message_id, final_text
         return 'failed'
 
 
+def begin_account_check_progress_message(bot, query, user_id, total_count):
+    progress_text = build_account_check_progress_text(total_count, 0, 0, 0, 0, user_id=user_id)
+    existing_message = getattr(query, 'message', None)
+    if existing_message:
+        try:
+            edit_html_message(bot, user_id, existing_message.message_id, progress_text)
+            return existing_message.message_id, True
+        except Exception:
+            logging.warning('Failed to reuse purchase confirmation message for account-check progress of user %s', user_id, exc_info=True)
+    try:
+        progress_message = send_html_message(bot, user_id, progress_text)
+        return progress_message.message_id, False
+    except Exception:
+        logging.exception('Failed to create account-check progress message for user %s', user_id)
+        if existing_message:
+            return existing_message.message_id, True
+        return None, False
+
+
+def update_account_check_status_message(bot, user_id, progress_message_id, text):
+    if progress_message_id:
+        try:
+            edit_html_message(bot, user_id, progress_message_id, text)
+            return 'edited'
+        except Exception:
+            logging.warning('Failed to update account-check status message for user %s', user_id, exc_info=True)
+    try:
+        send_html_message(bot, user_id, text)
+        return 'sent'
+    except Exception:
+        logging.exception('Failed to send account-check status message for user %s', user_id)
+        return 'failed'
+
+
 def run_single_account_check(leixing, nowuid, item, timeout_seconds):
     projectname = item['projectname']
     check_entry_type, target_path = resolve_inventory_check_target(leixing, nowuid, projectname)
@@ -8070,15 +8104,27 @@ def qrgaimai(update: Update, context: CallbackContext):
         if ACCOUNT_CHECK_ENABLED and fhtype in ACCOUNT_CHECK_SUPPORTED_TYPES and not account_check_runtime.get('ready'):
             runtime_reason = str(account_check_runtime.get('reason', 'account_check_runtime_unavailable'))
         if fhtype == '协议号':
+            progress_message_id = None
+            reused_progress_message = False
+            if use_account_check:
+                progress_message_id, reused_progress_message = begin_account_check_progress_message(context.bot, query, user_id, gmsl)
             order_id = create_delivery_order_id()
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
             selected_docs, charged_user, reserve_state = reserve_inventory_and_charge({'nowuid': nowuid}, gmsl, user_id, order_id, timer, zxymoney)
             if reserve_state == 'stock':
-                context.bot.send_message(chat_id=user_id, text=translate_text('当前库存不足', lang))
+                failure_text = translate_text('当前库存不足', lang)
+                if use_account_check:
+                    update_account_check_status_message(context.bot, user_id, progress_message_id, failure_text)
+                else:
+                    context.bot.send_message(chat_id=user_id, text=failure_text)
                 user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                 return
             if reserve_state == 'balance' or not charged_user:
-                context.bot.send_message(chat_id=user_id, text=translate_text('❌ 余额不足，请及时充值！', lang))
+                failure_text = translate_text('❌ 余额不足，请及时充值！', lang)
+                if use_account_check:
+                    update_account_check_status_message(context.bot, user_id, progress_message_id, failure_text)
+                else:
+                    context.bot.send_message(chat_id=user_id, text=failure_text)
                 user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                 return
             actual_balance = standard_num(charged_user.get('USDT', now_price))
@@ -8103,22 +8149,18 @@ def qrgaimai(update: Update, context: CallbackContext):
                             )
                         except Exception:
                             pass
-            del_message(query.message)
+            if not use_account_check or not reused_progress_message:
+                del_message(query.message)
             folder_names = [doc['projectname'] for doc in selected_docs]
 
             if use_account_check:
-                progress_message = send_html_message(
-                    context.bot,
-                    user_id,
-                    build_account_check_progress_text(gmsl, 0, 0, 0, 0, user_id=user_id)
-                )
                 selected_items = [{'hbid': doc['hbid'], 'projectname': doc['projectname']} for doc in selected_docs]
                 threading.Thread(
                     target=deliver_accounts_with_check,
                     args=[
                         context, user_id, fullname, username, nowuid, erjiprojectname, yijiprojectname, '协议号',
                         selected_items, notice_text, order_id, float(zxymoney) / max(gmsl, 1), zxymoney,
-                        progress_message.message_id
+                        progress_message_id
                     ],
                     daemon=True,
                 ).start()
@@ -8338,15 +8380,27 @@ def qrgaimai(update: Update, context: CallbackContext):
                 except:
                     pass
         else:
+            progress_message_id = None
+            reused_progress_message = False
+            if use_account_check:
+                progress_message_id, reused_progress_message = begin_account_check_progress_message(context.bot, query, user_id, gmsl)
             order_id = create_delivery_order_id()
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
             selected_docs, charged_user, reserve_state = reserve_inventory_and_charge({'nowuid': nowuid}, gmsl, user_id, order_id, timer, zxymoney)
             if reserve_state == 'stock':
-                context.bot.send_message(chat_id=user_id, text=translate_text('当前库存不足', lang))
+                failure_text = translate_text('当前库存不足', lang)
+                if use_account_check:
+                    update_account_check_status_message(context.bot, user_id, progress_message_id, failure_text)
+                else:
+                    context.bot.send_message(chat_id=user_id, text=failure_text)
                 user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                 return
             if reserve_state == 'balance' or not charged_user:
-                context.bot.send_message(chat_id=user_id, text=translate_text('❌ 余额不足，请及时充值！', lang))
+                failure_text = translate_text('❌ 余额不足，请及时充值！', lang)
+                if use_account_check:
+                    update_account_check_status_message(context.bot, user_id, progress_message_id, failure_text)
+                else:
+                    context.bot.send_message(chat_id=user_id, text=failure_text)
                 user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                 return
             actual_balance = standard_num(charged_user.get('USDT', now_price))
@@ -8371,23 +8425,19 @@ def qrgaimai(update: Update, context: CallbackContext):
                             )
                         except Exception:
                             pass
-            del_message(query.message)
+            if not use_account_check or not reused_progress_message:
+                del_message(query.message)
 
             folder_names = [doc['projectname'] for doc in selected_docs]
 
             if use_account_check:
-                progress_message = send_html_message(
-                    context.bot,
-                    user_id,
-                    build_account_check_progress_text(gmsl, 0, 0, 0, 0, user_id=user_id)
-                )
                 selected_items = [{'hbid': doc['hbid'], 'projectname': doc['projectname']} for doc in selected_docs]
                 threading.Thread(
                     target=deliver_accounts_with_check,
                     args=[
                         context, user_id, fullname, username, nowuid, erjiprojectname, yijiprojectname, '直登号',
                         selected_items, notice_text, order_id, float(zxymoney) / max(gmsl, 1), zxymoney,
-                        progress_message.message_id
+                        progress_message_id
                     ],
                     daemon=True,
                 ).start()
