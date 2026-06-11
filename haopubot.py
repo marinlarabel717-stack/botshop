@@ -1330,6 +1330,7 @@ BOT_CLONE_ROOT = os.getenv('BOT_CLONE_ROOT', '/www/wwwroot/botshop-clones').stri
 BOT_CLONE_REPO_URL = os.getenv('BOT_CLONE_REPO_URL', '').strip()
 ACCOUNT_CHECK_ENABLED = parse_env_bool(os.getenv('ACCOUNT_CHECK_ENABLED', 'true'))
 ACCOUNT_CHECK_TIMEOUT_SECONDS = max(5, int(os.getenv('ACCOUNT_CHECK_TIMEOUT_SECONDS', '25') or '25'))
+ACCOUNT_CHECK_MAX_RETRIES = 1
 ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS = max(3, int(os.getenv('ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS', '10') or '10'))
 ACCOUNT_CHECK_PROGRESS_STEP = max(1, int(os.getenv('ACCOUNT_CHECK_PROGRESS_STEP', '3') or '3'))
 ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS = 2.0
@@ -3488,10 +3489,47 @@ def run_single_account_check(leixing, nowuid, item, timeout_seconds):
     if not runtime_status.get('ready'):
         check_result = {
             'status': 'timeout',
-            'reason': f"runtime_not_ready:{runtime_status.get('reason', 'unknown')}"
+            'reason': f"runtime_not_ready:{runtime_status.get('reason', 'unknown')}",
+            'entry_type': check_entry_type,
+            'path': str(target_path),
+            'attempts': 1,
+            'max_retries': ACCOUNT_CHECK_MAX_RETRIES,
         }
     else:
-        check_result = check_account_inventory_item(check_entry_type, str(target_path), timeout_seconds)
+        attempts = 0
+        check_result = {'status': 'timeout', 'reason': 'empty_check_result'}
+        while True:
+            attempts += 1
+            try:
+                check_result = check_account_inventory_item(check_entry_type, str(target_path), timeout_seconds)
+            except Exception as exc:
+                check_result = {'status': 'timeout', 'reason': str(exc) or exc.__class__.__name__}
+            if check_result.get('status') != 'timeout':
+                break
+            if attempts > ACCOUNT_CHECK_MAX_RETRIES:
+                timeout_reason = str(check_result.get('reason', '') or '')
+                check_result = dict(check_result or {})
+                check_result['reason'] = (
+                    f'check_timeout_after_retries:{timeout_reason} | retries={attempts - 1}'
+                    if timeout_reason
+                    else f'check_timeout_after_retries | retries={attempts - 1}'
+                )
+                break
+            logging.warning(
+                'account check timeout, retrying: user=%s hbid=%s project=%s attempt=%s/%s path=%s reason=%s',
+                nowuid,
+                item.get('hbid'),
+                projectname,
+                attempts,
+                ACCOUNT_CHECK_MAX_RETRIES + 1,
+                str(target_path),
+                check_result.get('reason', ''),
+            )
+        check_result = dict(check_result or {})
+        check_result.setdefault('entry_type', check_entry_type)
+        check_result.setdefault('path', str(target_path))
+        check_result['attempts'] = attempts
+        check_result['max_retries'] = ACCOUNT_CHECK_MAX_RETRIES
     return item, projectname, check_result
 
 
