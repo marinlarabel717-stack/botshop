@@ -121,6 +121,17 @@ def get_referral_rate(total_recharge_before):
     return Decimal('0')
 
 
+def get_referral_tier_text(total_recharge_amount):
+    total_recharge_amount = Decimal(str(total_recharge_amount or 0))
+    if total_recharge_amount >= Decimal('1000'):
+        return '1000U+ 档位（5%）'
+    if total_recharge_amount >= Decimal('500'):
+        return '500U+ 档位（3%）'
+    if total_recharge_amount >= Decimal('100'):
+        return '100U+ 档位（1%）'
+    return '未达门槛（0%）'
+
+
 def user_has_recharge_history(user_id):
     if topup.find_one({'user_id': user_id, 'state': TOPUP_STATE_PAID}, {'_id': 1}) is not None:
         return True
@@ -322,9 +333,14 @@ def apply_referral_commission(bot, invitee_user_id, recharge_amount, order_id, s
                             chat_id=inviter_user_id,
                             text=(
                                 f'🎉 推广返佣到账 {format_usdt_2(commission_amount)} USDT\n'
-                                f'下级用户充值：{format_usdt_2(recharge_amount)} USDT\n'
-                                f'返佣比例：{int(rate * 100)}%'
+                                f'下级用户：{invitee_name}{invitee_username_text}\n'
+                                f'本次充值：{format_usdt_2(recharge_amount)} USDT\n'
+                                f'返佣比例：{int(rate * 100)}%\n'
+                                f'下级累计：{format_usdt_2(recharge_after)} USDT\n'
+                                f'当前档位：{get_referral_tier_text(recharge_after)}'
                             ),
+                            parse_mode='HTML',
+                            disable_web_page_preview=True,
                         )
                     except Exception as exc:
                         print(f'推广返佣通知失败: {exc}')
