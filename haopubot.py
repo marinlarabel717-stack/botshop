@@ -10145,10 +10145,41 @@ def jiexi(context: CallbackContext):
             sort=[('created_ts_ms', 1)]
         )
         if dj_list is not None:
+            timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+            claimed_order = topup.find_one_and_update(
+                {'_id': dj_list['_id'], 'state': TOPUP_STATE_PENDING},
+                {'$set': {
+                    'state': TOPUP_STATE_PROCESSING,
+                    'processing_timer': timer,
+                    'processing_amount': float(today_money),
+                    'processing_txid': txid,
+                    'processing_from_address': from_address,
+                    'processing_quant_raw': str(quant)
+                }},
+                return_document=ReturnDocument.BEFORE
+            )
+            if claimed_order is None:
+                continue
+            dj_list = claimed_order
             message_id = dj_list['message_id']
             user_id = dj_list['user_id']
             user_list = user.find_one({'user_id': user_id})
             if user_list is None:
+                topup.update_one(
+                    {'_id': dj_list['_id'], 'state': TOPUP_STATE_PROCESSING},
+                    {'$set': {
+                        'state': TOPUP_STATE_EXPIRED,
+                        'status': -1,
+                        'expired_timer': timer,
+                        'cancel_reason': 'user_not_found'
+                    }, '$unset': {
+                        'processing_timer': '',
+                        'processing_amount': '',
+                        'processing_txid': '',
+                        'processing_from_address': '',
+                        'processing_quant_raw': ''
+                    }}
+                )
                 qukuai.update_one({'txid': txid}, {"$set": {"state": 2, 'reason': 'user_not_found'}})
                 continue
             user_id = user_list['user_id']
@@ -10157,14 +10188,12 @@ def jiexi(context: CallbackContext):
             now_price = standard_num(float(USDT) + float(today_money))
             now_price = float(now_price) if str((now_price)).count('.') > 0 else int(standard_num(now_price))
             keyboard = [[InlineKeyboardButton("✅已读（点击销毁此消息）", callback_data=f'close {user_id}')]]
-            timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
             order_id = dj_list['bianhao']
 
             user_logging(order_id, 'TRC20充值', user_id, float(today_money), timer)
             us_list = user.find_one({"user_id": user_id})
             user.update_one({'user_id': user_id}, {"$set": {'USDT': now_price}})
-            apply_referral_commission(context.bot, user_id, float(today_money), order_id, 'trc20', timer)
-            topup.update_one({'_id': dj_list['_id']}, {'$set': {
+            topup.update_one({'_id': dj_list['_id'], 'state': TOPUP_STATE_PROCESSING}, {'$set': {
                 'state': TOPUP_STATE_PAID,
                 'status': 1,
                 'paid_timer': timer,
@@ -10173,7 +10202,14 @@ def jiexi(context: CallbackContext):
                 'txid': txid,
                 'from_address': from_address,
                 'quant_raw': str(quant)
+            }, '$unset': {
+                'processing_timer': '',
+                'processing_amount': '',
+                'processing_txid': '',
+                'processing_from_address': '',
+                'processing_quant_raw': ''
             }})
+            apply_referral_commission(context.bot, user_id, float(today_money), order_id, 'trc20', timer)
             text = f'''
 <b>[emoji:5193209274452425995:🎉] 恭喜您的充值到账啦！！</b>
 
