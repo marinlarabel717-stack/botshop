@@ -311,6 +311,12 @@ def apply_referral_commission(bot, invitee_user_id, recharge_amount, order_id, s
                     }}
                 )
                 if bot is not None:
+                    inviter_name = html.escape(str(inviter_doc.get('fullname') or inviter_user_id).replace('<', '').replace('>', ''), quote=False)
+                    inviter_username = str(inviter_doc.get('username') or '').strip().lstrip('@')
+                    inviter_username_text = f' @{html.escape(inviter_username, quote=False)}' if inviter_username else ''
+                    invitee_name = html.escape(str(invitee_doc.get('fullname') or invitee_user_id).replace('<', '').replace('>', ''), quote=False)
+                    invitee_username = str(invitee_doc.get('username') or '').strip().lstrip('@')
+                    invitee_username_text = f' @{html.escape(invitee_username, quote=False)}' if invitee_username else ''
                     try:
                         bot.send_message(
                             chat_id=inviter_user_id,
@@ -322,6 +328,17 @@ def apply_referral_commission(bot, invitee_user_id, recharge_amount, order_id, s
                         )
                     except Exception as exc:
                         print(f'推广返佣通知失败: {exc}')
+
+                    admin_notify_text = (
+                        f'ç”¨æˆ·: <a href="tg://user?id={invitee_user_id}">{invitee_name}</a>{invitee_username_text} äº§ç”ŸæŽ¨å¹¿è¿”ä½£\n'
+                        f'ä¸Šçº§: <a href="tg://user?id={inviter_user_id}">{inviter_name}</a>{inviter_username_text}\n'
+                        f'å……å€¼: {format_usdt_2(recharge_amount)} USDT\n'
+                        f'è¿”ä½£: {format_usdt_2(commission_amount)} USDT\n'
+                        f'æ¯”ä¾‹: {int(rate * 100)}%\n'
+                        f'è®¢å•å·: <code>{html.escape(str(order_id), quote=False)}</code>\n'
+                        f'æ¥æº: <code>{html.escape(str(source), quote=False)}</code>'
+                    )
+                    send_admin_topup_notice(bot, admin_notify_text)
 
     commission_logging(
         order_id,
