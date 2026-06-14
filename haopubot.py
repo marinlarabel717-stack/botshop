@@ -161,6 +161,26 @@ def format_user_ref(user_doc):
     return f'{html.escape(fullname or str(user_doc["user_id"]), quote=False)} (<code>{user_doc["user_id"]}</code>)'
 
 
+def build_admin_referral_summary_text(target_user_doc):
+    target_user_doc = ensure_referral_fields(target_user_doc['user_id'])
+    inviter_doc = None
+    inviter_user_id = int(target_user_doc.get('referrer_user_id', 0) or 0)
+    if inviter_user_id:
+        inviter_doc = ensure_referral_fields(inviter_user_id)
+
+    return f'''
+<b>推广关系查询</b>
+
+<b>用户ID:</b> <code>{target_user_doc["user_id"]}</code>
+<b>邀请人:</b> {format_user_ref(inviter_doc)}
+<b>绑定时间:</b> {html.escape(str(target_user_doc.get("ref_bind_time") or "未绑定"), quote=False)}
+
+<b>已邀请人数:</b> {target_user_doc.get("invite_count", 0)}
+<b>累计返佣:</b> {format_usdt_2(target_user_doc.get("invite_commission_total", 0))} USDT
+<b>本人累计有效充值:</b> {format_usdt_2(target_user_doc.get("referred_recharge_total", 0))} USDT
+    '''
+
+
 def build_admin_referral_text(target_user_doc):
     target_user_doc = ensure_referral_fields(target_user_doc['user_id'])
     inviter_doc = None
@@ -175,8 +195,7 @@ def build_admin_referral_text(target_user_doc):
     )
     invitee_preview = []
     for invitee in invitees:
-        invitee_name = html.escape(str(invitee.get('fullname') or invitee.get('user_id') or '').replace('<', '').replace('>', ''), quote=False)
-        invitee_preview.append(f'• {invitee_name} (<code>{invitee["user_id"]}</code>)')
+        invitee_preview.append(f'• {format_user_ref(invitee)}')
     invitee_preview_text = '\n'.join(invitee_preview) if invitee_preview else '• 暂无'
 
     commission_rows = list(
@@ -187,8 +206,10 @@ def build_admin_referral_text(target_user_doc):
     commission_preview = []
     for row in commission_rows:
         percent = int(Decimal(str(row.get('rate', 0) or 0)) * 100)
+        invitee_doc = ensure_referral_fields(int(row.get('invitee_user_id', 0) or 0))
+        invitee_text = format_user_ref(invitee_doc) if invitee_doc else f'<code>{row["invitee_user_id"]}</code>'
         commission_preview.append(
-            f'• 下级 <code>{row["invitee_user_id"]}</code> 充值 {format_usdt_2(row.get("recharge_amount", 0))}U '
+            f'• 下级 {invitee_text} 充值 {format_usdt_2(row.get("recharge_amount", 0))}U '
             f'返 {format_usdt_2(row.get("commission_amount", 0))}U ({percent}%)'
         )
     commission_preview_text = '\n'.join(commission_preview) if commission_preview else '• 暂无'
@@ -210,6 +231,15 @@ def build_admin_referral_text(target_user_doc):
 <b>最近返佣流水:</b>
 {commission_preview_text}
     '''
+
+
+def build_admin_user_query_keyboard(target_user_id, viewer_user_id):
+    return [
+        [InlineKeyboardButton('🛒购买记录', callback_data=f'gmaijilu {target_user_id}')],
+        [InlineKeyboardButton('🔗推广链接', callback_data=f'tglink {target_user_id}')],
+        [InlineKeyboardButton('👥推广关系', callback_data=f'charef {target_user_id}')],
+        [InlineKeyboardButton('关闭', callback_data=f'close {viewer_user_id}')],
+    ]
 
 
 def bind_referrer_if_possible(user_id, referral_code, timer):
@@ -4408,6 +4438,55 @@ def tglink(update: Update, context: CallbackContext):
         [InlineKeyboardButton('返回个人中心', callback_data=f'backgmjl {df_id}')],
         [InlineKeyboardButton(get_ui_text('close', viewer_user_id=df_id), callback_data=f'close {df_id}')],
     ]
+    query.edit_message_text(
+        text=fstext,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='HTML',
+        disable_web_page_preview=True,
+    )
+
+
+def charef(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    viewer_user_id = query.from_user.id
+    df_id = int(query.data.replace('charef ', ''))
+    target_user_doc = ensure_referral_fields(df_id)
+    if target_user_doc is None:
+        query.edit_message_text(text='用户不存在')
+        return
+    fstext = build_admin_referral_text(target_user_doc)
+    keyboard = [
+        [InlineKeyboardButton('返回查询页', callback_data=f'backcha {df_id}')],
+        [InlineKeyboardButton('关闭', callback_data=f'close {viewer_user_id}')],
+    ]
+    query.edit_message_text(
+        text=fstext,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='HTML',
+        disable_web_page_preview=True,
+    )
+
+
+def backcha(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    viewer_user_id = query.from_user.id
+    df_id = int(query.data.replace('backcha ', ''))
+    df_list = user.find_one({'user_id': df_id})
+    if df_list is None:
+        query.edit_message_text(text='用户不存在')
+        return
+    df_fullname = df_list['fullname']
+    df_username = df_list['username']
+    if df_username is None:
+        df_username = df_fullname
+    creation_time = df_list['creation_time']
+    zgsl = df_list['zgsl']
+    zgje = df_list['zgje']
+    USDT = df_list['USDT']
+    fstext = build_user_profile_text(df_id, df_username, creation_time, zgsl, zgje, USDT)
+    keyboard = build_admin_user_query_keyboard(df_id, viewer_user_id)
     query.edit_message_text(
         text=fstext,
         reply_markup=InlineKeyboardMarkup(keyboard),
@@ -10547,12 +10626,7 @@ def cha(update: Update, context: CallbackContext):
         zgje = df_list['zgje']
         USDT = df_list['USDT']
         fstext = build_user_profile_text(df_id, df_username, creation_time, zgsl, zgje, USDT)
-        fstext = fstext + '\n\n' + build_admin_referral_text(df_list)
-        keyboard = [
-            [InlineKeyboardButton('🛒购买记录', callback_data=f'gmaijilu {df_id}')],
-            [InlineKeyboardButton('🔗推广链接', callback_data=f'tglink {df_id}')],
-            [InlineKeyboardButton('关闭', callback_data=f'close {user_id}')],
-        ]
+        keyboard = build_admin_user_query_keyboard(df_id, user_id)
         context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
                                  reply_markup=InlineKeyboardMarkup(keyboard), disable_web_page_preview=True)
         return
@@ -10646,8 +10720,8 @@ def main():
         ('delejfl ', delejfl), ('qrscejrow ', qrscejrow), ('delcurconfirm ', delcurconfirm), ('delcurejfl ', delcurejfl), ('update_hb ', update_hb), ('gmsp ', gmsp),
         ('upmoney ', upmoney), ('gmqq', gmqq), ('qrgaimai ', qrgaimai),
         ('update_xyh ', update_xyh), ('update_hy ', update_hy), ('yhnext ', yhnext), ('yhlist', yhlist),
-        ('gmaijilu', gmaijilu), ('tglink ', tglink), ('zcfshuo', zcfshuo), ('gmainext ', gmainext), ('update_txt ', update_txt),
-        ('backgmjl ', backgmjl), ('qchuall ', qchuall), ('update_wbts ', update_wbts),
+        ('gmaijilu', gmaijilu), ('tglink ', tglink), ('charef ', charef), ('zcfshuo', zcfshuo), ('gmainext ', gmainext), ('update_txt ', update_txt),
+        ('backgmjl ', backgmjl), ('backcha ', backcha), ('qchuall ', qchuall), ('update_wbts ', update_wbts),
         ('update_gg ', update_gg), ('zdycz', zdycz), ('okzdycz', okzdycz), ('recharge_menu', recharge_menu), ('recharge_trc20', recharge_trc20), ('recharge_okpay', recharge_okpay), ('addhb', addhb), ('lqhb ', lqhb),
         ('xzhb ', xzhb), ('yjshb', yjshb), ('jxzhb', jxzhb), ('shokuan ', shokuan),
         ('update_sysm ', update_sysm), ('qxdingdan ', qxdingdan), ('okpay_paid ', okpay_paid), ('sifa', sifa),
