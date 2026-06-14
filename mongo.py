@@ -54,6 +54,7 @@ agent_bots = mydb['agent_bots']
 agent_product_prices = mydb['agent_product_prices']
 agent_orders = mydb['agent_orders']
 agent_withdrawals = mydb['agent_withdrawals']
+commission_log = mydb['commission_log']
 
 mydb1 = teleclient[MONGO_CHAIN_DB_NAME]
 qukuai = mydb1['qukuai']
@@ -781,6 +782,12 @@ def ensure_tenant_core_indexes():
     _create_index_safe(agent_orders, [('agent_bot_id', 1), ('order_id', 1)], unique=True, sparse=True)
     _create_index_safe(agent_withdrawals, [('agent_bot_id', 1), ('withdrawal_id', 1)], unique=True, sparse=True)
     _create_index_safe(agent_withdrawals, [('agent_bot_id', 1), ('created_at', -1)], name='agent_created_at')
+    _create_index_safe(user, 'user_id', unique=True)
+    _create_index_safe(user, 'username', sparse=True)
+    _create_index_safe(user, 'referrer_user_id', sparse=True)
+    _create_index_safe(commission_log, [('order_id', 1), ('invitee_user_id', 1)], unique=True, sparse=True, name='order_invitee_unique')
+    _create_index_safe(commission_log, [('inviter_user_id', 1), ('created_at', -1)], name='inviter_created_at')
+    _create_index_safe(commission_log, [('invitee_user_id', 1), ('created_at', -1)], name='invitee_created_at')
 
 
 ensure_tenant_core_indexes()
@@ -909,8 +916,26 @@ def user_data(key_id, user_id, username, fullname, lastname, state, creation_tim
         'zgje': 0,
         'zgsl': 0,
         'sign': 0,
-        'lang': lang or 'zh'
+        'lang': lang or 'zh',
+        'referrer_user_id': 0,
+        'ref_bind_time': '',
+        'invite_count': 0,
+        'invite_commission_total': 0,
+        'referred_recharge_total': 0,
 
+    })
+
+
+def commission_logging(order_id, inviter_user_id, invitee_user_id, recharge_amount, rate, commission_amount, source, created_at):
+    commission_log.insert_one({
+        'order_id': order_id,
+        'inviter_user_id': inviter_user_id,
+        'invitee_user_id': invitee_user_id,
+        'recharge_amount': recharge_amount,
+        'rate': rate,
+        'commission_amount': commission_amount,
+        'source': source,
+        'created_at': created_at,
     })
 
 

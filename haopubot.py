@@ -78,6 +78,232 @@ def patch_zipfile_duplicate_name_warning():
 
 patch_zipfile_duplicate_name_warning()
 
+
+REFERRAL_RATE_TIERS = (
+    (Decimal('1000'), Decimal('0.05')),
+    (Decimal('500'), Decimal('0.03')),
+    (Decimal('100'), Decimal('0.01')),
+)
+
+REFERRAL_FIELD_DEFAULTS = {
+    'referrer_user_id': 0,
+    'ref_bind_time': '',
+    'invite_count': 0,
+    'invite_commission_total': 0,
+    'referred_recharge_total': 0,
+}
+
+
+def to_db_number(value):
+    normalized = standard_num(value)
+    return float(normalized) if str(normalized).count('.') > 0 else int(normalized)
+
+
+def ensure_referral_fields(user_id):
+    user_doc = user.find_one({'user_id': user_id})
+    if user_doc is None:
+        return None
+    updates = {}
+    for field, default in REFERRAL_FIELD_DEFAULTS.items():
+        if field not in user_doc:
+            updates[field] = default
+    if updates:
+        user.update_one({'user_id': user_id}, {'$set': updates})
+        user_doc.update(updates)
+    return user_doc
+
+
+def get_referral_rate(total_recharge_before):
+    total_recharge_before = Decimal(str(total_recharge_before or 0))
+    for threshold, rate in REFERRAL_RATE_TIERS:
+        if total_recharge_before >= threshold:
+            return rate
+    return Decimal('0')
+
+
+def user_has_recharge_history(user_id):
+    if topup.find_one({'user_id': user_id, 'state': TOPUP_STATE_PAID}, {'_id': 1}) is not None:
+        return True
+    if user_log.find_one({'user_id': user_id, 'projectname': {'$regex': '充值'}}, {'_id': 1}) is not None:
+        return True
+    return False
+
+
+def build_referral_text(bot_username, user_doc):
+    referral_link = f'https://t.me/{bot_username}?start=ref_{user_doc["user_id"]}'
+    invite_count = user_doc.get('invite_count', 0)
+    commission_total = format_usdt_2(user_doc.get('invite_commission_total', 0))
+    return f'''
+<b>我的推广链接</b>
+
+推广链接：
+<code>{html.escape(referral_link, quote=False)}</code>
+
+已邀请人数：<b>{invite_count}</b>
+累计返佣：<b>{commission_total} USDT</b>
+
+当前规则：
+• 累计充值满100U返1%
+• 累计充值满500U返3%
+• 累计充值满1000U返5%
+    '''
+
+
+def format_user_ref(user_doc):
+    if user_doc is None:
+        return '无'
+    fullname = str(user_doc.get('fullname') or '').replace('<', '').replace('>', '')
+    username = str(user_doc.get('username') or '').strip().lstrip('@')
+    if username:
+        safe_username = html.escape(username, quote=False)
+        safe_name = html.escape(fullname or username, quote=False)
+        return f'<a href="https://t.me/{safe_username}">{safe_name}</a> (<code>{user_doc["user_id"]}</code>)'
+    return f'{html.escape(fullname or str(user_doc["user_id"]), quote=False)} (<code>{user_doc["user_id"]}</code>)'
+
+
+def build_admin_referral_text(target_user_doc):
+    target_user_doc = ensure_referral_fields(target_user_doc['user_id'])
+    inviter_doc = None
+    inviter_user_id = int(target_user_doc.get('referrer_user_id', 0) or 0)
+    if inviter_user_id:
+        inviter_doc = ensure_referral_fields(inviter_user_id)
+
+    invitees = list(
+        user.find({'referrer_user_id': target_user_doc['user_id']}, {'user_id': 1, 'fullname': 1, 'ref_bind_time': 1})
+        .sort('ref_bind_time', -1)
+        .limit(5)
+    )
+    invitee_preview = []
+    for invitee in invitees:
+        invitee_name = html.escape(str(invitee.get('fullname') or invitee.get('user_id') or '').replace('<', '').replace('>', ''), quote=False)
+        invitee_preview.append(f'• {invitee_name} (<code>{invitee["user_id"]}</code>)')
+    invitee_preview_text = '\n'.join(invitee_preview) if invitee_preview else '• 暂无'
+
+    commission_rows = list(
+        commission_log.find({'inviter_user_id': target_user_doc['user_id']}, {'invitee_user_id': 1, 'recharge_amount': 1, 'commission_amount': 1, 'rate': 1})
+        .sort('created_at', -1)
+        .limit(5)
+    )
+    commission_preview = []
+    for row in commission_rows:
+        percent = int(Decimal(str(row.get('rate', 0) or 0)) * 100)
+        commission_preview.append(
+            f'• 下级 <code>{row["invitee_user_id"]}</code> 充值 {format_usdt_2(row.get("recharge_amount", 0))}U '
+            f'返 {format_usdt_2(row.get("commission_amount", 0))}U ({percent}%)'
+        )
+    commission_preview_text = '\n'.join(commission_preview) if commission_preview else '• 暂无'
+
+    return f'''
+<b>推广关系查询</b>
+
+<b>用户ID:</b> <code>{target_user_doc["user_id"]}</code>
+<b>邀请人:</b> {format_user_ref(inviter_doc)}
+<b>绑定时间:</b> {html.escape(str(target_user_doc.get("ref_bind_time") or "未绑定"), quote=False)}
+
+<b>已邀请人数:</b> {target_user_doc.get("invite_count", 0)}
+<b>累计返佣:</b> {format_usdt_2(target_user_doc.get("invite_commission_total", 0))} USDT
+<b>本人累计有效充值:</b> {format_usdt_2(target_user_doc.get("referred_recharge_total", 0))} USDT
+
+<b>最近邀请的下级:</b>
+{invitee_preview_text}
+
+<b>最近返佣流水:</b>
+{commission_preview_text}
+    '''
+
+
+def bind_referrer_if_possible(user_id, referral_code, timer):
+    referral_code = str(referral_code or '').strip()
+    if not referral_code.startswith('ref_'):
+        return False
+    referrer_part = referral_code.replace('ref_', '', 1).strip()
+    if not referrer_part.isdigit():
+        return False
+    referrer_user_id = int(referrer_part)
+    if referrer_user_id == user_id:
+        return False
+
+    user_doc = ensure_referral_fields(user_id)
+    referrer_doc = ensure_referral_fields(referrer_user_id)
+    if user_doc is None or referrer_doc is None:
+        return False
+    if int(user_doc.get('referrer_user_id', 0) or 0) != 0:
+        return False
+    if Decimal(str(user_doc.get('referred_recharge_total', 0) or 0)) > 0:
+        return False
+    if Decimal(str(user_doc.get('zgje', 0) or 0)) > 0 or int(user_doc.get('zgsl', 0) or 0) > 0:
+        return False
+    if Decimal(str(user_doc.get('USDT', 0) or 0)) > 0:
+        return False
+    if user_has_recharge_history(user_id):
+        return False
+
+    user.update_one(
+        {'user_id': user_id},
+        {'$set': {'referrer_user_id': referrer_user_id, 'ref_bind_time': timer}}
+    )
+    user.update_one({'user_id': referrer_user_id}, {'$inc': {'invite_count': 1}})
+    return True
+
+
+def apply_referral_commission(bot, invitee_user_id, recharge_amount, order_id, source, timer):
+    invitee_doc = ensure_referral_fields(invitee_user_id)
+    if invitee_doc is None:
+        return
+    if commission_log.find_one({'order_id': order_id, 'invitee_user_id': invitee_user_id}, {'_id': 1}) is not None:
+        return
+
+    recharge_amount = Decimal(str(recharge_amount or 0))
+    if recharge_amount <= 0:
+        return
+
+    recharge_before = Decimal(str(invitee_doc.get('referred_recharge_total', 0) or 0))
+    recharge_after = to_db_number(recharge_before + recharge_amount)
+    inviter_user_id = int(invitee_doc.get('referrer_user_id', 0) or 0)
+    rate = get_referral_rate(recharge_before)
+    commission_amount = Decimal('0')
+
+    user.update_one({'user_id': invitee_user_id}, {'$set': {'referred_recharge_total': recharge_after}})
+
+    if inviter_user_id and rate > 0:
+        inviter_doc = ensure_referral_fields(inviter_user_id)
+        if inviter_doc is not None:
+            raw_commission = recharge_amount * rate
+            commission_amount = Decimal(str(to_db_number(raw_commission)))
+            if commission_amount > 0:
+                inviter_balance = Decimal(str(inviter_doc.get('USDT', 0) or 0))
+                inviter_commission_total = Decimal(str(inviter_doc.get('invite_commission_total', 0) or 0))
+                user.update_one(
+                    {'user_id': inviter_user_id},
+                    {'$set': {
+                        'USDT': to_db_number(inviter_balance + commission_amount),
+                        'invite_commission_total': to_db_number(inviter_commission_total + commission_amount),
+                    }}
+                )
+                if bot is not None:
+                    try:
+                        bot.send_message(
+                            chat_id=inviter_user_id,
+                            text=(
+                                f'🎉 推广返佣到账 {format_usdt_2(commission_amount)} USDT\n'
+                                f'下级用户充值：{format_usdt_2(recharge_amount)} USDT\n'
+                                f'返佣比例：{int(rate * 100)}%'
+                            ),
+                        )
+                    except Exception as exc:
+                        print(f'推广返佣通知失败: {exc}')
+
+    commission_logging(
+        order_id,
+        inviter_user_id,
+        invitee_user_id,
+        to_db_number(recharge_amount),
+        float(rate),
+        to_db_number(commission_amount),
+        source,
+        timer,
+    )
+
 BASE_DIR = Path(__file__).resolve().parent
 VERSION_FILE = BASE_DIR / 'VERSION'
 
@@ -2964,7 +3190,7 @@ def ensure_user_exists(user_id, username, fullname, lastname, language_code=None
     if user_id in ADMIN_USER_IDS:
         user.update_one({'user_id': user_id}, {'$set': {'state': '4'}})
         user_list = user.find_one({'user_id': user_id})
-    return user_list
+    return ensure_referral_fields(user_id) or user_list
 
 
 def sum_user_log_amount_by_day(day_text):
@@ -3803,6 +4029,7 @@ def start(update: Update, context: CallbackContext):
             nowuid = start_arg.replace('buy_', '', 1).strip()
             send_product_purchase_page(context, user_id, user_id, nowuid)
             return
+        bind_referrer_if_possible(user_id, start_arg, timer)
 
     yyzt = shangtext.find_one({'projectname': '营业状态'})['text']
     if yyzt == 0:
@@ -4166,6 +4393,27 @@ def backgmjl(update: Update, context: CallbackContext):
     keyboard = build_profile_keyboard(df_id)
     query.edit_message_text(text=fstext, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML',
                             disable_web_page_preview=True)
+
+
+def tglink(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    df_id = int(query.data.replace('tglink ', ''))
+    user_doc = ensure_referral_fields(df_id)
+    if user_doc is None:
+        query.edit_message_text(text='用户不存在')
+        return
+    fstext = build_referral_text(context.bot.username, user_doc)
+    keyboard = [
+        [InlineKeyboardButton('返回个人中心', callback_data=f'backgmjl {df_id}')],
+        [InlineKeyboardButton(get_ui_text('close', viewer_user_id=df_id), callback_data=f'close {df_id}')],
+    ]
+    query.edit_message_text(
+        text=fstext,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='HTML',
+        disable_web_page_preview=True,
+    )
 
 
 def resolve_purchase_record_file_path(record_path, leixing=None):
@@ -6987,8 +7235,11 @@ def build_user_profile_text(user_id, username, creation_time, zgsl, zgje, balanc
 
 
 def build_profile_keyboard(user_id):
-    return [[InlineKeyboardButton(get_ui_text('purchase_history_button', viewer_user_id=user_id), callback_data=f'gmaijilu {user_id}')],
-            [InlineKeyboardButton(get_ui_text('close', viewer_user_id=user_id), callback_data=f'close {user_id}')]]
+    return [
+        [InlineKeyboardButton(get_ui_text('purchase_history_button', viewer_user_id=user_id), callback_data=f'gmaijilu {user_id}')],
+        [InlineKeyboardButton('🔗推广链接', callback_data=f'tglink {user_id}')],
+        [InlineKeyboardButton(get_ui_text('close', viewer_user_id=user_id), callback_data=f'close {user_id}')],
+    ]
 
 
 def localize_catalog_name(value, user_id, lang=None):
@@ -7756,6 +8007,7 @@ def okpay_mark_deposit_paid(payload):
         logging.error('OKPay订单状态落库失败，订单进入processing保护态: %s', unique_id)
         return False, 'order_finalize_failed'
 
+    apply_referral_commission(OKPAY_BOT, user_id, paid_amount_float, unique_id, 'okpay', timer)
     user_logging(unique_id, 'OKPay充值', user_id, paid_amount_float, timer)
 
     user_row = user.find_one({'user_id': user_id}, {'fullname': 1, 'username': 1}) or {}
@@ -9832,6 +10084,7 @@ def jiexi(context: CallbackContext):
             user_logging(order_id, 'TRC20充值', user_id, float(today_money), timer)
             us_list = user.find_one({"user_id": user_id})
             user.update_one({'user_id': user_id}, {"$set": {'USDT': now_price}})
+            apply_referral_commission(context.bot, user_id, float(today_money), order_id, 'trc20', timer)
             topup.update_one({'_id': dj_list['_id']}, {'$set': {
                 'state': TOPUP_STATE_PAID,
                 'status': 1,
@@ -10294,8 +10547,12 @@ def cha(update: Update, context: CallbackContext):
         zgje = df_list['zgje']
         USDT = df_list['USDT']
         fstext = build_user_profile_text(df_id, df_username, creation_time, zgsl, zgje, USDT)
-        keyboard = [[InlineKeyboardButton('🛒购买记录', callback_data=f'gmaijilu {df_id}')],
-                    [InlineKeyboardButton('关闭', callback_data=f'close {user_id}')]]
+        fstext = fstext + '\n\n' + build_admin_referral_text(df_list)
+        keyboard = [
+            [InlineKeyboardButton('🛒购买记录', callback_data=f'gmaijilu {df_id}')],
+            [InlineKeyboardButton('🔗推广链接', callback_data=f'tglink {df_id}')],
+            [InlineKeyboardButton('关闭', callback_data=f'close {user_id}')],
+        ]
         context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
                                  reply_markup=InlineKeyboardMarkup(keyboard), disable_web_page_preview=True)
         return
@@ -10389,7 +10646,7 @@ def main():
         ('delejfl ', delejfl), ('qrscejrow ', qrscejrow), ('delcurconfirm ', delcurconfirm), ('delcurejfl ', delcurejfl), ('update_hb ', update_hb), ('gmsp ', gmsp),
         ('upmoney ', upmoney), ('gmqq', gmqq), ('qrgaimai ', qrgaimai),
         ('update_xyh ', update_xyh), ('update_hy ', update_hy), ('yhnext ', yhnext), ('yhlist', yhlist),
-        ('gmaijilu', gmaijilu), ('zcfshuo', zcfshuo), ('gmainext ', gmainext), ('update_txt ', update_txt),
+        ('gmaijilu', gmaijilu), ('tglink ', tglink), ('zcfshuo', zcfshuo), ('gmainext ', gmainext), ('update_txt ', update_txt),
         ('backgmjl ', backgmjl), ('qchuall ', qchuall), ('update_wbts ', update_wbts),
         ('update_gg ', update_gg), ('zdycz', zdycz), ('okzdycz', okzdycz), ('recharge_menu', recharge_menu), ('recharge_trc20', recharge_trc20), ('recharge_okpay', recharge_okpay), ('addhb', addhb), ('lqhb ', lqhb),
         ('xzhb ', xzhb), ('yjshb', yjshb), ('jxzhb', jxzhb), ('shokuan ', shokuan),
