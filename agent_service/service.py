@@ -73,7 +73,6 @@ from haopubot import (
     get_buy_notice_text,
     get_message_storage_text,
     needs_dynamic_emoji_parse,
-    patch_bot_dynamic_emoji,
     get_source_admin_user_ids,
     get_ui_text,
     resolve_inventory_check_target,
@@ -2087,7 +2086,6 @@ def main() -> None:
     config.validate()
     upsert_agent_bot_runtime(config)
     application = ApplicationBuilder().token(config.bot_token).build()
-    patch_bot_dynamic_emoji(application.bot)
     application.bot_data['agent_config'] = config
     application.add_handler(CommandHandler('start', start))
     application.add_handler(CommandHandler('admin', admin_panel))
