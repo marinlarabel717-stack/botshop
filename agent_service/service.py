@@ -67,10 +67,13 @@ from haopubot import (
     build_custom_emoji_text_entities,
     build_delivery_zip,
     create_delivery_order_id,
+    dynamic_emoji_to_html,
     find_existing_storage_path,
     format_account_check_elapsed,
     get_buy_notice_text,
     get_message_storage_text,
+    needs_dynamic_emoji_parse,
+    patch_bot_dynamic_emoji,
     get_source_admin_user_ids,
     get_ui_text,
     resolve_inventory_check_target,
@@ -315,13 +318,17 @@ async def reply_html(update: Update, html_text: str, reply_markup=None):
     message = update.effective_message
     if message is None:
         return None
-    rendered_text, entities = render_rich_text(html_text)
-    return await message.reply_text(text=rendered_text, entities=entities, reply_markup=reply_markup)
+    html_text = str(html_text or '')
+    if needs_dynamic_emoji_parse(html_text):
+        html_text = dynamic_emoji_to_html(html_text)
+    return await message.reply_text(text=html_text, parse_mode='HTML', reply_markup=reply_markup)
 
 
 async def edit_html(query, html_text: str, reply_markup=None):
-    rendered_text, entities = render_rich_text(html_text)
-    return await query.edit_message_text(text=rendered_text, entities=entities, reply_markup=reply_markup)
+    html_text = str(html_text or '')
+    if needs_dynamic_emoji_parse(html_text):
+        html_text = dynamic_emoji_to_html(html_text)
+    return await query.edit_message_text(text=html_text, parse_mode='HTML', reply_markup=reply_markup)
 
 
 def is_agent_admin(config: AgentRuntimeConfig, user_id: int) -> bool:
@@ -2080,6 +2087,7 @@ def main() -> None:
     config.validate()
     upsert_agent_bot_runtime(config)
     application = ApplicationBuilder().token(config.bot_token).build()
+    patch_bot_dynamic_emoji(application.bot)
     application.bot_data['agent_config'] = config
     application.add_handler(CommandHandler('start', start))
     application.add_handler(CommandHandler('admin', admin_panel))
