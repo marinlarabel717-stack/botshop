@@ -10093,20 +10093,16 @@ def textkeyboard(update: Update, context: CallbackContext):
             if key_list is None and normalized_text:
                 key_list = normalized_key_map.get(normalized_text)
             if matches_ui_text(text, 'menu_clone_same'):
-                del_message(update.message)
                 send_clonebot_prompt(context, user_id)
             elif matches_ui_text(text, 'menu_profile'):
-                del_message(update.message)
                 profile_username = username or fullname
                 fstext = build_user_profile_text(user_id, profile_username, creation_time, zgsl, zgje, USDT)
                 context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
                                          reply_markup=InlineKeyboardMarkup(build_profile_keyboard(user_id)), disable_web_page_preview=True)
             elif matches_ui_text(text, 'menu_recharge'):
-                del_message(update.message)
                 send_recharge_method_menu(context, user_id)
 
             elif '红包' in text or matches_ui_text(text, 'menu_redpacket'):
-                del_message(update.message)
                 fstext = get_ui_text('redpacket_menu_title', viewer_user_id=user_id)
                 keyboard = [
                     [InlineKeyboardButton(get_ui_text('redpacket_ongoing_active', viewer_user_id=user_id), callback_data='jxzhb'),
@@ -10117,7 +10113,6 @@ def textkeyboard(update: Update, context: CallbackContext):
                 context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
             elif matches_ui_text(text, 'menu_goods_list'):
-                del_message(update.message)
                 keyboard = build_category_catalog_keyboard(user_id)
                 fstext = get_ui_text('category_list_text', viewer_user_id=user_id)
                 keyboard.append([InlineKeyboardButton(get_ui_text('close_with_icon', viewer_user_id=user_id), callback_data=f'close {user_id}')])
@@ -10126,7 +10121,6 @@ def textkeyboard(update: Update, context: CallbackContext):
 
             else:
                 if key_list != None:
-                    del_message(update.message)
                     key_text = key_list['key_text']
                     print_text = key_list['text']
                     file_type = key_list['file_type']
