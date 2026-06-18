@@ -6497,12 +6497,13 @@ def catejflsp(update: Update, context: CallbackContext):
 
     product_rows = []
     ej_list = list(ejfl.find({'uid': uid}, sort=[('row', 1)]))
+    stock_map = get_batch_stock([str(item.get('nowuid') or '') for item in ej_list])
     for i in ej_list:
         nowuid = i['nowuid']
         projectname = i['projectname']
         row = i['row']
         money = i.get('money', 0)
-        hsl = len(list(hb.find({'nowuid': nowuid, 'state': 0})))
+        hsl = int(stock_map.get(str(nowuid), 0))
         if hsl <= 0:
             continue
         product_rows.append({
