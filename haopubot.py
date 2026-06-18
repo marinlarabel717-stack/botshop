@@ -1089,7 +1089,30 @@ def matches_ui_text(incoming_text, key):
         normalize_menu_text(get_button_match_text(get_ui_text(key, lang='zh'))),
         normalize_menu_text(get_button_match_text(get_ui_text(key, lang='en'))),
     }
+    alias_candidates = {
+        'menu_goods_list': {'商品列表'},
+        'menu_profile': {'个人中心'},
+        'menu_recharge': {'我要充值'},
+    }
+    for alias in alias_candidates.get(key, set()):
+        candidates.add(normalize_menu_text(alias))
     return normalized in {item for item in candidates if item}
+
+
+FORCE_REPLY_PROMPT_TEXTS = {
+    '回复图文或图片视频文字',
+    '回复按钮设置',
+}
+
+
+def is_force_reply_prompt_message(message):
+    if not message:
+        return False
+    reply_markup = getattr(message, 'reply_markup', None)
+    if isinstance(reply_markup, ForceReply) or getattr(reply_markup, 'force_reply', False):
+        return True
+    prompt_text = get_message_match_text(message) or getattr(message, 'text', '') or ''
+    return prompt_text in FORCE_REPLY_PROMPT_TEXTS
 
 
 def get_fixed_frontend_text_key(source_text):
@@ -4122,10 +4145,14 @@ def huifu(update: Update, context: CallbackContext):
         user_id = update.effective_user.id
         user_list = user.find_one({"user_id": user_id})
         replymessage = update.message.reply_to_message
-        text = replymessage.text
-        del_message(update.message)
+        if not is_force_reply_prompt_message(replymessage):
+            return textkeyboard(update, context)
+        text = get_message_match_text(replymessage) or getattr(replymessage, 'text', '') or ''
         messagetext = update.effective_message.text
-        state = user_list['state']
+        state = user_list['state'] if user_list else '0'
+        if state not in ('4', '3'):
+            return textkeyboard(update, context)
+        del_message(update.message)
         if state == '4' or state == '3':
             if '回复图文或图片视频文字' == text:
                 stored_message_text = get_message_storage_text(update.message)
