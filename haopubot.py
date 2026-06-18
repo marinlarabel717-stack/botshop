@@ -7393,6 +7393,39 @@ def localize_catalog_name(value, user_id, lang=None):
     return localized
 
 
+def get_category_stock_totals(category_uids=None):
+    category_uids = [uid for uid in (category_uids or []) if uid is not None]
+    child_query = {}
+    if category_uids:
+        child_query['uid'] = {'$in': category_uids}
+
+    nowuid_to_uid = {}
+    stock_totals = {}
+    for child in ejfl.find(child_query, {'uid': 1, 'nowuid': 1}):
+        raw_uid = child.get('uid')
+        nowuid = str(child.get('nowuid') or '')
+        if raw_uid is None or not nowuid:
+            continue
+        uid_key = str(raw_uid)
+        nowuid_to_uid[nowuid] = uid_key
+        stock_totals.setdefault(uid_key, 0)
+
+    if not nowuid_to_uid:
+        return stock_totals
+
+    pipeline = [
+        {'$match': {'state': 0, 'nowuid': {'$in': list(nowuid_to_uid.keys())}}},
+        {'$group': {'_id': '$nowuid', 'count': {'$sum': 1}}},
+    ]
+    for row in hb.aggregate(pipeline):
+        nowuid = str(row.get('_id') or '')
+        uid_key = nowuid_to_uid.get(nowuid)
+        if not uid_key:
+            continue
+        stock_totals[uid_key] = stock_totals.get(uid_key, 0) + int(row.get('count') or 0)
+    return stock_totals
+
+
 def shorten_catalog_button_label(text, stock_count=None, lang=None):
     text = re.sub(r'\s+', ' ', str(text or '').strip())
     lang = normalize_lang_code(lang)
@@ -7448,13 +7481,12 @@ def shorten_catalog_button_label(text, stock_count=None, lang=None):
 def build_category_catalog_keyboard(user_id):
     lang = get_user_lang(user_id)
     keylist = list(fenlei.find({}, sort=[('row', 1)]))
+    stock_totals = get_category_stock_totals([item.get('uid') for item in keylist])
     keyboard = [[] for _ in range(100)]
     for item in keylist:
         uid = item['uid']
         row = max(1, int(item.get('row', 1))) - 1
-        hsl = 0
-        for child in list(ejfl.find({'uid': uid})):
-            hsl += len(list(hb.find({'nowuid': child['nowuid'], 'state': 0})))
+        hsl = stock_totals.get(str(uid), 0)
         projectname = localize_catalog_name(item.get('projectname'), user_id, lang=lang)
         button_text = shorten_catalog_button_label(projectname, stock_count=hsl, lang=lang)
         keyboard[row].append(InlineKeyboardButton(button_text, callback_data=f'catejflsp {uid}:{hsl}'))
