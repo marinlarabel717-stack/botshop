@@ -3586,6 +3586,22 @@ def collect_delivery_source_paths(leixing, nowuid, entry_name):
     return paths
 
 
+def get_delivery_zip_mode(entry_count):
+    # Large exports are dominated by scan/upload time, so avoid expensive compression work.
+    threshold = max(1, int(os.getenv('DELIVERY_ZIP_STORED_THRESHOLD', '200') or 200))
+    if int(entry_count or 0) >= threshold:
+        return zipfile.ZIP_STORED, None
+    return zipfile.ZIP_DEFLATED, 1
+
+
+def open_delivery_zip(zip_filename, entry_count):
+    compression, compresslevel = get_delivery_zip_mode(entry_count)
+    kwargs = {'compression': compression}
+    if compresslevel is not None:
+        kwargs['compresslevel'] = compresslevel
+    return zipfile.ZipFile(zip_filename, 'w', **kwargs)
+
+
 def build_delivery_zip(leixing, user_id, nowuid, entry_names):
     shijiancuo = int(time.time())
     missing_entries = []
@@ -3595,7 +3611,7 @@ def build_delivery_zip(leixing, user_id, nowuid, entry_names):
     if leixing == '协议号':
         zip_filename = find_existing_storage_path('协议号发货', f'{user_id}_{shijiancuo}.zip')
         zip_filename.parent.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        with open_delivery_zip(zip_filename, len(entry_names)) as zipf:
             for file_name in entry_names:
                 source_paths = collect_delivery_source_paths(leixing, nowuid, file_name)
                 if not source_paths:
@@ -3620,7 +3636,7 @@ def build_delivery_zip(leixing, user_id, nowuid, entry_names):
 
     zip_filename = find_existing_storage_path('发货', f'{user_id}_{shijiancuo}.zip')
     zip_filename.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+    with open_delivery_zip(zip_filename, len(entry_names)) as zipf:
         for folder_name in entry_names:
             source_paths = collect_delivery_source_paths(leixing, nowuid, folder_name)
             if not source_paths:
@@ -3643,6 +3659,24 @@ def build_delivery_zip(leixing, user_id, nowuid, entry_names):
                 archived_names.add(arcname)
                 added_files += 1
     return zip_filename, added_files, missing_entries
+
+
+def pop_inventory_rows(query, projection=None):
+    rows = []
+    hbids = []
+    row_ids = []
+    for row in hb.find(query, projection or {'_id': 1, 'hbid': 1}):
+        rows.append(row)
+        hbid = row.get('hbid')
+        if hbid is not None:
+            hbids.append(hbid)
+        elif row.get('_id') is not None:
+            row_ids.append(row['_id'])
+    if hbids:
+        hb.delete_many({'hbid': {'$in': hbids}})
+    elif row_ids:
+        hb.delete_many({'_id': {'$in': row_ids}})
+    return rows
 
 
 def resolve_inventory_check_target(leixing, nowuid, projectname):
@@ -8973,7 +9007,11 @@ def qchuall(update: Update, context: CallbackContext):
     nowuid = query.data.replace('qchuall ', '')
 
     ejfl_list = ejfl.find_one({'nowuid': nowuid})
-    fhtype = hb.find_one({'nowuid': nowuid})['leixing']
+    first_row = hb.find_one({'nowuid': nowuid, 'state': 0}, {'leixing': 1})
+    if first_row is None:
+        query.message.reply_text("当前库存不足。")
+        return
+    fhtype = first_row['leixing']
     projectname = ejfl_list['projectname']
     yijiid = ejfl_list['uid']
     yiji_list = fenlei.find_one({'uid': yijiid})
@@ -8981,24 +9019,21 @@ def qchuall(update: Update, context: CallbackContext):
 
     folder_names = []
     if fhtype == '协议号':
-        for j in list(hb.find({"nowuid": nowuid, 'state': 0})):
+        rows = pop_inventory_rows({"nowuid": nowuid, 'state': 0}, {'projectname': 1, 'hbid': 1})
+        for j in rows:
             projectname = j['projectname']
-            hbid = j['hbid']
-            timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            hb.delete_one({'hbid': hbid})
             folder_names.append(projectname)
         zip_filename, added_files, _ = build_delivery_zip(fhtype, user_id, nowuid, folder_names)
         if added_files > 0:
-            query.message.reply_document(open(zip_filename, "rb"))
+            with open(zip_filename, "rb") as fp:
+                query.message.reply_document(fp)
         else:
             query.message.reply_text("这批库存文件没找到，暂时没法发货。")
 
     elif fhtype == 'API':
-        for j in list(hb.find({"nowuid": nowuid, 'state': 0})):
+        rows = pop_inventory_rows({"nowuid": nowuid, 'state': 0}, {'projectname': 1, 'hbid': 1})
+        for j in rows:
             projectname = j['projectname']
-            hbid = j['hbid']
-            timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            hb.delete_one({'hbid': hbid})
             folder_names.append(projectname)
 
         shijiancuo = int(time.time())
@@ -9008,20 +9043,18 @@ def qchuall(update: Update, context: CallbackContext):
             for folder_name in folder_names:
                 f.write(folder_name + "\n")
 
-        query.message.reply_document(open(zip_filename, "rb"))
+        with open(zip_filename, "rb") as fp:
+            query.message.reply_document(fp)
 
     elif fhtype == '谷歌':
-        for j in list(hb.find({"nowuid": nowuid, 'state': 0, 'leixing': '谷歌'})):
+        rows = pop_inventory_rows({"nowuid": nowuid, 'state': 0, 'leixing': '谷歌'}, {'projectname': 1, 'hbid': 1, 'data': 1})
+        for j in rows:
             projectname = j['projectname']
-            hbid = j['hbid']
-            timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            hb.update_one({'hbid': hbid}, {"$set": {'state': 1, 'yssj': timer, 'gmid': user_id}})
-            data = j['data']
+            data = j.get('data') or {}
             us1 = data['账户']
             us2 = data['密码']
             us3 = data['子邮件']
             fste23xt = f'login: {us1}\npassword: {us2}\nsubmail: {us3}\n'
-            hb.delete_one({'hbid': hbid})
             folder_names.append(fste23xt)
         folder_names = '\n'.join(folder_names)
         shijiancuo = int(time.time())
@@ -9031,30 +9064,28 @@ def qchuall(update: Update, context: CallbackContext):
 
             f.write(folder_names)
 
-        query.message.reply_document(open(zip_filename, "rb"))
+        with open(zip_filename, "rb") as fp:
+            query.message.reply_document(fp)
 
 
     elif fhtype == '会员链接':
-        for j in list(hb.find({"nowuid": nowuid, 'state': 0})):
+        rows = pop_inventory_rows({"nowuid": nowuid, 'state': 0}, {'projectname': 1, 'hbid': 1})
+        for j in rows:
             projectname = j['projectname']
-            hbid = j['hbid']
-            timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            hb.delete_one({'hbid': hbid})
             folder_names.append(projectname)
         folder_names = '\n'.join(folder_names)
 
         context.bot.send_message(chat_id=user_id, text=folder_names, disable_web_page_preview=True)
     else:
-        for j in list(hb.find({"nowuid": nowuid, 'state': 0})):
+        rows = pop_inventory_rows({"nowuid": nowuid, 'state': 0}, {'projectname': 1, 'hbid': 1})
+        for j in rows:
             projectname = j['projectname']
-            hbid = j['hbid']
-            timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            hb.delete_one({'hbid': hbid})
             folder_names.append(projectname)
 
         zip_filename, added_files, _ = build_delivery_zip(fhtype, user_id, nowuid, folder_names)
         if added_files > 0:
-            query.message.reply_document(open(zip_filename, "rb"))
+            with open(zip_filename, "rb") as fp:
+                query.message.reply_document(fp)
         else:
             query.message.reply_text("这批库存文件没找到，暂时没法发货。")
 
@@ -9064,8 +9095,8 @@ def qchuall(update: Update, context: CallbackContext):
     money = ej_list['money']
     fl_pro = fenlei.find_one({'uid': uid})['projectname']
     keyboard = build_product_detail_keyboard(nowuid, uid, user_id)
-    kc = len(list(hb.find({'nowuid': nowuid, 'state': 0})))
-    ys = len(list(hb.find({'nowuid': nowuid, 'state': 1})))
+    kc = hb.count_documents({'nowuid': nowuid, 'state': 0})
+    ys = hb.count_documents({'nowuid': nowuid, 'state': 1})
     fstext = f'''
 主分类: {fl_pro}
 二级分类: {ej_projectname}
