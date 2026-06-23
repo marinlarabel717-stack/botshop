@@ -1,5 +1,7 @@
 import asyncio
 import os
+import sqlite3
+import shutil
 import tempfile
 import threading
 import uuid
@@ -20,10 +22,12 @@ except Exception:
 try:
     from telethon import TelegramClient as TelethonClient
     from telethon import errors as telethon_errors
+    from telethon.sessions import SQLiteSession as TelethonSQLiteSession
     from telethon.tl import functions, types
 except Exception:
     TelethonClient = None
     telethon_errors = None
+    TelethonSQLiteSession = None
     functions = None
     types = None
 
@@ -32,6 +36,7 @@ SESSION_CHECK_API_ID = os.getenv('ACCOUNT_CHECK_API_ID', '').strip()
 SESSION_CHECK_API_HASH = os.getenv('ACCOUNT_CHECK_API_HASH', '').strip()
 DEFAULT_TIMEOUT_SECONDS = max(5, int(os.getenv('ACCOUNT_CHECK_TIMEOUT_SECONDS', '25') or '25'))
 AGENT_ACCOUNT_TTL_DAYS = max(30, int(os.getenv('AGENT_ACCOUNT_TTL_DAYS', '730') or '730'))
+SESSION_SCHEMA_CACHE: Dict[str, Any] | None = None
 
 
 class DependencyUnavailable(RuntimeError):
@@ -222,12 +227,27 @@ async def _check_session_async(session_path: Path, timeout_seconds: int) -> Dict
     if not (SESSION_CHECK_API_ID and SESSION_CHECK_API_HASH and TelethonClient is not None):
         raise DependencyUnavailable('missing_session_api_or_telethon')
 
+    temp_dir = None
     try:
         client = TelethonClient(str(session_path), int(SESSION_CHECK_API_ID), SESSION_CHECK_API_HASH, receive_updates=False)
     except Exception as exc:
-        return {'status': 'timeout', 'reason': f'session_client_init_failed:{exc}'}
+        if not _is_session_schema_unpack_error(exc):
+            return {'status': 'timeout', 'reason': f'session_client_init_failed:{exc}'}
+        compatible_copy = _build_runtime_compatible_session_copy(session_path)
+        if compatible_copy is None:
+            return {'status': 'timeout', 'reason': f'session_client_init_failed:{exc}'}
+        compatible_path, temp_dir = compatible_copy
+        try:
+            client = TelethonClient(str(compatible_path), int(SESSION_CHECK_API_ID), SESSION_CHECK_API_HASH, receive_updates=False)
+        except Exception as retry_exc:
+            temp_dir.cleanup()
+            return {'status': 'timeout', 'reason': f'session_client_init_failed_after_schema_repair:{retry_exc}'}
 
-    return await _probe_client(client, timeout_seconds)
+    try:
+        return await _probe_client(client, timeout_seconds)
+    finally:
+        if temp_dir is not None:
+            temp_dir.cleanup()
 
 
 async def _build_tdata_client(tdata_dir: Path, timeout_seconds: int):
@@ -385,11 +405,26 @@ async def _check_session_async_with_ttl_update(session_path: Path, timeout_secon
         return {'status': 'invalid', 'reason': 'session_file_missing'}
     if not (SESSION_CHECK_API_ID and SESSION_CHECK_API_HASH and TelethonClient is not None):
         raise DependencyUnavailable('missing_session_api_or_telethon')
+    temp_dir = None
     try:
         client = TelethonClient(str(session_path), int(SESSION_CHECK_API_ID), SESSION_CHECK_API_HASH, receive_updates=False)
     except Exception as exc:
-        return {'status': 'timeout', 'reason': f'session_client_init_failed:{exc}'}
-    return await _probe_client_with_ttl_update(client, timeout_seconds, ttl_days=ttl_days)
+        if not _is_session_schema_unpack_error(exc):
+            return {'status': 'timeout', 'reason': f'session_client_init_failed:{exc}'}
+        compatible_copy = _build_runtime_compatible_session_copy(session_path)
+        if compatible_copy is None:
+            return {'status': 'timeout', 'reason': f'session_client_init_failed:{exc}'}
+        compatible_path, temp_dir = compatible_copy
+        try:
+            client = TelethonClient(str(compatible_path), int(SESSION_CHECK_API_ID), SESSION_CHECK_API_HASH, receive_updates=False)
+        except Exception as retry_exc:
+            temp_dir.cleanup()
+            return {'status': 'timeout', 'reason': f'session_client_init_failed_after_schema_repair:{retry_exc}'}
+    try:
+        return await _probe_client_with_ttl_update(client, timeout_seconds, ttl_days=ttl_days)
+    finally:
+        if temp_dir is not None:
+            temp_dir.cleanup()
 
 
 async def _check_tdata_async_with_ttl_update(tdata_dir: Path, timeout_seconds: int, ttl_days: int = AGENT_ACCOUNT_TTL_DAYS) -> Dict[str, Any]:
@@ -424,6 +459,92 @@ def _classify_exception(exc: Exception) -> Dict[str, Any]:
     if _is_timeout_exception(exc):
         return {'status': 'timeout', 'reason': message}
     return {'status': 'invalid', 'reason': f'{exc.__class__.__name__}:{message}'}
+
+
+def _is_session_schema_unpack_error(exc: Exception) -> bool:
+    message = _describe_exception(exc).lower()
+    return 'values to unpack' in message and ('expected' in message or 'got' in message)
+
+
+def _default_session_value(column_name: str):
+    if column_name in {'auth_key', 'tmp_auth_key'}:
+        return b''
+    if column_name == 'dc_id':
+        return 0
+    if column_name == 'server_address':
+        return ''
+    if column_name == 'port':
+        return 443
+    if column_name == 'takeout_id':
+        return None
+    return None
+
+
+def _get_runtime_session_schema() -> Dict[str, Any] | None:
+    global SESSION_SCHEMA_CACHE
+    if SESSION_SCHEMA_CACHE is not None:
+        return SESSION_SCHEMA_CACHE
+    if TelethonSQLiteSession is None:
+        return None
+    probe_dir = Path(tempfile.mkdtemp(prefix='session-schema-probe-'))
+    probe_path = probe_dir / 'probe.session'
+    session = TelethonSQLiteSession(str(probe_path))
+    session.close()
+    with sqlite3.connect(str(probe_path)) as conn:
+        cur = conn.cursor()
+        cur.execute("select version from version")
+        version_row = cur.fetchone()
+        cur.execute("select sql from sqlite_master where type='table' and name='sessions'")
+        create_row = cur.fetchone()
+        cur.execute("pragma table_info(sessions)")
+        columns = [row[1] for row in cur.fetchall()]
+    if not version_row or not create_row or not columns:
+        return None
+    SESSION_SCHEMA_CACHE = {
+        'version': int(version_row[0]),
+        'create_sql': str(create_row[0]),
+        'columns': columns,
+    }
+    return SESSION_SCHEMA_CACHE
+
+
+def _build_runtime_compatible_session_copy(session_path: Path) -> tuple[Path, tempfile.TemporaryDirectory] | None:
+    schema = _get_runtime_session_schema()
+    if schema is None:
+        return None
+
+    temp_dir = tempfile.TemporaryDirectory(prefix='session-check-compat-', ignore_cleanup_errors=True)
+    temp_session_path = Path(temp_dir.name) / session_path.name
+    shutil.copy2(session_path, temp_session_path)
+
+    try:
+        with sqlite3.connect(str(temp_session_path)) as conn:
+            cur = conn.cursor()
+            cur.execute("pragma table_info(sessions)")
+            current_columns = [row[1] for row in cur.fetchall()]
+            if not current_columns:
+                temp_dir.cleanup()
+                return None
+
+            if current_columns != schema['columns']:
+                cur.execute('select * from sessions limit 1')
+                session_row = cur.fetchone()
+                row_map = dict(zip(current_columns, session_row)) if session_row else {}
+                cur.execute('alter table sessions rename to sessions_old')
+                cur.execute(schema['create_sql'])
+                insert_values = [row_map.get(column, _default_session_value(column)) for column in schema['columns']]
+                placeholders = ','.join('?' for _ in schema['columns'])
+                cur.execute(f'insert into sessions values ({placeholders})', insert_values)
+                cur.execute('drop table sessions_old')
+
+            cur.execute('delete from version')
+            cur.execute('insert into version values (?)', (int(schema['version']),))
+            conn.commit()
+    except Exception:
+        temp_dir.cleanup()
+        return None
+
+    return temp_session_path, temp_dir
 
 
 def get_account_check_runtime_status(entry_type: str) -> Dict[str, Any]:
