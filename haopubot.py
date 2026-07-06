@@ -4355,6 +4355,7 @@ def usersifa(context: CallbackContext):
     progress_message_id = job.data.get('progress_message_id')
     count = 0
     shibai = 0
+    cleaned_failed_users = 0
     processed = 0
     fqdtw_list = sftw.find_one({'bot_id': bot_id,'projectname': f'图文1🔽'})
     file_id = fqdtw_list['file_id']
@@ -4374,35 +4375,39 @@ def usersifa(context: CallbackContext):
             text = f'私信已完成\n成功:{count}\n失败:{shibai}'
         else:
             text = f'私信进行中\n\n正在发送{processed}/{total_users}（每10秒刷新一次进度）'
+        if final:
+            text = f'\u79c1\u4fe1\u5df2\u5b8c\u6210\n\u6210\u529f:{count}\n\u5931\u8d25:{shibai}\n\u5df2\u6e05\u7406:{cleaned_failed_users}'
         try:
             context.bot.edit_message_text(chat_id=guanli_id, message_id=progress_message_id, text=text)
         except Exception:
             pass
 
     keyboard.append([InlineKeyboardButton('✅已读（点击销毁此消息）', callback_data=f'close 12321')])
-    for i in user_list:
+    def cleanup_failed_user(user_doc):
+        nonlocal cleaned_failed_users
+        delete_filter = {'_id': user_doc['_id']} if user_doc.get('_id') else {'user_id': user_doc.get('user_id')}
+        delete_result = user.delete_one(delete_filter)
+        if delete_result.deleted_count:
+            cleaned_failed_users += 1
+
+    def send_sifa_payload(target_user_id, reply_markup):
         if file_type == 'text':
-            try:
-                context.bot.send_message(chat_id=i['user_id'], text=file_text,
-                                         reply_markup=InlineKeyboardMarkup(keyboard))
-                count += 1
-            except:
-                shibai += 1
+            context.bot.send_message(chat_id=target_user_id, text=file_text, reply_markup=reply_markup)
+        elif file_type == 'photo':
+            context.bot.send_photo(chat_id=target_user_id, caption=file_text, photo=file_id, reply_markup=reply_markup)
         else:
-            if file_type == 'photo':
-                try:
-                    context.bot.send_photo(chat_id=i['user_id'], caption=file_text, photo=file_id,
-                                           reply_markup=InlineKeyboardMarkup(keyboard))
-                    count += 1
-                except:
-                    shibai += 1
-            else:
-                try:
-                    context.bot.sendAnimation(chat_id=i['user_id'], caption=file_text, animation=file_id,
-                                              reply_markup=InlineKeyboardMarkup(keyboard))
-                    count += 1
-                except:
-                    shibai += 1
+            context.bot.sendAnimation(chat_id=target_user_id, caption=file_text, animation=file_id, reply_markup=reply_markup)
+
+    for i in user_list:
+        try:
+            send_sifa_payload(i['user_id'], InlineKeyboardMarkup(keyboard))
+            count += 1
+        except Exception:
+            shibai += 1
+            try:
+                cleanup_failed_user(i)
+            except Exception:
+                logging.warning('Private message send cleanup failed for user_id=%s', i.get('user_id'), exc_info=True)
         processed += 1
         now_ts = time.time()
         if processed >= total_users or now_ts - last_progress_at >= 10:
@@ -4412,6 +4417,10 @@ def usersifa(context: CallbackContext):
             time.sleep(send_delay_seconds)
     sftw.update_one({'bot_id': bot_id,'projectname': f'图文1🔽'}, {'$set': {"state": 1}})
     update_sifa_progress(final=True)
+    context.bot.send_message(
+        chat_id=guanli_id,
+        text=f'\u79c1\u4fe1\u5df2\u5b8c\u6210\n\u6210\u529f:{count}\n\u5931\u8d25:{shibai}\n\u5df2\u81ea\u52a8\u6e05\u7406\u5931\u8d25\u7528\u6237:{cleaned_failed_users}'
+    )
     keyboard = [
         [InlineKeyboardButton(f'{MOOD_EMOJI_SOFT}图文设置', callback_data='tuwen'),
          InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}按钮设置', callback_data='anniu')],
