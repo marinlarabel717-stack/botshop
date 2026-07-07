@@ -675,6 +675,7 @@ ADMIN_EMOJI_WELCOME = '[emoji:5458382591121964689:✍️]'
 ADMIN_EMOJI_MENU = '[emoji:5341715473882955310:⚙️]'
 ADMIN_EMOJI_BUY_NOTICE = '[emoji:5235511932064129087:🎁]'
 ADMIN_EMOJI_RESTOCK = '[emoji:5220214598585568818:🚨]'
+ADMIN_EMOJI_ACCOUNT_CHECK = '[emoji:6237934454019461140:🧠]'
 ADMIN_EMOJI_CLONE = '#g [emoji:5287684458881756303:🤖]'
 ADMIN_EMOJI_CLONE_LIST = '[emoji:5132131004097496494:🧩]'
 ADMIN_EMOJI_CLOSE = '[emoji:5210952531676504517:❌]'
@@ -711,6 +712,7 @@ def parse_admin_user_ids(value):
 
 
 def build_admin_dashboard_keyboard(user_id):
+    account_check_text = '账号检查: 开启' if get_account_check_enabled() else '账号检查: 关闭'
     base_buttons = [
         InlineKeyboardButton(f'{ADMIN_EMOJI_USERLIST}用户列表', callback_data='yhlist'),
         InlineKeyboardButton(f'{ADMIN_EMOJI_DM}对话用户私发', callback_data='sifa'),
@@ -721,6 +723,7 @@ def build_admin_dashboard_keyboard(user_id):
         InlineKeyboardButton(f'{ADMIN_EMOJI_BUY_NOTICE}购买提醒', callback_data='buynoticecfg'),
         InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}菜单按钮', callback_data='addzdykey'),
         InlineKeyboardButton(f'{ADMIN_EMOJI_RESTOCK}补货通知', callback_data='restockpushcfg'),
+        InlineKeyboardButton(f'{ADMIN_EMOJI_ACCOUNT_CHECK}{account_check_text}', callback_data='toggleacctcheck'),
     ]
 
     keyboard = []
@@ -1641,6 +1644,7 @@ ALLOW_PUBLIC_BOT_CLONE = parse_env_bool(os.getenv('ALLOW_PUBLIC_BOT_CLONE', 'tru
 BOT_CLONE_ROOT = os.getenv('BOT_CLONE_ROOT', '/www/wwwroot/botshop-clones').strip() or '/www/wwwroot/botshop-clones'
 BOT_CLONE_REPO_URL = os.getenv('BOT_CLONE_REPO_URL', '').strip()
 ACCOUNT_CHECK_ENABLED = parse_env_bool(os.getenv('ACCOUNT_CHECK_ENABLED', 'true'))
+ACCOUNT_CHECK_CONFIG_KEY = '账号检查开关'
 ACCOUNT_CHECK_TIMEOUT_SECONDS = max(5, int(os.getenv('ACCOUNT_CHECK_TIMEOUT_SECONDS', '25') or '25'))
 ACCOUNT_CHECK_MAX_RETRIES = 1
 ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS = max(3, int(os.getenv('ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS', '10') or '10'))
@@ -3296,11 +3300,13 @@ def build_admin_dashboard_text(user_count, total_balance):
     yesterday_text = (datetime.datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
     today_income = sum_user_log_amount_by_day(today_text)
     yesterday_income = sum_user_log_amount_by_day(yesterday_text)
+    account_check_status = '开启🟢' if get_account_check_enabled() else '关闭🔴'
     return f'''
 [emoji:5287684458881756303:🤖] 机器人使用人数：{user_count}
 [emoji:4972482444025398275:👛] 机器人总余额：{standard_num(total_balance)} USDT
 [emoji:5220195537520711716:⚡️] 今日收入：{today_income} USDT
 [emoji:5222097061276566531:🍃] 昨日收入：{yesterday_income} USDT
+[emoji:6237934454019461140:🧠] 账号检查：{account_check_status}
         '''
 
 
@@ -4439,6 +4445,27 @@ def backstart(update: Update, context: CallbackContext):
     for i in list(user.find({"USDT": {"$gt": 0}})): 
         USDT = i['USDT']
 
+        numu += USDT
+
+    fstext = build_admin_dashboard_text(jqrsyrs, numu)
+    query.edit_message_text(text=fstext, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+def toggleacctcheck(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    user_id = query.from_user.id
+    if not is_source_admin_user(user_id):
+        return
+
+    current_enabled = get_account_check_enabled()
+    set_account_check_enabled(not current_enabled)
+
+    keyboard = build_admin_dashboard_keyboard(user_id)
+    jqrsyrs = len(list(user.find({})))
+    numu = 0
+    for i in list(user.find({"USDT": {"$gt": 0}})):
+        USDT = i['USDT']
         numu += USDT
 
     fstext = build_admin_dashboard_text(jqrsyrs, numu)
@@ -7257,6 +7284,17 @@ def set_text_config(projectname, value):
     shangtext.update_one({'projectname': projectname}, {'$set': {'text': value}}, upsert=True)
 
 
+def get_account_check_enabled():
+    raw_value = get_text_config(ACCOUNT_CHECK_CONFIG_KEY, None)
+    if raw_value is None or raw_value == '':
+        return bool(ACCOUNT_CHECK_ENABLED)
+    return parse_env_bool(raw_value, default=bool(ACCOUNT_CHECK_ENABLED))
+
+
+def set_account_check_enabled(enabled):
+    set_text_config(ACCOUNT_CHECK_CONFIG_KEY, 'true' if enabled else 'false')
+
+
 def get_restock_push_target():
     target = str(get_text_config('补货通知群组', '') or '').strip()
     if not target:
@@ -8602,10 +8640,11 @@ def qrgaimai(update: Update, context: CallbackContext):
         notice_text = str(fstext or '').strip()
         if lang == 'en' and notice_text:
             notice_text = translate_text(notice_text, 'en')
+        account_check_enabled = get_account_check_enabled()
         account_check_runtime = get_account_check_runtime_status(fhtype) if fhtype in ACCOUNT_CHECK_SUPPORTED_TYPES else {'ready': False, 'reason': 'unsupported_entry_type'}
-        use_account_check = ACCOUNT_CHECK_ENABLED and fhtype in ACCOUNT_CHECK_SUPPORTED_TYPES and bool(account_check_runtime.get('ready'))
+        use_account_check = account_check_enabled and fhtype in ACCOUNT_CHECK_SUPPORTED_TYPES and bool(account_check_runtime.get('ready'))
         runtime_reason = ''
-        if ACCOUNT_CHECK_ENABLED and fhtype in ACCOUNT_CHECK_SUPPORTED_TYPES and not account_check_runtime.get('ready'):
+        if account_check_enabled and fhtype in ACCOUNT_CHECK_SUPPORTED_TYPES and not account_check_runtime.get('ready'):
             runtime_reason = str(account_check_runtime.get('reason', 'account_check_runtime_unavailable'))
         if fhtype == '协议号':
             progress_message_id = None
@@ -10869,7 +10908,7 @@ def main():
         application.add_handler(CommandHandler(command_name, sync_handler(callback)))
 
     callback_handlers = [
-        ('startupdate', startupdate), ('clonebot', clonebot), ('cloneagent', cloneagent), ('clonepay', clonepay), ('clonelist', clonelist), ('agentlist', agentlist), ('cloneinfo ', cloneinfo), ('agentinfo ', agentinfo), ('agentusers ', agentusers), ('clonerestart ', clonerestart), ('agentrestart ', agentrestart), ('clonedelete ', clonedelete), ('agentdelete ', agentdelete), ('setcloneprice', setcloneprice), ('restockpushcfg', restockpushcfg), ('buynoticecfg', buynoticecfg), ('setbuynotice', setbuynotice), ('setrestocktarget', setrestocktarget), ('restockrequestarea ', restockrequestarea), ('nostock ', nostock), ('okpaycfg', okpaycfg), ('setokpayid', setokpayid), ('setokpaytoken', setokpaytoken), ('setokpayname', setokpayname), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
+        ('startupdate', startupdate), ('clonebot', clonebot), ('cloneagent', cloneagent), ('clonepay', clonepay), ('clonelist', clonelist), ('agentlist', agentlist), ('cloneinfo ', cloneinfo), ('agentinfo ', agentinfo), ('agentusers ', agentusers), ('clonerestart ', clonerestart), ('agentrestart ', agentrestart), ('clonedelete ', clonedelete), ('agentdelete ', agentdelete), ('setcloneprice', setcloneprice), ('restockpushcfg', restockpushcfg), ('buynoticecfg', buynoticecfg), ('setbuynotice', setbuynotice), ('setrestocktarget', setrestocktarget), ('restockrequestarea ', restockrequestarea), ('nostock ', nostock), ('okpaycfg', okpaycfg), ('setokpayid', setokpayid), ('setokpaytoken', setokpaytoken), ('setokpayname', setokpayname), ('toggleacctcheck', toggleacctcheck), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
         ('backstart', backstart), ('paixurow', paixurow), ('addzdykey', addzdykey),
         ('qrscdelrow ', qrscdelrow), ('addhangkey ', addhangkey), ('delhangkey ', delhangkey),
         ('qrdelliekey ', qrdelliekey), ('keyxq ', keyxq), ('setkeyname ', setkeyname),

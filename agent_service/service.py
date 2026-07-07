@@ -55,7 +55,6 @@ from mongo import (
 )
 from account_health_check import check_account_inventory_item_with_ttl_update, get_account_check_runtime_status
 from haopubot import (
-    ACCOUNT_CHECK_ENABLED,
     ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS,
     ACCOUNT_CHECK_SUPPORTED_TYPES,
     ACCOUNT_CHECK_TIMEOUT_SECONDS,
@@ -69,6 +68,7 @@ from haopubot import (
     create_delivery_order_id,
     dynamic_emoji_to_html,
     find_existing_storage_path,
+    get_account_check_enabled,
     format_account_check_elapsed,
     get_buy_notice_text,
     get_message_storage_text,
@@ -1098,7 +1098,7 @@ async def deliver_agent_order(context: ContextTypes.DEFAULT_TYPE, config: AgentR
     total_count = len(selected_docs)
     update_tenant_order(config.agent_bot_id, order_id, {'state': 'delivering', 'delivery_started_at': beijing_now_str(), 'delivery_type': leixing})
 
-    use_account_check = ACCOUNT_CHECK_ENABLED and leixing in ACCOUNT_CHECK_SUPPORTED_TYPES and bool(get_account_check_runtime_status(leixing).get('ready'))
+    use_account_check = get_account_check_enabled() and leixing in ACCOUNT_CHECK_SUPPORTED_TYPES and bool(get_account_check_runtime_status(leixing).get('ready'))
     alive_items: list[dict] = []
     invalid_items: list[dict] = []
     frozen_items: list[dict] = []
