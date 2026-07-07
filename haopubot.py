@@ -3587,11 +3587,10 @@ def collect_delivery_source_paths(leixing, nowuid, entry_name):
 
 
 def get_delivery_zip_mode(entry_count):
-    # Large exports are dominated by scan/upload time, so avoid expensive compression work.
-    threshold = max(1, int(os.getenv('DELIVERY_ZIP_STORED_THRESHOLD', '200') or 200))
-    if int(entry_count or 0) >= threshold:
-        return zipfile.ZIP_STORED, None
-    return zipfile.ZIP_DEFLATED, 1
+    # Delivery files should stay compact by default; allow tuning via env when needed.
+    compresslevel = int(os.getenv('DELIVERY_ZIP_COMPRESSLEVEL', '6') or 6)
+    compresslevel = max(1, min(compresslevel, 9))
+    return zipfile.ZIP_DEFLATED, compresslevel
 
 
 def open_delivery_zip(zip_filename, entry_count):
