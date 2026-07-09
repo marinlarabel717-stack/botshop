@@ -446,6 +446,30 @@ def unique_preserve_order(values):
     return result
 
 
+WS_ACCOUNT_FIELD_COUNT = 6
+
+
+def parse_ws_accounts_from_text(raw_text):
+    text = str(raw_text or '').replace('\ufeff', '')
+    accounts = []
+    current_parts = []
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip().strip(',')
+        if not line:
+            continue
+        parts = [part.strip() for part in line.split(',') if part.strip()]
+        if not parts:
+            continue
+        current_parts.extend(parts)
+        while len(current_parts) >= WS_ACCOUNT_FIELD_COUNT:
+            account_parts = current_parts[:WS_ACCOUNT_FIELD_COUNT]
+            accounts.append(','.join(account_parts))
+            current_parts = current_parts[WS_ACCOUNT_FIELD_COUNT:]
+
+    return unique_preserve_order(accounts), current_parts
+
+
 try:
     APP_VERSION = VERSION_FILE.read_text(encoding='utf-8').strip()
 except Exception:
@@ -4984,7 +5008,8 @@ def update_ws(update: Update, context: CallbackContext):
     bot_id = context.bot.id
     nowuid = query.data.replace('update_ws ', '')
     fstext = f'''
-ws号专用上传，请发送txt文件，一行一个
+ws号专用上传，请发送txt文件
+支持一行一个完整账号，系统会按 6 段逗号字段自动识别
     '''
     user.update_one({"user_id": user_id}, {"$set": {"sign": f'update_ws {nowuid}'}})
     keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
@@ -10113,12 +10138,19 @@ def textkeyboard(update: Update, context: CallbackContext):
 
                     context.bot.send_message(chat_id=user_id, text='上传中，请勿重复操作')
 
-                    link_list = []
-                    with open(new_file_path, 'r', encoding='utf-8') as file:
-                        for line in file:
-                            line = line.strip()
-                            if line:
-                                link_list.append(line)
+                    with open(new_file_path, 'r', encoding='utf-8-sig', errors='ignore') as file:
+                        raw_text = file.read()
+                    link_list, incomplete_parts = parse_ws_accounts_from_text(raw_text)
+                    if incomplete_parts:
+                        update.message.reply_text(
+                            f'上传失败：检测到不完整的ws号，末尾还差 {WS_ACCOUNT_FIELD_COUNT - len(incomplete_parts)} 段字段，请检查txt格式后重试'
+                        )
+                        user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                        return
+                    if not link_list:
+                        update.message.reply_text('上传失败：没有识别到有效的ws号，请确认txt内容是否为逗号分隔的完整格式')
+                        user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                        return
                     timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
                     count = 0
                     for i in link_list:
