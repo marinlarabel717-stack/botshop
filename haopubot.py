@@ -4865,7 +4865,7 @@ def build_product_detail_keyboard(nowuid, uid, user_id):
          InlineKeyboardButton('💡购买提示', callback_data=f'update_wbts {nowuid}')],
         [InlineKeyboardButton('🔗上传链接', callback_data=f'update_hy {nowuid}'),
          InlineKeyboardButton('📝上传txt文件', callback_data=f'update_txt {nowuid}')],
-        [InlineKeyboardButton('📱上传ws号txt', callback_data=f'update_ws {nowuid}'),
+        [InlineKeyboardButton('[emoji:5231122114710348213:🌐]上传ws号', callback_data=f'update_ws {nowuid}'),
          InlineKeyboardButton('📦上传号包', callback_data=f'update_hb {nowuid}')],
         [InlineKeyboardButton('🧩上传协议号', callback_data=f'update_xyh {nowuid}'),
          InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}修改二级分类名', callback_data=f'upejflname {nowuid}')],
