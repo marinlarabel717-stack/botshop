@@ -4647,6 +4647,8 @@ def resolve_purchase_record_file_path(record_path, leixing=None):
         folder_candidates.append('谷歌发货')
     elif leixing == 'API链接':
         folder_candidates.append('手机接码发货')
+    elif leixing == 'WS号':
+        folder_candidates.append('手机接码发货')
 
     folder_candidates.extend(['协议号发货', '发货', '谷歌发货', '手机接码发货'])
 
@@ -4839,12 +4841,13 @@ def build_product_detail_keyboard(nowuid, uid, user_id):
          InlineKeyboardButton('💡购买提示', callback_data=f'update_wbts {nowuid}')],
         [InlineKeyboardButton('🔗上传链接', callback_data=f'update_hy {nowuid}'),
          InlineKeyboardButton('📝上传txt文件', callback_data=f'update_txt {nowuid}')],
-        [InlineKeyboardButton('📦上传号包', callback_data=f'update_hb {nowuid}'),
-         InlineKeyboardButton('🧩上传协议号', callback_data=f'update_xyh {nowuid}')],
-        [InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}修改二级分类名', callback_data=f'upejflname {nowuid}'),
-         InlineKeyboardButton('💰修改价格', callback_data=f'upmoney {nowuid}')],
-        [InlineKeyboardButton('⬅️返回分类详情', callback_data=f'flxxi {uid}'),
-         InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')]
+        [InlineKeyboardButton('📱上传ws号txt', callback_data=f'update_ws {nowuid}'),
+         InlineKeyboardButton('📦上传号包', callback_data=f'update_hb {nowuid}')],
+        [InlineKeyboardButton('🧩上传协议号', callback_data=f'update_xyh {nowuid}'),
+         InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}修改二级分类名', callback_data=f'upejflname {nowuid}')],
+        [InlineKeyboardButton('💰修改价格', callback_data=f'upmoney {nowuid}'),
+         InlineKeyboardButton('⬅️返回分类详情', callback_data=f'flxxi {uid}')],
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')]
     ]
 
 
@@ -4970,6 +4973,20 @@ def update_txt(update: Update, context: CallbackContext):
 api号码链接专用，请正确上传，发送txt文件，一行一个
     '''
     user.update_one({"user_id": user_id}, {"$set": {"sign": f'update_txt {nowuid}'}})
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
+    context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+def update_ws(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
+    bot_id = context.bot.id
+    nowuid = query.data.replace('update_ws ', '')
+    fstext = f'''
+ws号专用上传，请发送txt文件，一行一个
+    '''
+    user.update_one({"user_id": user_id}, {"$set": {"sign": f'update_ws {nowuid}'}})
     keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -8816,10 +8833,10 @@ def qrgaimai(update: Update, context: CallbackContext):
                     pass
 
 
-        elif fhtype == 'API':
+        elif fhtype in {'API', 'WS号'}:
             order_id = create_delivery_order_id()
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            selected_docs, charged_user, reserve_state = reserve_inventory_and_charge({'nowuid': nowuid}, gmsl, user_id, order_id, timer, zxymoney)
+            selected_docs, charged_user, reserve_state = reserve_inventory_and_charge({'nowuid': nowuid, 'leixing': fhtype}, gmsl, user_id, order_id, timer, zxymoney)
             if reserve_state == 'stock':
                 context.bot.send_message(chat_id=user_id, text=translate_text('当前库存不足', lang))
                 user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
@@ -8835,6 +8852,7 @@ def qrgaimai(update: Update, context: CallbackContext):
             del_message(query.message)
 
             folder_names = [j['projectname'] for j in selected_docs]
+            record_type = 'API链接' if fhtype == 'API' else 'WS号'
 
             shijiancuo = int(time.time())
 
@@ -8854,7 +8872,7 @@ def qrgaimai(update: Update, context: CallbackContext):
             # 组合编号
             bianhao = formatted_time + timestamp
             timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-            goumaijilua('API链接', bianhao, user_id, erjiprojectname, zip_filename, fstext, timer)
+            goumaijilua(record_type, bianhao, user_id, erjiprojectname, zip_filename, fstext, timer)
 
             query.message.reply_document(open(zip_filename, "rb"))
             if notice_text:
@@ -9077,8 +9095,8 @@ def qchuall(update: Update, context: CallbackContext):
         else:
             query.message.reply_text("这批库存文件没找到，暂时没法发货。")
 
-    elif fhtype == 'API':
-        rows = pop_inventory_rows({"nowuid": nowuid, 'state': 0}, {'projectname': 1, 'hbid': 1})
+    elif fhtype in {'API', 'WS号'}:
+        rows = pop_inventory_rows({"nowuid": nowuid, 'state': 0, 'leixing': fhtype}, {'projectname': 1, 'hbid': 1})
         for j in rows:
             projectname = j['projectname']
             folder_names.append(projectname)
@@ -10077,6 +10095,59 @@ def textkeyboard(update: Update, context: CallbackContext):
 已售: {ys}
                     '''
                     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
+                elif 'update_ws' in sign:
+                    nowuid = sign.replace('update_ws ', '')
+                    uid = ejfl.find_one({'nowuid': nowuid})['uid']
+                    previous_stock = get_stock_count(nowuid)
+
+                    file = update.message.document
+                    filename = file.file_name or ''
+                    if not filename.lower().endswith('.txt'):
+                        update.message.reply_text('请上传txt格式文件')
+                        return
+
+                    file_id = file.file_id
+                    new_file = context.bot.get_file(file_id)
+                    new_file_path = f'./临时文件夹/{filename}'
+                    new_file.download(new_file_path)
+
+                    context.bot.send_message(chat_id=user_id, text='上传中，请勿重复操作')
+
+                    link_list = []
+                    with open(new_file_path, 'r', encoding='utf-8') as file:
+                        for line in file:
+                            line = line.strip()
+                            if line:
+                                link_list.append(line)
+                    timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                    count = 0
+                    for i in link_list:
+                        if hb.find_one({'nowuid': nowuid, 'projectname': i}) is None:
+                            hbid = generate_24bit_uid()
+                            shangchuanhaobao('WS号', uid, nowuid, hbid, i, timer)
+                            count += 1
+
+                    update.message.reply_text(f'处理完成！本次上传了{count}个ws号')
+                    user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                    notify_restock_if_needed(context, nowuid, previous_stock, count)
+
+                    ej_list = ejfl.find_one({'nowuid': nowuid})
+                    uid = ej_list['uid']
+                    money = ej_list['money']
+                    ej_projectname = ej_list['projectname']
+                    fl_pro = fenlei.find_one({'uid': uid})['projectname']
+                    keyboard = build_product_detail_keyboard(nowuid, uid, user_id)
+                    kc = len(list(hb.find({'nowuid': nowuid, 'state': 0})))
+                    ys = len(list(hb.find({'nowuid': nowuid, 'state': 1})))
+                    fstext = f'''
+主分类: {fl_pro}
+二级分类: {ej_projectname}
+
+价格: {money}U
+库存: {kc}
+已售: {ys}
+                    '''
+                    context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
                 elif 'update_xyh' in sign:
                     nowuid = sign.replace('update_xyh ', '')
                     uid = ejfl.find_one({'nowuid': nowuid})['uid']
@@ -10921,7 +10992,7 @@ def main():
         ('delejfl ', delejfl), ('qrscejrow ', qrscejrow), ('delcurconfirm ', delcurconfirm), ('delcurejfl ', delcurejfl), ('update_hb ', update_hb), ('gmsp ', gmsp),
         ('upmoney ', upmoney), ('gmqq', gmqq), ('qrgaimai ', qrgaimai),
         ('update_xyh ', update_xyh), ('update_hy ', update_hy), ('yhnext ', yhnext), ('yhlist', yhlist),
-        ('gmaijilu', gmaijilu), ('tglink ', tglink), ('charef ', charef), ('zcfshuo', zcfshuo), ('gmainext ', gmainext), ('update_txt ', update_txt),
+        ('gmaijilu', gmaijilu), ('tglink ', tglink), ('charef ', charef), ('zcfshuo', zcfshuo), ('gmainext ', gmainext), ('update_txt ', update_txt), ('update_ws ', update_ws),
         ('backgmjl ', backgmjl), ('backcha ', backcha), ('qchuall ', qchuall), ('update_wbts ', update_wbts),
         ('update_gg ', update_gg), ('zdycz', zdycz), ('okzdycz', okzdycz), ('recharge_menu', recharge_menu), ('recharge_trc20', recharge_trc20), ('recharge_okpay', recharge_okpay), ('addhb', addhb), ('lqhb ', lqhb),
         ('xzhb ', xzhb), ('yjshb', yjshb), ('jxzhb', jxzhb), ('shokuan ', shokuan),
