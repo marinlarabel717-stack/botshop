@@ -85,6 +85,8 @@ REFERRAL_RATE_TIERS = (
     (Decimal('100'), Decimal('0.01')),
 )
 
+REFERRAL_BIND_NEW_USER_WINDOW_SECONDS = 300
+
 REFERRAL_FIELD_DEFAULTS = {
     'referrer_user_id': 0,
     'ref_bind_time': '',
@@ -130,6 +132,16 @@ def get_referral_tier_text(total_recharge_amount):
     if total_recharge_amount >= Decimal('100'):
         return '100U+ 档位（1%）'
     return '未达门槛（0%）'
+
+
+def parse_referral_time(value):
+    value = str(value or '').strip()
+    if not value:
+        return None
+    try:
+        return datetime.datetime.strptime(value, '%Y-%m-%d %H:%M:%S')
+    except Exception:
+        return None
 
 
 def user_has_recharge_history(user_id):
@@ -270,6 +282,13 @@ def bind_referrer_if_possible(user_id, referral_code, timer):
         return False
     if int(user_doc.get('referrer_user_id', 0) or 0) != 0:
         return False
+    bind_time = parse_referral_time(timer)
+    creation_time = parse_referral_time(user_doc.get('creation_time'))
+    if bind_time is None or creation_time is None:
+        return False
+    bind_elapsed_seconds = (bind_time - creation_time).total_seconds()
+    if bind_elapsed_seconds < 0 or bind_elapsed_seconds > REFERRAL_BIND_NEW_USER_WINDOW_SECONDS:
+        return False
     if Decimal(str(user_doc.get('referred_recharge_total', 0) or 0)) > 0:
         return False
     if Decimal(str(user_doc.get('zgje', 0) or 0)) > 0 or int(user_doc.get('zgsl', 0) or 0) > 0:
@@ -298,13 +317,17 @@ def apply_referral_commission(bot, invitee_user_id, recharge_amount, order_id, s
     if recharge_amount <= 0:
         return
 
-    recharge_before = Decimal(str(invitee_doc.get('referred_recharge_total', 0) or 0))
-    recharge_after = to_db_number(recharge_before + recharge_amount)
     inviter_user_id = int(invitee_doc.get('referrer_user_id', 0) or 0)
-    rate = get_referral_rate(recharge_before)
+    updated_invitee_doc = user.find_one_and_update(
+        {'user_id': invitee_user_id},
+        {'$inc': {'referred_recharge_total': to_db_number(recharge_amount)}},
+        return_document=ReturnDocument.AFTER,
+    )
+    if updated_invitee_doc is None:
+        return
+    recharge_after = Decimal(str(updated_invitee_doc.get('referred_recharge_total', 0) or 0))
+    rate = get_referral_rate(recharge_after)
     commission_amount = Decimal('0')
-
-    user.update_one({'user_id': invitee_user_id}, {'$set': {'referred_recharge_total': recharge_after}})
 
     if inviter_user_id and rate > 0:
         inviter_doc = ensure_referral_fields(inviter_user_id)
@@ -312,21 +335,19 @@ def apply_referral_commission(bot, invitee_user_id, recharge_amount, order_id, s
             raw_commission = recharge_amount * rate
             commission_amount = Decimal(str(to_db_number(raw_commission)))
             if commission_amount > 0:
-                inviter_balance = Decimal(str(inviter_doc.get('USDT', 0) or 0))
-                inviter_commission_total = Decimal(str(inviter_doc.get('invite_commission_total', 0) or 0))
                 user.update_one(
                     {'user_id': inviter_user_id},
-                    {'$set': {
-                        'USDT': to_db_number(inviter_balance + commission_amount),
-                        'invite_commission_total': to_db_number(inviter_commission_total + commission_amount),
+                    {'$inc': {
+                        'USDT': to_db_number(commission_amount),
+                        'invite_commission_total': to_db_number(commission_amount),
                     }}
                 )
                 if bot is not None:
                     inviter_name = html.escape(str(inviter_doc.get('fullname') or inviter_user_id).replace('<', '').replace('>', ''), quote=False)
                     inviter_username = str(inviter_doc.get('username') or '').strip().lstrip('@')
                     inviter_username_text = f' @{html.escape(inviter_username, quote=False)}' if inviter_username else ''
-                    invitee_name = html.escape(str(invitee_doc.get('fullname') or invitee_user_id).replace('<', '').replace('>', ''), quote=False)
-                    invitee_username = str(invitee_doc.get('username') or '').strip().lstrip('@')
+                    invitee_name = html.escape(str(updated_invitee_doc.get('fullname') or invitee_user_id).replace('<', '').replace('>', ''), quote=False)
+                    invitee_username = str(updated_invitee_doc.get('username') or '').strip().lstrip('@')
                     invitee_username_text = f' @{html.escape(invitee_username, quote=False)}' if invitee_username else ''
                     try:
                         bot.send_message(
