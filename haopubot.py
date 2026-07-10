@@ -721,6 +721,9 @@ ACCOUNT_CHECK_EMOJI_FROZEN = '[emoji:5449449325434266744:❄️]'
 ACCOUNT_CHECK_EMOJI_TIMEOUT = '[emoji:5382194935057372936:⏱️]'
 ACCOUNT_CHECK_EMOJI_TOTAL = '[emoji:5352625743081775722:🎚️]'
 
+ADMIN_STOCK_CHECK_ACTIVE = set()
+ADMIN_STOCK_CHECK_ACTIVE_LOCK = threading.Lock()
+
 
 def parse_admin_user_ids(value):
     admin_ids = set()
@@ -3479,6 +3482,47 @@ def build_account_check_admin_notice(fullname, username, user_id, yijiprojectnam
     return '\n'.join(lines)
 
 
+def build_admin_stock_check_result_text(main_projectname, projectname, total_count, alive_count, invalid_count, frozen_count, timeout_count, remaining_count):
+    lines = [
+        f'<b>{ADMIN_EMOJI_ACCOUNT_CHECK} 库存存活检查完成</b>',
+        '',
+        f'<b>商品：</b> {html.escape(str(main_projectname), quote=False)}/{html.escape(str(projectname), quote=False)}',
+        f'<b>{ACCOUNT_CHECK_EMOJI_TOTAL} 检查库存：</b> {total_count}',
+        f'<b>{ACCOUNT_CHECK_EMOJI_ALIVE} 存活账号：</b> {alive_count}',
+        f'<b>{ACCOUNT_CHECK_EMOJI_INVALID} 无效账号：</b> {invalid_count}',
+        f'<b>{ACCOUNT_CHECK_EMOJI_FROZEN} 冻结账号：</b> {frozen_count}',
+    ]
+    if timeout_count:
+        lines.append(f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 超时账号：</b> {timeout_count}')
+    lines.extend([
+        '',
+        f'<b>[emoji:5282843764451195532:🖥] 当前剩余库存：</b> {remaining_count}',
+    ])
+    if invalid_count or frozen_count:
+        lines.append(f'<b>[emoji:5474194650661147876:📷] 无效/冻结库存已打包发给管理员</b>')
+    if timeout_count:
+        lines.append(f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 超时库存已保留在机器人里，未自动删除</b>')
+    return '\n'.join(lines)
+
+
+def build_admin_stock_check_notice(main_projectname, projectname, total_count, alive_count, invalid_count, frozen_count, timeout_count, remaining_count, order_id, operator_user_id):
+    lines = [
+        f'<b>{ADMIN_EMOJI_ACCOUNT_CHECK} 库存存活检查</b>',
+        '',
+        f'<b>商品：</b> {html.escape(str(main_projectname), quote=False)}/{html.escape(str(projectname), quote=False)}',
+        f'<b>操作管理员：</b> <code>{operator_user_id}</code>',
+        f'<b>检查批次：</b> <code>{order_id}</code>',
+        f'<b>{ACCOUNT_CHECK_EMOJI_TOTAL} 检查库存：</b> {total_count}',
+        f'<b>{ACCOUNT_CHECK_EMOJI_ALIVE} 存活账号：</b> {alive_count}',
+        f'<b>{ACCOUNT_CHECK_EMOJI_INVALID} 无效账号：</b> {invalid_count}',
+        f'<b>{ACCOUNT_CHECK_EMOJI_FROZEN} 冻结账号：</b> {frozen_count}',
+    ]
+    if timeout_count:
+        lines.append(f'<b>{ACCOUNT_CHECK_EMOJI_TIMEOUT} 超时账号：</b> {timeout_count}')
+    lines.append(f'<b>[emoji:5282843764451195532:🖥] 当前剩余库存：</b> {remaining_count}')
+    return '\n'.join(lines)
+
+
 def create_delivery_order_id():
     current_time = datetime.datetime.now()
     formatted_time = current_time.strftime('%Y%m%d%H%M%S')
@@ -3764,6 +3808,23 @@ def write_invalid_archive_meta(order_id, payload):
     meta_path.parent.mkdir(parents=True, exist_ok=True)
     meta_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
     return meta_path
+
+
+def build_invalid_archive_bundle_zip(order_id):
+    date_text = time.strftime('%Y-%m-%d', time.localtime())
+    bundle_root = ACCOUNT_BAN_ROOT / date_text / str(order_id)
+    if not bundle_root.exists():
+        return None, 0
+
+    zip_path = bundle_root.parent / f'{order_id}.zip'
+    added_files = 0
+    with open_delivery_zip(zip_path, 1) as zipf:
+        for candidate in bundle_root.rglob('*'):
+            if not candidate.is_file():
+                continue
+            zipf.write(candidate, candidate.relative_to(bundle_root.parent))
+            added_files += 1
+    return (zip_path if added_files > 0 else None), added_files
 
 
 def refund_invalid_accounts(user_id, refund_amount, order_id):
@@ -4861,18 +4922,53 @@ def build_product_detail_keyboard(nowuid, uid, user_id):
     return [
         [InlineKeyboardButton(f'{MOOD_EMOJI_FIRE}取出所有库存', callback_data=f'qchuall {nowuid}'),
          InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除该分类', callback_data=f'delcurconfirm {nowuid}')],
-        [InlineKeyboardButton('📄上传谷歌账户', callback_data=f'update_gg {nowuid}'),
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_ACCOUNT_CHECK}检查库存存活', callback_data=f'checkstockalive {nowuid}'),
          InlineKeyboardButton('💡购买提示', callback_data=f'update_wbts {nowuid}')],
-        [InlineKeyboardButton('🔗上传链接', callback_data=f'update_hy {nowuid}'),
+        [InlineKeyboardButton('📄上传谷歌账户', callback_data=f'update_gg {nowuid}'),
          InlineKeyboardButton('📝上传txt文件', callback_data=f'update_txt {nowuid}')],
-        [InlineKeyboardButton('[emoji:5231122114710348213:🌐]上传ws号', callback_data=f'update_ws {nowuid}'),
-         InlineKeyboardButton('📦上传号包', callback_data=f'update_hb {nowuid}')],
-        [InlineKeyboardButton('🧩上传协议号', callback_data=f'update_xyh {nowuid}'),
-         InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}修改二级分类名', callback_data=f'upejflname {nowuid}')],
-        [InlineKeyboardButton('💰修改价格', callback_data=f'upmoney {nowuid}'),
-         InlineKeyboardButton('⬅️返回分类详情', callback_data=f'flxxi {uid}')],
+        [InlineKeyboardButton('🔗上传链接', callback_data=f'update_hy {nowuid}'),
+         InlineKeyboardButton('[emoji:5231122114710348213:🌐]上传ws号', callback_data=f'update_ws {nowuid}')],
+        [InlineKeyboardButton('📦上传号包', callback_data=f'update_hb {nowuid}'),
+         InlineKeyboardButton('🧩上传协议号', callback_data=f'update_xyh {nowuid}')],
+        [InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}修改二级分类名', callback_data=f'upejflname {nowuid}'),
+         InlineKeyboardButton('💰修改价格', callback_data=f'upmoney {nowuid}')],
+        [InlineKeyboardButton('⬅️返回分类详情', callback_data=f'flxxi {uid}')],
         [InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')]
     ]
+
+
+def get_product_detail_snapshot(nowuid):
+    ej_list = ejfl.find_one({'nowuid': nowuid}) or {}
+    uid = ej_list.get('uid', '')
+    ej_projectname = ej_list.get('projectname', '')
+    money = ej_list.get('money', '')
+    fl_pro = ''
+    if uid:
+        fl_list = fenlei.find_one({'uid': uid}) or {}
+        fl_pro = fl_list.get('projectname', '')
+    kc = hb.count_documents({'nowuid': nowuid, 'state': 0})
+    ys = hb.count_documents({'nowuid': nowuid, 'state': 1})
+    return {
+        'uid': uid,
+        'main_projectname': fl_pro,
+        'projectname': ej_projectname,
+        'money': money,
+        'stock_count': kc,
+        'sold_count': ys,
+    }
+
+
+def build_product_detail_text(nowuid):
+    snapshot = get_product_detail_snapshot(nowuid)
+    fstext = f'''
+主分类: {snapshot["main_projectname"]}
+二级分类: {snapshot["projectname"]}
+
+价格: {snapshot["money"]}U
+库存: {snapshot["stock_count"]}
+已售: {snapshot["sold_count"]}
+    '''
+    return fstext, snapshot
 
 
 def newfl(update: Update, context: CallbackContext):
@@ -4939,23 +5035,10 @@ def fejxxi(update: Update, context: CallbackContext):
     query.answer()
     bot_id = context.bot.id
     nowuid = query.data.replace('fejxxi ', '')
-
-    ej_list = ejfl.find_one({'nowuid': nowuid})
-    uid = ej_list['uid']
-    ej_projectname = ej_list['projectname']
-    money = ej_list['money']
-    fl_pro = fenlei.find_one({'uid': uid})['projectname']
+    _, snapshot = build_product_detail_text(nowuid)
+    uid = snapshot['uid']
     keyboard = build_product_detail_keyboard(nowuid, uid, user_id)
-    kc = len(list(hb.find({'nowuid': nowuid, 'state': 0})))
-    ys = len(list(hb.find({'nowuid': nowuid, 'state': 1})))
-    fstext = f'''
-主分类: {fl_pro}
-二级分类: {ej_projectname}
-
-价格: {money}U
-库存: {kc}
-已售: {ys}
-    '''
+    fstext, _ = build_product_detail_text(nowuid)
     query.edit_message_text(text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -9179,23 +9262,304 @@ def qchuall(update: Update, context: CallbackContext):
         else:
             query.message.reply_text("这批库存文件没找到，暂时没法发货。")
 
-    ej_list = ejfl.find_one({'nowuid': nowuid})
-    uid = ej_list['uid']
-    ej_projectname = ej_list['projectname']
-    money = ej_list['money']
-    fl_pro = fenlei.find_one({'uid': uid})['projectname']
+    _, snapshot = build_product_detail_text(nowuid)
+    uid = snapshot['uid']
     keyboard = build_product_detail_keyboard(nowuid, uid, user_id)
-    kc = hb.count_documents({'nowuid': nowuid, 'state': 0})
-    ys = hb.count_documents({'nowuid': nowuid, 'state': 1})
-    fstext = f'''
-主分类: {fl_pro}
-二级分类: {ej_projectname}
-
-价格: {money}U
-库存: {kc}
-已售: {ys}
-    '''
+    fstext, _ = build_product_detail_text(nowuid)
     context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+def run_admin_stock_alive_check(bot, operator_user_id, nowuid, fhtype, selected_items, progress_message_id):
+    try:
+        snapshot = get_product_detail_snapshot(nowuid)
+        uid = snapshot['uid']
+        main_projectname = snapshot['main_projectname']
+        projectname = snapshot['projectname']
+        total_count = len(selected_items)
+        alive_items = []
+        invalid_items = []
+        frozen_items = []
+        timeout_items = []
+        checked_count = 0
+        order_id = create_delivery_order_id()
+        progress_started_at = time.monotonic()
+        progress_state = {
+            'running_count': 0,
+            'alive_count': 0,
+            'invalid_count': 0,
+            'frozen_count': 0,
+            'timeout_count': 0,
+        }
+        progress_lock = threading.Lock()
+        last_progress_ts = 0.0
+
+        def push_progress(force=False):
+            nonlocal last_progress_ts
+            now_ts = time.monotonic()
+            if not force and now_ts - last_progress_ts < ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS:
+                return
+            with progress_lock:
+                running_count = max(0, int(progress_state['running_count']))
+                alive_count = int(progress_state['alive_count'])
+                invalid_count = int(progress_state['invalid_count'])
+                frozen_count = int(progress_state['frozen_count'])
+                timeout_count = int(progress_state['timeout_count'])
+            queued_count = max(0, total_count - checked_count - running_count)
+            try:
+                edit_html_message(
+                    bot,
+                    operator_user_id,
+                    progress_message_id,
+                    build_account_check_progress_text(
+                        total_count,
+                        checked_count,
+                        alive_count,
+                        invalid_count,
+                        frozen_count,
+                        timeout_count,
+                        in_progress_count=running_count,
+                        queued_count=queued_count,
+                        elapsed_seconds=now_ts - progress_started_at,
+                        user_id=operator_user_id,
+                    ),
+                    reply_markup=InlineKeyboardMarkup(build_product_detail_keyboard(nowuid, uid, operator_user_id)),
+                )
+            except Exception:
+                logging.warning('Failed to update admin stock-check progress for user %s at %s/%s', operator_user_id, checked_count, total_count, exc_info=True)
+            last_progress_ts = now_ts
+
+        def run_single_account_check_tracked(item):
+            with progress_lock:
+                progress_state['running_count'] += 1
+            try:
+                return run_single_account_check(fhtype, nowuid, item, ACCOUNT_CHECK_TIMEOUT_SECONDS)
+            finally:
+                with progress_lock:
+                    progress_state['running_count'] = max(0, progress_state['running_count'] - 1)
+
+        max_workers = get_account_check_concurrency(total_count)
+        delete_ids = []
+        delete_hbids = []
+        with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix='admin-stock-check') as executor:
+            future_map = {
+                executor.submit(run_single_account_check_tracked, item): item
+                for item in selected_items
+            }
+            pending_futures = set(future_map.keys())
+            while pending_futures:
+                done_futures, pending_futures = wait(
+                    pending_futures,
+                    timeout=ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS,
+                    return_when=FIRST_COMPLETED,
+                )
+                if not done_futures:
+                    push_progress(force=True)
+                    continue
+                for future in done_futures:
+                    item = future_map[future]
+                    projectname_current = item['projectname']
+                    try:
+                        _, projectname_current, check_result = future.result()
+                    except Exception as exc:
+                        check_result = {'status': 'timeout', 'reason': str(exc) or exc.__class__.__name__}
+                    checked_count += 1
+
+                    hb_filter = {'_id': item['_id']} if item.get('_id') is not None else {'hbid': item.get('hbid')}
+                    hb.update_one(
+                        hb_filter,
+                        {'$set': {
+                            'delivery_check_state': check_result.get('status', 'timeout'),
+                            'delivery_check_reason': str(check_result.get('reason', ''))[:500],
+                            'delivery_check_timer': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                        }}
+                    )
+
+                    item_meta = {
+                        'hbid': item.get('hbid'),
+                        'projectname': projectname_current,
+                        'status': check_result.get('status', 'timeout'),
+                        'reason': check_result.get('reason', ''),
+                    }
+                    if item.get('_id') is not None:
+                        item_meta['_id'] = str(item['_id'])
+
+                    if check_result.get('status') == 'alive':
+                        alive_items.append(item)
+                        with progress_lock:
+                            progress_state['alive_count'] += 1
+                    elif check_result.get('status') == 'frozen':
+                        item_meta.update({
+                            'freeze_since_date': check_result.get('freeze_since_date', 0),
+                            'freeze_until_date': check_result.get('freeze_until_date', 0),
+                            'freeze_since_text': check_result.get('freeze_since_text', ''),
+                            'freeze_until_text': check_result.get('freeze_until_text', ''),
+                            'freeze_appeal_url': check_result.get('freeze_appeal_url', ''),
+                        })
+                        frozen_items.append(archive_invalid_inventory_item(fhtype, nowuid, projectname_current, order_id, item_meta))
+                        if item.get('_id') is not None:
+                            delete_ids.append(item['_id'])
+                        elif item.get('hbid') is not None:
+                            delete_hbids.append(item['hbid'])
+                        with progress_lock:
+                            progress_state['frozen_count'] += 1
+                    elif check_result.get('status') == 'invalid':
+                        invalid_items.append(archive_invalid_inventory_item(fhtype, nowuid, projectname_current, order_id, item_meta))
+                        if item.get('_id') is not None:
+                            delete_ids.append(item['_id'])
+                        elif item.get('hbid') is not None:
+                            delete_hbids.append(item['hbid'])
+                        with progress_lock:
+                            progress_state['invalid_count'] += 1
+                    else:
+                        timeout_items.append(item)
+                        with progress_lock:
+                            progress_state['timeout_count'] += 1
+
+                    should_push_progress = (
+                        checked_count == total_count
+                        or checked_count % ACCOUNT_CHECK_PROGRESS_STEP == 0
+                        or time.monotonic() - last_progress_ts >= ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS
+                        or time.monotonic() - last_progress_ts >= ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS
+                    )
+                    if should_push_progress:
+                        push_progress(force=True)
+
+        if delete_ids:
+            hb.delete_many({'_id': {'$in': delete_ids}, 'state': 0})
+        if delete_hbids:
+            hb.delete_many({'hbid': {'$in': delete_hbids}, 'state': 0})
+
+        archive_payload = {
+            'order_id': order_id,
+            'operator_user_id': operator_user_id,
+            'product_nowuid': nowuid,
+            'product_name': projectname,
+            'delivery_type': fhtype,
+            'total_count': total_count,
+            'alive_count': len(alive_items),
+            'invalid_count': len(invalid_items),
+            'frozen_count': len(frozen_items),
+            'timeout_count': len(timeout_items),
+            'created_at': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()),
+            'invalid_items': invalid_items,
+            'frozen_items': frozen_items,
+        }
+        if invalid_items or frozen_items:
+            write_invalid_archive_meta(order_id, archive_payload)
+
+        remaining_count = hb.count_documents({'nowuid': nowuid, 'state': 0})
+        result_text = build_admin_stock_check_result_text(
+            main_projectname,
+            projectname,
+            total_count,
+            len(alive_items),
+            len(invalid_items),
+            len(frozen_items),
+            len(timeout_items),
+            remaining_count,
+        )
+        update_account_check_status_message(bot, operator_user_id, progress_message_id, result_text)
+        try:
+            bot.edit_message_reply_markup(
+                chat_id=operator_user_id,
+                message_id=progress_message_id,
+                reply_markup=InlineKeyboardMarkup(build_product_detail_keyboard(nowuid, uid, operator_user_id)),
+            )
+        except Exception:
+            logging.warning('Failed to update admin stock-check keyboard for user %s', operator_user_id, exc_info=True)
+
+        archive_zip_path, archive_file_count = build_invalid_archive_bundle_zip(order_id)
+        admin_notice = build_admin_stock_check_notice(
+            main_projectname,
+            projectname,
+            total_count,
+            len(alive_items),
+            len(invalid_items),
+            len(frozen_items),
+            len(timeout_items),
+            remaining_count,
+            order_id,
+            operator_user_id,
+        )
+        for admin_user in list(user.find({'state': '4'})):
+            try:
+                send_html_message(bot, admin_user['user_id'], admin_notice)
+                if archive_zip_path and archive_file_count > 0:
+                    with open(archive_zip_path, 'rb') as document_fp:
+                        bot.send_document(chat_id=admin_user['user_id'], document=document_fp)
+            except Exception:
+                logging.exception('Failed to send admin stock-check notice to %s', admin_user.get('user_id'))
+    except Exception:
+        logging.exception('Admin stock alive check failed: nowuid=%s operator=%s', nowuid, operator_user_id)
+        try:
+            send_html_message(
+                bot,
+                operator_user_id,
+                f'<b>{ACCOUNT_CHECK_EMOJI_INVALID} 库存存活检查失败</b>\n\n商品ID: <code>{html.escape(str(nowuid), quote=False)}</code>'
+            )
+        except Exception:
+            logging.exception('Failed to notify operator %s about stock-check failure', operator_user_id)
+    finally:
+        with ADMIN_STOCK_CHECK_ACTIVE_LOCK:
+            ADMIN_STOCK_CHECK_ACTIVE.discard(str(nowuid))
+
+
+def checkstockalive(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    nowuid = query.data.replace('checkstockalive ', '')
+
+    with ADMIN_STOCK_CHECK_ACTIVE_LOCK:
+        if str(nowuid) in ADMIN_STOCK_CHECK_ACTIVE:
+            query.answer('这个商品正在检查中，请稍等', show_alert=True)
+            return
+        ADMIN_STOCK_CHECK_ACTIVE.add(str(nowuid))
+
+    query.answer()
+    try:
+        selected_items = list(hb.find({'nowuid': nowuid, 'state': 0}, {'_id': 1, 'hbid': 1, 'projectname': 1}))
+        fstext, snapshot = build_product_detail_text(nowuid)
+        keyboard = build_product_detail_keyboard(nowuid, snapshot['uid'], user_id)
+        if not selected_items:
+            query.edit_message_text(
+                text='当前这个商品已经没有可检查的库存了。',
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
+            with ADMIN_STOCK_CHECK_ACTIVE_LOCK:
+                ADMIN_STOCK_CHECK_ACTIVE.discard(str(nowuid))
+            return
+
+        first_row = hb.find_one({'nowuid': nowuid, 'state': 0}, {'leixing': 1})
+        fhtype = (first_row or {}).get('leixing') or '直登号'
+        if fhtype not in ACCOUNT_CHECK_SUPPORTED_TYPES:
+            query.edit_message_text(
+                text=f'{fstext}\n\n当前类型暂不支持库存存活检查：{fhtype}',
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
+            with ADMIN_STOCK_CHECK_ACTIVE_LOCK:
+                ADMIN_STOCK_CHECK_ACTIVE.discard(str(nowuid))
+            return
+
+        runtime_status = get_account_check_runtime_status(fhtype)
+        if not runtime_status.get('ready'):
+            query.edit_message_text(
+                text=f'{fstext}\n\n检测环境未就绪，暂时不能检查这个商品。\n原因: {runtime_status.get("reason", "unknown")}',
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
+            with ADMIN_STOCK_CHECK_ACTIVE_LOCK:
+                ADMIN_STOCK_CHECK_ACTIVE.discard(str(nowuid))
+            return
+
+        progress_message_id, _ = begin_account_check_progress_message(context.bot, query, user_id, len(selected_items))
+        threading.Thread(
+            target=run_admin_stock_alive_check,
+            args=(context.bot, user_id, nowuid, fhtype, selected_items, progress_message_id),
+            daemon=True,
+        ).start()
+    except Exception:
+        with ADMIN_STOCK_CHECK_ACTIVE_LOCK:
+            ADMIN_STOCK_CHECK_ACTIVE.discard(str(nowuid))
+        raise
 
 
 def qxdingdan(update: Update, context: CallbackContext):
@@ -11025,7 +11389,7 @@ def main():
         ('upmoney ', upmoney), ('gmqq', gmqq), ('qrgaimai ', qrgaimai),
         ('update_xyh ', update_xyh), ('update_hy ', update_hy), ('yhnext ', yhnext), ('yhlist', yhlist),
         ('gmaijilu', gmaijilu), ('tglink ', tglink), ('charef ', charef), ('zcfshuo', zcfshuo), ('gmainext ', gmainext), ('update_txt ', update_txt), ('update_ws ', update_ws),
-        ('backgmjl ', backgmjl), ('backcha ', backcha), ('qchuall ', qchuall), ('update_wbts ', update_wbts),
+        ('backgmjl ', backgmjl), ('backcha ', backcha), ('qchuall ', qchuall), ('checkstockalive ', checkstockalive), ('update_wbts ', update_wbts),
         ('update_gg ', update_gg), ('zdycz', zdycz), ('okzdycz', okzdycz), ('recharge_menu', recharge_menu), ('recharge_trc20', recharge_trc20), ('recharge_okpay', recharge_okpay), ('addhb', addhb), ('lqhb ', lqhb),
         ('xzhb ', xzhb), ('yjshb', yjshb), ('jxzhb', jxzhb), ('shokuan ', shokuan),
         ('update_sysm ', update_sysm), ('qxdingdan ', qxdingdan), ('okpay_paid ', okpay_paid), ('sifa', sifa),
