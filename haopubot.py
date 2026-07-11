@@ -3999,10 +3999,89 @@ def send_admin_stock_check_followup(bot, operator_user_id, admin_notice, archive
         return False
 
 
+def send_account_check_delivery_followup(bot, user_id, zip_filename=None, notice_text='', attempt=1):
+    try:
+        if zip_filename:
+            with open(zip_filename, 'rb') as document_fp:
+                bot.send_document(chat_id=user_id, document=document_fp)
+    except RetryAfter as exc:
+        retry_seconds = get_retry_after_seconds(exc, TELEGRAM_RETRYAFTER_PADDING_SECONDS) + TELEGRAM_RETRYAFTER_PADDING_SECONDS
+        logging.warning(
+            'Account-check delivery archive hit Telegram flood control: user=%s attempt=%s retry_after=%ss',
+            user_id,
+            attempt,
+            retry_seconds,
+        )
+        if attempt >= TELEGRAM_RETRYAFTER_MAX_ATTEMPTS:
+            logging.exception('Giving up account-check delivery archive after flood control retries: user=%s', user_id)
+            return False
+        schedule_retry_after_callback(
+            'account-check-delivery-archive',
+            retry_seconds,
+            send_account_check_delivery_followup,
+            bot,
+            user_id,
+            zip_filename,
+            notice_text,
+            attempt + 1,
+        )
+        return False
+    except Exception:
+        logging.exception('Failed to send account-check delivery archive to user %s', user_id)
+        return False
+
+    try:
+        if notice_text:
+            send_html_message(bot, user_id, notice_text)
+        return True
+    except RetryAfter as exc:
+        retry_seconds = get_retry_after_seconds(exc, TELEGRAM_RETRYAFTER_PADDING_SECONDS) + TELEGRAM_RETRYAFTER_PADDING_SECONDS
+        logging.warning(
+            'Account-check delivery notice hit Telegram flood control: user=%s attempt=%s retry_after=%ss',
+            user_id,
+            attempt,
+            retry_seconds,
+        )
+        if attempt >= TELEGRAM_RETRYAFTER_MAX_ATTEMPTS:
+            logging.exception('Giving up account-check delivery notice after flood control retries: user=%s', user_id)
+            return False
+        schedule_retry_after_callback(
+            'account-check-delivery-notice',
+            retry_seconds,
+            send_account_check_delivery_followup,
+            bot,
+            user_id,
+            None,
+            notice_text,
+            attempt + 1,
+        )
+        return False
+    except Exception:
+        logging.exception('Failed to send account-check delivery notice to user %s', user_id)
+        return False
+
+
 def finalize_account_check_message(bot, user_id, progress_message_id, final_text):
     try:
         edit_html_message(bot, user_id, progress_message_id, final_text)
         return 'edited'
+    except RetryAfter as exc:
+        retry_seconds = get_retry_after_seconds(exc, TELEGRAM_RETRYAFTER_PADDING_SECONDS) + TELEGRAM_RETRYAFTER_PADDING_SECONDS
+        logging.warning(
+            'Account-check completion edit hit Telegram flood control: user=%s retry_after=%ss',
+            user_id,
+            retry_seconds,
+        )
+        schedule_retry_after_callback(
+            'account-check-completion-edit',
+            retry_seconds,
+            finalize_account_check_message,
+            bot,
+            user_id,
+            progress_message_id,
+            final_text,
+        )
+        return 'deferred'
     except Exception:
         logging.exception('Failed to edit account-check progress message for user %s', user_id)
 
@@ -4010,6 +4089,23 @@ def finalize_account_check_message(bot, user_id, progress_message_id, final_text
         send_html_message(bot, user_id, final_text)
         safe_delete_message(bot, user_id, progress_message_id, 'delete_account_check_progress')
         return 'sent'
+    except RetryAfter as exc:
+        retry_seconds = get_retry_after_seconds(exc, TELEGRAM_RETRYAFTER_PADDING_SECONDS) + TELEGRAM_RETRYAFTER_PADDING_SECONDS
+        logging.warning(
+            'Account-check completion send hit Telegram flood control: user=%s retry_after=%ss',
+            user_id,
+            retry_seconds,
+        )
+        schedule_retry_after_callback(
+            'account-check-completion-send',
+            retry_seconds,
+            finalize_account_check_message,
+            bot,
+            user_id,
+            progress_message_id,
+            final_text,
+        )
+        return 'deferred'
     except Exception:
         logging.exception('Failed to send account-check completion message for user %s', user_id)
         return 'failed'
@@ -4377,13 +4473,30 @@ def deliver_accounts_with_check(context, user_id, fullname, username, nowuid, er
                 ', '.join(map(str, delivery_names)),
             )
             goumaijilua(leixing, order_id, user_id, erjiprojectname, '', f'{delivery_record_text}\n\n{failure_text}', timer)
-            bot.send_message(chat_id=user_id, text=failure_text)
+            try:
+                bot.send_message(chat_id=user_id, text=failure_text)
+            except RetryAfter as exc:
+                retry_seconds = get_retry_after_seconds(exc, TELEGRAM_RETRYAFTER_PADDING_SECONDS) + TELEGRAM_RETRYAFTER_PADDING_SECONDS
+                logging.warning(
+                    'Account-check empty-delivery notice hit Telegram flood control: user=%s retry_after=%ss',
+                    user_id,
+                    retry_seconds,
+                )
+                schedule_retry_after_callback(
+                    'account-check-empty-delivery',
+                    retry_seconds,
+                    bot.send_message,
+                    chat_id=user_id,
+                    text=failure_text,
+                )
         else:
             goumaijilua(leixing, order_id, user_id, erjiprojectname, str(zip_filename), delivery_record_text, timer)
-            with open(zip_filename, 'rb') as document_fp:
-                bot.send_document(chat_id=user_id, document=document_fp)
-            if notice_text:
-                send_html_message(bot, user_id, notice_text)
+            send_account_check_delivery_followup(
+                bot,
+                user_id,
+                zip_filename=str(zip_filename),
+                notice_text=notice_text,
+            )
     else:
         goumaijilua(leixing, order_id, user_id, erjiprojectname, '', delivery_record_text, timer)
 
