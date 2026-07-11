@@ -4209,6 +4209,34 @@ def get_account_check_concurrency(total_count):
     return 1
 
 
+def get_account_check_progress_interval(total_count):
+    total_count = max(0, int(total_count or 0))
+    base_interval = max(3, int(ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS or 10))
+    if total_count >= 2000:
+        return max(base_interval, 60)
+    if total_count >= 1000:
+        return max(base_interval, 45)
+    if total_count >= 500:
+        return max(base_interval, 25)
+    if total_count >= 100:
+        return max(base_interval, 15)
+    return base_interval
+
+
+def get_account_check_progress_step(total_count):
+    total_count = max(0, int(total_count or 0))
+    base_step = max(1, int(ACCOUNT_CHECK_PROGRESS_STEP or 3))
+    if total_count >= 2000:
+        return max(base_step, 100)
+    if total_count >= 1000:
+        return max(base_step, 60)
+    if total_count >= 500:
+        return max(base_step, 30)
+    if total_count >= 100:
+        return max(base_step, 10)
+    return base_step
+
+
 def execute_account_check_queue(selected_items, max_workers, thread_name_prefix, worker_func, push_progress, get_running_count, completion_handler):
     pending_items = deque(selected_items or [])
     future_map = {}
@@ -4295,11 +4323,23 @@ def deliver_accounts_with_check(context, user_id, fullname, username, nowuid, er
     }
     progress_lock = threading.Lock()
     last_progress_ts = 0.0
+    last_progress_checked = 0
+    progress_retry_after_until = 0.0
+    progress_interval_seconds = get_account_check_progress_interval(total_count)
+    progress_step = get_account_check_progress_step(total_count)
 
     def push_progress(force=False):
-        nonlocal last_progress_ts
+        nonlocal last_progress_ts, last_progress_checked, progress_retry_after_until
         now_ts = time.monotonic()
-        if not force and now_ts - last_progress_ts < ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS:
+        if checked_count >= total_count and total_count > 0:
+            force = True
+        if not force and now_ts - last_progress_ts < progress_interval_seconds:
+            return
+        if now_ts < progress_retry_after_until and checked_count < total_count:
+            return
+        enough_time = now_ts - last_progress_ts >= progress_interval_seconds
+        enough_step = (checked_count - last_progress_checked) >= progress_step
+        if force and checked_count < total_count and checked_count > 0 and not (enough_time or enough_step):
             return
         with progress_lock:
             running_count = max(0, int(progress_state['running_count']))
@@ -4326,9 +4366,21 @@ def deliver_accounts_with_check(context, user_id, fullname, username, nowuid, er
                     user_id=user_id,
                 )
             )
+        except RetryAfter as exc:
+            retry_seconds = get_retry_after_seconds(exc, TELEGRAM_RETRYAFTER_PADDING_SECONDS) + TELEGRAM_RETRYAFTER_PADDING_SECONDS
+            progress_retry_after_until = now_ts + retry_seconds
+            logging.warning(
+                'Account-check progress update hit Telegram flood control: user=%s checked=%s/%s retry_after=%ss',
+                user_id,
+                checked_count,
+                total_count,
+                retry_seconds,
+            )
+            return
         except Exception:
             logging.warning('Failed to update account-check progress for user %s at %s/%s', user_id, checked_count, total_count, exc_info=True)
         last_progress_ts = now_ts
+        last_progress_checked = checked_count
 
     def run_single_account_check_tracked(item):
         with progress_lock:
@@ -9599,11 +9651,23 @@ def run_admin_stock_alive_check(bot, operator_user_id, nowuid, fhtype, selected_
         }
         progress_lock = threading.Lock()
         last_progress_ts = 0.0
+        last_progress_checked = 0
+        progress_retry_after_until = 0.0
+        progress_interval_seconds = get_account_check_progress_interval(total_count)
+        progress_step = get_account_check_progress_step(total_count)
 
         def push_progress(force=False):
-            nonlocal last_progress_ts
+            nonlocal last_progress_ts, last_progress_checked, progress_retry_after_until
             now_ts = time.monotonic()
-            if not force and now_ts - last_progress_ts < ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS:
+            if checked_count >= total_count and total_count > 0:
+                force = True
+            if not force and now_ts - last_progress_ts < progress_interval_seconds:
+                return
+            if now_ts < progress_retry_after_until and checked_count < total_count:
+                return
+            enough_time = now_ts - last_progress_ts >= progress_interval_seconds
+            enough_step = (checked_count - last_progress_checked) >= progress_step
+            if force and checked_count < total_count and checked_count > 0 and not (enough_time or enough_step):
                 return
             with progress_lock:
                 running_count = max(0, int(progress_state['running_count']))
@@ -9631,9 +9695,21 @@ def run_admin_stock_alive_check(bot, operator_user_id, nowuid, fhtype, selected_
                     ),
                     reply_markup=InlineKeyboardMarkup(build_product_detail_keyboard(nowuid, uid, operator_user_id)),
                 )
+            except RetryAfter as exc:
+                retry_seconds = get_retry_after_seconds(exc, TELEGRAM_RETRYAFTER_PADDING_SECONDS) + TELEGRAM_RETRYAFTER_PADDING_SECONDS
+                progress_retry_after_until = now_ts + retry_seconds
+                logging.warning(
+                    'Admin stock-check progress update hit Telegram flood control: user=%s checked=%s/%s retry_after=%ss',
+                    operator_user_id,
+                    checked_count,
+                    total_count,
+                    retry_seconds,
+                )
+                return
             except Exception:
                 logging.warning('Failed to update admin stock-check progress for user %s at %s/%s', operator_user_id, checked_count, total_count, exc_info=True)
             last_progress_ts = now_ts
+            last_progress_checked = checked_count
 
         def run_single_account_check_tracked(item):
             with progress_lock:
