@@ -34,7 +34,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackContext, Me
 from telegram import InlineKeyboardMarkup,ForceReply, InlineKeyboardButton as TGInlineKeyboardButton, Update, ChatMemberRestricted, ChatPermissions, \
     ChatMemberRestricted, ChatMember, ChatMemberAdministrator, KeyboardButton as TGKeyboardButton, ReplyKeyboardMarkup, \
     InlineQueryResultArticle, InputTextMessageContent,InputMediaPhoto, MessageEntity
-from telegram.error import BadRequest, Forbidden, NetworkError, TimedOut
+from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter, TimedOut
 import time, json, pickle, re
 from threading import Timer
 from decimal import Decimal
@@ -1700,6 +1700,9 @@ ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS = max(3, int(os.getenv('ACCOUNT_CHECK_PR
 ACCOUNT_CHECK_PROGRESS_STEP = max(1, int(os.getenv('ACCOUNT_CHECK_PROGRESS_STEP', '3') or '3'))
 ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS = 2.0
 ACCOUNT_CHECK_STALL_HEARTBEATS = max(2, int(os.getenv('ACCOUNT_CHECK_STALL_HEARTBEATS', '3') or '3'))
+TELEGRAM_RETRYAFTER_INLINE_MAX_SECONDS = max(1, int(os.getenv('TELEGRAM_RETRYAFTER_INLINE_MAX_SECONDS', '5') or '5'))
+TELEGRAM_RETRYAFTER_PADDING_SECONDS = max(1, int(os.getenv('TELEGRAM_RETRYAFTER_PADDING_SECONDS', '1') or '1'))
+TELEGRAM_RETRYAFTER_MAX_ATTEMPTS = max(1, int(os.getenv('TELEGRAM_RETRYAFTER_MAX_ATTEMPTS', '3') or '3'))
 ACCOUNT_CHECK_SUPPORTED_TYPES = {'协议号', '直登号'}
 ACCOUNT_BAN_ROOT = BASE_DIR / 'ban'
 TRC20_USDT_CONTRACT = os.getenv('TRC20_USDT_CONTRACT', 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t').strip()
@@ -2198,6 +2201,15 @@ def note_telegram_transient_error(label, exc):
         logging.warning('Telegram transient error on %s: %s', label, exc)
 
 
+def get_retry_after_seconds(exc, default_seconds=1):
+    retry_after = getattr(exc, 'retry_after', None)
+    try:
+        retry_after = int(float(retry_after))
+    except Exception:
+        retry_after = 0
+    return max(int(default_seconds or 1), retry_after)
+
+
 def should_skip_optional_telegram_action(label):
     now = time.monotonic()
     should_log_skip = False
@@ -2221,6 +2233,9 @@ def safe_send_message(context, chat_id, text='', **kwargs):
         return None
     try:
         return context.bot.send_message(chat_id=chat_id, text=text or '', **kwargs)
+    except RetryAfter as exc:
+        note_telegram_transient_error('send_message', exc)
+        return None
     except (TimedOut, NetworkError) as exc:
         note_telegram_transient_error('send_message', exc)
         return None
@@ -2238,6 +2253,9 @@ def safe_delete_message(bot, chat_id, message_id, log_label='delete_message'):
     try:
         bot.delete_message(chat_id=chat_id, message_id=message_id)
         return True
+    except RetryAfter as exc:
+        note_telegram_transient_error(log_label, exc)
+        return False
     except (TimedOut, NetworkError) as exc:
         note_telegram_transient_error(log_label, exc)
         return False
@@ -2521,6 +2539,7 @@ class SyncTelegramProxy:
                 }
                 last_exc = None
                 max_attempts = 3 if target_name in {'send_document', 'send_photo', 'send_animation', 'send_media_group', 'answer', 'answer_callback_query', 'delete_message'} else (2 if target_name in transient_methods else 1)
+                max_attempts = max(max_attempts, TELEGRAM_RETRYAFTER_MAX_ATTEMPTS if target_name in transient_methods else 1)
                 for timeout_key, timeout_value in timeout_defaults.get(target_name, {}).items():
                     kwargs.setdefault(timeout_key, timeout_value)
 
@@ -2559,6 +2578,14 @@ class SyncTelegramProxy:
                     except Forbidden as exc:
                         if 'bot was blocked by the user' in str(exc):
                             return None
+                        raise
+                    except RetryAfter as exc:
+                        last_exc = exc
+                        retry_seconds = get_retry_after_seconds(exc, TELEGRAM_RETRYAFTER_PADDING_SECONDS) + TELEGRAM_RETRYAFTER_PADDING_SECONDS
+                        if retry_seconds <= TELEGRAM_RETRYAFTER_INLINE_MAX_SECONDS and attempt + 1 < max_attempts:
+                            time.sleep(retry_seconds)
+                            continue
+                        note_telegram_transient_error(target_name, exc)
                         raise
                     except (TimedOut, NetworkError) as exc:
                         last_exc = exc
@@ -3889,6 +3916,87 @@ def send_html_message(bot, chat_id, text, **kwargs):
 
 def edit_html_message(bot, chat_id, message_id, text, **kwargs):
     return bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text, parse_mode='HTML', disable_web_page_preview=True, **kwargs)
+
+
+def schedule_retry_after_callback(label, delay_seconds, callback, *args, **kwargs):
+    delay_seconds = max(1, int(delay_seconds or 1))
+
+    def runner():
+        time.sleep(delay_seconds)
+        try:
+            callback(*args, **kwargs)
+        except Exception:
+            logging.exception('Deferred Telegram callback failed: %s', label)
+
+    threading.Thread(
+        target=runner,
+        name=f'{label}-retry',
+        daemon=True,
+    ).start()
+
+
+def send_admin_stock_check_followup(bot, operator_user_id, admin_notice, archive_zip_path=None, archive_file_count=0, attempt=1):
+    try:
+        if admin_notice:
+            send_html_message(bot, operator_user_id, admin_notice)
+    except RetryAfter as exc:
+        retry_seconds = get_retry_after_seconds(exc, TELEGRAM_RETRYAFTER_PADDING_SECONDS) + TELEGRAM_RETRYAFTER_PADDING_SECONDS
+        logging.warning(
+            'Admin stock-check notice hit Telegram flood control: operator=%s attempt=%s retry_after=%ss',
+            operator_user_id,
+            attempt,
+            retry_seconds,
+        )
+        if attempt >= TELEGRAM_RETRYAFTER_MAX_ATTEMPTS:
+            logging.exception('Giving up admin stock-check notice after flood control retries: operator=%s', operator_user_id)
+            return False
+        schedule_retry_after_callback(
+            'admin-stock-followup-notice',
+            retry_seconds,
+            send_admin_stock_check_followup,
+            bot,
+            operator_user_id,
+            admin_notice,
+            archive_zip_path,
+            archive_file_count,
+            attempt + 1,
+        )
+        return False
+    except Exception:
+        logging.exception('Failed to send admin stock-check notice to operator %s', operator_user_id)
+        return False
+
+    try:
+        if archive_zip_path and archive_file_count > 0:
+            with open(archive_zip_path, 'rb') as document_fp:
+                bot.send_document(chat_id=operator_user_id, document=document_fp)
+        return True
+    except RetryAfter as exc:
+        retry_seconds = get_retry_after_seconds(exc, TELEGRAM_RETRYAFTER_PADDING_SECONDS) + TELEGRAM_RETRYAFTER_PADDING_SECONDS
+        logging.warning(
+            'Admin stock-check archive hit Telegram flood control: operator=%s attempt=%s retry_after=%ss',
+            operator_user_id,
+            attempt,
+            retry_seconds,
+        )
+        if attempt >= TELEGRAM_RETRYAFTER_MAX_ATTEMPTS:
+            logging.exception('Giving up admin stock-check archive after flood control retries: operator=%s', operator_user_id)
+            return False
+        schedule_retry_after_callback(
+            'admin-stock-followup-archive',
+            retry_seconds,
+            send_admin_stock_check_followup,
+            bot,
+            operator_user_id,
+            '',
+            archive_zip_path,
+            archive_file_count,
+            attempt + 1,
+        )
+        return False
+    except Exception:
+        logging.exception('Failed to send admin stock-check archive to operator %s', operator_user_id)
+        return False
 
 
 def finalize_account_check_message(bot, user_id, progress_message_id, final_text):
@@ -9563,13 +9671,13 @@ def run_admin_stock_alive_check(bot, operator_user_id, nowuid, fhtype, selected_
             order_id,
             operator_user_id,
         )
-        try:
-            send_html_message(bot, operator_user_id, admin_notice)
-            if archive_zip_path and archive_file_count > 0:
-                with open(archive_zip_path, 'rb') as document_fp:
-                    bot.send_document(chat_id=operator_user_id, document=document_fp)
-        except Exception:
-            logging.exception('Failed to send admin stock-check notice to operator %s', operator_user_id)
+        send_admin_stock_check_followup(
+            bot,
+            operator_user_id,
+            admin_notice,
+            archive_zip_path=archive_zip_path,
+            archive_file_count=archive_file_count,
+        )
     except Exception:
         logging.exception('Admin stock alive check failed: nowuid=%s operator=%s', nowuid, operator_user_id)
         try:
