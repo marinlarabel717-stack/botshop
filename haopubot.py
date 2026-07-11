@@ -9502,14 +9502,13 @@ def run_admin_stock_alive_check(bot, operator_user_id, nowuid, fhtype, selected_
             order_id,
             operator_user_id,
         )
-        for admin_user in list(user.find({'state': '4'})):
-            try:
-                send_html_message(bot, admin_user['user_id'], admin_notice)
-                if archive_zip_path and archive_file_count > 0:
-                    with open(archive_zip_path, 'rb') as document_fp:
-                        bot.send_document(chat_id=admin_user['user_id'], document=document_fp)
-            except Exception:
-                logging.exception('Failed to send admin stock-check notice to %s', admin_user.get('user_id'))
+        try:
+            send_html_message(bot, operator_user_id, admin_notice)
+            if archive_zip_path and archive_file_count > 0:
+                with open(archive_zip_path, 'rb') as document_fp:
+                    bot.send_document(chat_id=operator_user_id, document=document_fp)
+        except Exception:
+            logging.exception('Failed to send admin stock-check notice to operator %s', operator_user_id)
     except Exception:
         logging.exception('Admin stock alive check failed: nowuid=%s operator=%s', nowuid, operator_user_id)
         try:
