@@ -3,6 +3,7 @@ import io
 import datetime, qrcode, socket, struct, threading, hashlib, uuid
 import inspect
 import random
+from collections import deque
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import telegram
 import os
@@ -1698,6 +1699,7 @@ ACCOUNT_CHECK_MAX_RETRIES = 1
 ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS = max(3, int(os.getenv('ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS', '10') or '10'))
 ACCOUNT_CHECK_PROGRESS_STEP = max(1, int(os.getenv('ACCOUNT_CHECK_PROGRESS_STEP', '3') or '3'))
 ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS = 2.0
+ACCOUNT_CHECK_STALL_HEARTBEATS = max(2, int(os.getenv('ACCOUNT_CHECK_STALL_HEARTBEATS', '3') or '3'))
 ACCOUNT_CHECK_SUPPORTED_TYPES = {'协议号', '直登号'}
 ACCOUNT_BAN_ROOT = BASE_DIR / 'ban'
 TRC20_USDT_CONTRACT = os.getenv('TRC20_USDT_CONTRACT', 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t').strip()
@@ -4003,6 +4005,74 @@ def get_account_check_concurrency(total_count):
     return 1
 
 
+def execute_account_check_queue(selected_items, max_workers, thread_name_prefix, worker_func, push_progress, get_running_count, completion_handler):
+    pending_items = deque(selected_items or [])
+    future_map = {}
+    stall_heartbeats = 0
+    executor = None
+
+    def create_executor():
+        return ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix=thread_name_prefix)
+
+    def submit_available():
+        while pending_items and len(future_map) < max_workers:
+            item = pending_items.popleft()
+            future_map[executor.submit(worker_func, item)] = item
+
+    try:
+        executor = create_executor()
+        submit_available()
+        while future_map or pending_items:
+            if not future_map:
+                if executor is not None:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                executor = create_executor()
+                submit_available()
+                if not future_map:
+                    break
+
+            done_futures, _ = wait(
+                set(future_map.keys()),
+                timeout=ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS,
+                return_when=FIRST_COMPLETED,
+            )
+            if not done_futures:
+                push_progress(force=True)
+                running_count = max(0, int(get_running_count() or 0))
+                if running_count == 0 and future_map:
+                    stall_heartbeats += 1
+                    if stall_heartbeats >= ACCOUNT_CHECK_STALL_HEARTBEATS:
+                        stalled_items = list(future_map.values())
+                        logging.error(
+                            'account check queue stalled, restarting executor: prefix=%s stalled=%s queued=%s',
+                            thread_name_prefix,
+                            len(stalled_items),
+                            len(pending_items),
+                        )
+                        for future in list(future_map.keys()):
+                            future.cancel()
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        executor = create_executor()
+                        future_map.clear()
+                        pending_items.extendleft(reversed(stalled_items))
+                        submit_available()
+                        stall_heartbeats = 0
+                else:
+                    stall_heartbeats = 0
+                continue
+
+            stall_heartbeats = 0
+            for future in done_futures:
+                item = future_map.pop(future, None)
+                if item is None:
+                    continue
+                completion_handler(future, item)
+            submit_available()
+    finally:
+        if executor is not None:
+            executor.shutdown(wait=False, cancel_futures=True)
+
+
 def deliver_accounts_with_check(context, user_id, fullname, username, nowuid, erjiprojectname, yijiprojectname, leixing, selected_items, notice_text, order_id, unit_price, total_amount, progress_message_id):
     bot = context.bot
     total_count = len(selected_items)
@@ -4065,79 +4135,74 @@ def deliver_accounts_with_check(context, user_id, fullname, username, nowuid, er
             with progress_lock:
                 progress_state['running_count'] = max(0, progress_state['running_count'] - 1)
 
-    max_workers = get_account_check_concurrency(total_count)
-    with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix='acct-check') as executor:
-        future_map = {
-            executor.submit(run_single_account_check_tracked, item): item
-            for item in selected_items
+    def handle_completed_account_check(future, item):
+        nonlocal checked_count
+        projectname = item['projectname']
+        try:
+            _, projectname, check_result = future.result()
+        except Exception as exc:
+            check_result = {'status': 'timeout', 'reason': str(exc) or exc.__class__.__name__}
+        checked_count += 1
+
+        hb.update_one(
+            {'hbid': item['hbid']},
+            {'$set': {
+                'delivery_order_id': order_id,
+                'delivery_check_state': check_result.get('status', 'timeout'),
+                'delivery_check_reason': str(check_result.get('reason', ''))[:500],
+                'delivery_check_timer': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+            }}
+        )
+
+        item_meta = {
+            'hbid': item['hbid'],
+            'projectname': projectname,
+            'status': check_result.get('status', 'timeout'),
+            'reason': check_result.get('reason', ''),
         }
-        pending_futures = set(future_map.keys())
-        while pending_futures:
-            done_futures, pending_futures = wait(
-                pending_futures,
-                timeout=ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS,
-                return_when=FIRST_COMPLETED,
-            )
-            if not done_futures:
-                push_progress(force=True)
-                continue
-            for future in done_futures:
-                item = future_map[future]
-                projectname = item['projectname']
-                try:
-                    _, projectname, check_result = future.result()
-                except Exception as exc:
-                    check_result = {'status': 'timeout', 'reason': str(exc) or exc.__class__.__name__}
-                checked_count += 1
+        if check_result.get('status') == 'alive':
+            alive_items.append(item_meta)
+            with progress_lock:
+                progress_state['alive_count'] += 1
+        elif check_result.get('status') == 'frozen':
+            item_meta.update({
+                'freeze_since_date': check_result.get('freeze_since_date', 0),
+                'freeze_until_date': check_result.get('freeze_until_date', 0),
+                'freeze_since_text': check_result.get('freeze_since_text', ''),
+                'freeze_until_text': check_result.get('freeze_until_text', ''),
+                'freeze_appeal_url': check_result.get('freeze_appeal_url', ''),
+            })
+            frozen_items.append(archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, item_meta))
+            with progress_lock:
+                progress_state['frozen_count'] += 1
+        elif check_result.get('status') == 'invalid':
+            invalid_items.append(archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, item_meta))
+            with progress_lock:
+                progress_state['invalid_count'] += 1
+        else:
+            timeout_items.append(item_meta)
+            with progress_lock:
+                progress_state['timeout_count'] += 1
 
-                hb.update_one(
-                    {'hbid': item['hbid']},
-                    {'$set': {
-                        'delivery_order_id': order_id,
-                        'delivery_check_state': check_result.get('status', 'timeout'),
-                        'delivery_check_reason': str(check_result.get('reason', ''))[:500],
-                        'delivery_check_timer': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                    }}
-                )
+        should_push_progress = (
+            checked_count == total_count
+            or checked_count % ACCOUNT_CHECK_PROGRESS_STEP == 0
+            or time.monotonic() - last_progress_ts >= ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS
+            or time.monotonic() - last_progress_ts >= ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS
+        )
+        if should_push_progress:
+            push_progress(force=True)
 
-                item_meta = {
-                    'hbid': item['hbid'],
-                    'projectname': projectname,
-                    'status': check_result.get('status', 'timeout'),
-                    'reason': check_result.get('reason', ''),
-                }
-                if check_result.get('status') == 'alive':
-                    alive_items.append(item_meta)
-                    with progress_lock:
-                        progress_state['alive_count'] += 1
-                elif check_result.get('status') == 'frozen':
-                    item_meta.update({
-                        'freeze_since_date': check_result.get('freeze_since_date', 0),
-                        'freeze_until_date': check_result.get('freeze_until_date', 0),
-                        'freeze_since_text': check_result.get('freeze_since_text', ''),
-                        'freeze_until_text': check_result.get('freeze_until_text', ''),
-                        'freeze_appeal_url': check_result.get('freeze_appeal_url', ''),
-                    })
-                    frozen_items.append(archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, item_meta))
-                    with progress_lock:
-                        progress_state['frozen_count'] += 1
-                elif check_result.get('status') == 'invalid':
-                    invalid_items.append(archive_invalid_inventory_item(leixing, nowuid, projectname, order_id, item_meta))
-                    with progress_lock:
-                        progress_state['invalid_count'] += 1
-                else:
-                    timeout_items.append(item_meta)
-                    with progress_lock:
-                        progress_state['timeout_count'] += 1
-
-                should_push_progress = (
-                    checked_count == total_count
-                    or checked_count % ACCOUNT_CHECK_PROGRESS_STEP == 0
-                    or time.monotonic() - last_progress_ts >= ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS
-                    or time.monotonic() - last_progress_ts >= ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS
-                )
-                if should_push_progress:
-                    push_progress(force=True)
+    max_workers = get_account_check_concurrency(total_count)
+    execute_account_check_queue(
+        selected_items,
+        max_workers,
+        'acct-check',
+        run_single_account_check_tracked,
+        push_progress,
+        lambda: progress_state['running_count'],
+        handle_completed_account_check,
+    )
 
     invalid_count = len(invalid_items)
     frozen_count = len(frozen_items)
@@ -9358,92 +9423,88 @@ def run_admin_stock_alive_check(bot, operator_user_id, nowuid, fhtype, selected_
                 with progress_lock:
                     progress_state['running_count'] = max(0, progress_state['running_count'] - 1)
 
-        max_workers = get_account_check_concurrency(total_count)
         delete_ids = []
         delete_hbids = []
-        with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix='admin-stock-check') as executor:
-            future_map = {
-                executor.submit(run_single_account_check_tracked, item): item
-                for item in selected_items
+
+        def handle_admin_completed_account_check(future, item):
+            nonlocal checked_count
+            projectname_current = item['projectname']
+            try:
+                _, projectname_current, check_result = future.result()
+            except Exception as exc:
+                check_result = {'status': 'timeout', 'reason': str(exc) or exc.__class__.__name__}
+            checked_count += 1
+
+            hb_filter = {'_id': item['_id']} if item.get('_id') is not None else {'hbid': item.get('hbid')}
+            hb.update_one(
+                hb_filter,
+                {'$set': {
+                    'delivery_check_state': check_result.get('status', 'timeout'),
+                    'delivery_check_reason': str(check_result.get('reason', ''))[:500],
+                    'delivery_check_timer': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                }}
+            )
+
+            item_meta = {
+                'hbid': item.get('hbid'),
+                'projectname': projectname_current,
+                'status': check_result.get('status', 'timeout'),
+                'reason': check_result.get('reason', ''),
             }
-            pending_futures = set(future_map.keys())
-            while pending_futures:
-                done_futures, pending_futures = wait(
-                    pending_futures,
-                    timeout=ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS,
-                    return_when=FIRST_COMPLETED,
-                )
-                if not done_futures:
-                    push_progress(force=True)
-                    continue
-                for future in done_futures:
-                    item = future_map[future]
-                    projectname_current = item['projectname']
-                    try:
-                        _, projectname_current, check_result = future.result()
-                    except Exception as exc:
-                        check_result = {'status': 'timeout', 'reason': str(exc) or exc.__class__.__name__}
-                    checked_count += 1
+            if item.get('_id') is not None:
+                item_meta['_id'] = str(item['_id'])
 
-                    hb_filter = {'_id': item['_id']} if item.get('_id') is not None else {'hbid': item.get('hbid')}
-                    hb.update_one(
-                        hb_filter,
-                        {'$set': {
-                            'delivery_check_state': check_result.get('status', 'timeout'),
-                            'delivery_check_reason': str(check_result.get('reason', ''))[:500],
-                            'delivery_check_timer': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                        }}
-                    )
+            if check_result.get('status') == 'alive':
+                alive_items.append(item)
+                with progress_lock:
+                    progress_state['alive_count'] += 1
+            elif check_result.get('status') == 'frozen':
+                item_meta.update({
+                    'freeze_since_date': check_result.get('freeze_since_date', 0),
+                    'freeze_until_date': check_result.get('freeze_until_date', 0),
+                    'freeze_since_text': check_result.get('freeze_since_text', ''),
+                    'freeze_until_text': check_result.get('freeze_until_text', ''),
+                    'freeze_appeal_url': check_result.get('freeze_appeal_url', ''),
+                })
+                frozen_items.append(archive_invalid_inventory_item(fhtype, nowuid, projectname_current, order_id, item_meta))
+                if item.get('_id') is not None:
+                    delete_ids.append(item['_id'])
+                elif item.get('hbid') is not None:
+                    delete_hbids.append(item['hbid'])
+                with progress_lock:
+                    progress_state['frozen_count'] += 1
+            elif check_result.get('status') == 'invalid':
+                invalid_items.append(archive_invalid_inventory_item(fhtype, nowuid, projectname_current, order_id, item_meta))
+                if item.get('_id') is not None:
+                    delete_ids.append(item['_id'])
+                elif item.get('hbid') is not None:
+                    delete_hbids.append(item['hbid'])
+                with progress_lock:
+                    progress_state['invalid_count'] += 1
+            else:
+                timeout_items.append(item)
+                with progress_lock:
+                    progress_state['timeout_count'] += 1
 
-                    item_meta = {
-                        'hbid': item.get('hbid'),
-                        'projectname': projectname_current,
-                        'status': check_result.get('status', 'timeout'),
-                        'reason': check_result.get('reason', ''),
-                    }
-                    if item.get('_id') is not None:
-                        item_meta['_id'] = str(item['_id'])
+            should_push_progress = (
+                checked_count == total_count
+                or checked_count % ACCOUNT_CHECK_PROGRESS_STEP == 0
+                or time.monotonic() - last_progress_ts >= ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS
+                or time.monotonic() - last_progress_ts >= ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS
+            )
+            if should_push_progress:
+                push_progress(force=True)
 
-                    if check_result.get('status') == 'alive':
-                        alive_items.append(item)
-                        with progress_lock:
-                            progress_state['alive_count'] += 1
-                    elif check_result.get('status') == 'frozen':
-                        item_meta.update({
-                            'freeze_since_date': check_result.get('freeze_since_date', 0),
-                            'freeze_until_date': check_result.get('freeze_until_date', 0),
-                            'freeze_since_text': check_result.get('freeze_since_text', ''),
-                            'freeze_until_text': check_result.get('freeze_until_text', ''),
-                            'freeze_appeal_url': check_result.get('freeze_appeal_url', ''),
-                        })
-                        frozen_items.append(archive_invalid_inventory_item(fhtype, nowuid, projectname_current, order_id, item_meta))
-                        if item.get('_id') is not None:
-                            delete_ids.append(item['_id'])
-                        elif item.get('hbid') is not None:
-                            delete_hbids.append(item['hbid'])
-                        with progress_lock:
-                            progress_state['frozen_count'] += 1
-                    elif check_result.get('status') == 'invalid':
-                        invalid_items.append(archive_invalid_inventory_item(fhtype, nowuid, projectname_current, order_id, item_meta))
-                        if item.get('_id') is not None:
-                            delete_ids.append(item['_id'])
-                        elif item.get('hbid') is not None:
-                            delete_hbids.append(item['hbid'])
-                        with progress_lock:
-                            progress_state['invalid_count'] += 1
-                    else:
-                        timeout_items.append(item)
-                        with progress_lock:
-                            progress_state['timeout_count'] += 1
-
-                    should_push_progress = (
-                        checked_count == total_count
-                        or checked_count % ACCOUNT_CHECK_PROGRESS_STEP == 0
-                        or time.monotonic() - last_progress_ts >= ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS
-                        or time.monotonic() - last_progress_ts >= ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS
-                    )
-                    if should_push_progress:
-                        push_progress(force=True)
+        max_workers = get_account_check_concurrency(total_count)
+        execute_account_check_queue(
+            selected_items,
+            max_workers,
+            'admin-stock-check',
+            run_single_account_check_tracked,
+            push_progress,
+            lambda: progress_state['running_count'],
+            handle_admin_completed_account_check,
+        )
 
         if delete_ids:
             hb.delete_many({'_id': {'$in': delete_ids}, 'state': 0})
