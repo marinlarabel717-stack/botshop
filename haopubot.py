@@ -718,8 +718,8 @@ TRANSLATION_UI_TEXTS = {
     'redpacket_ended_active': {'zh': '◾️已结束', 'en': '◾️ Ended'},
     'redpacket_add': {'zh': '➕添加', 'en': '➕ Add'},
     'vip_open_title': {
-        'zh': '<b>💎 开通会员 | 购买星星</b>\n\n这是独立于号铺商品区的单独入口。\n请选择你要使用的功能：',
-        'en': '<b>💎 Premium | Stars</b>\n\nThis is a standalone entry separate from the BotShop catalog.\nPlease choose the feature you want:'
+        'zh': '<b>💎 开通会员 | 购买星星</b>\n\n请选择你要使用的功能：',
+        'en': '<b>💎 Premium | Stars</b>\n\nPlease choose the feature you want:'
     },
     'vip_open_unavailable': {
         'zh': '会员/星星接口暂未配置，请联系管理员。',
@@ -1281,7 +1281,7 @@ def matches_ui_text(incoming_text, key):
         'menu_goods_list': {'商品列表'},
         'menu_profile': {'个人中心'},
         'menu_recharge': {'我要充值'},
-        'menu_vip_opening': {'会员开通', '开通会员|购买星星', '开通会员', '开通tg会员', 'tg会员开通'},
+        'menu_vip_opening': {'会员开通', '开通会员|购买星星', '开通会员', '开通tg会员', 'tg会员开通', 'tg会员星星购买', '会员星星购买'},
     }
     for alias in alias_candidates.get(key, set()):
         candidates.add(normalize_menu_text(alias))
@@ -1316,6 +1316,8 @@ def get_fixed_frontend_text_key(source_text):
         normalize_menu_text('开通会员'): 'menu_vip_opening',
         normalize_menu_text('开通TG会员'): 'menu_vip_opening',
         normalize_menu_text('TG会员开通'): 'menu_vip_opening',
+        normalize_menu_text('TG会员星星购买'): 'menu_vip_opening',
+        normalize_menu_text('会员星星购买'): 'menu_vip_opening',
         normalize_menu_text('🏠主菜单'): 'main_menu',
         normalize_menu_text('⬅️返回'): 'back',
         normalize_menu_text('❌关闭'): 'close_with_icon',
@@ -2318,7 +2320,7 @@ def send_key_content_preview(context, chat_id, text='', file_type='text', file_i
 
 def get_vip_media_label_candidates(*ui_keys):
     alias_candidates = {
-        'menu_vip_opening': {'会员开通', '开通会员|购买星星', '开通会员', '开通tg会员', 'tg会员开通'},
+        'menu_vip_opening': {'会员开通', '开通会员|购买星星', '开通会员', '开通tg会员', 'tg会员开通', 'tg会员星星购买', '会员星星购买'},
     }
     normalized = set()
     for key in ui_keys:
@@ -11413,34 +11415,35 @@ def textkeyboard(update: Update, context: CallbackContext):
             if (raw_text in get_prolist or text in get_prolist or normalized_text in normalized_key_map) and not should_preserve_sign_on_menu_match(sign):
                 sign = 0
 
-        if matches_ui_text(text, 'language_toggle'):
-            new_lang = toggle_user_lang(user_id)
-            context.bot.send_message(chat_id=user_id, text=get_ui_text('language_switch_done', lang=new_lang))
-            send_user_home(context, user_id)
-            return
+        if sign == 0:
+            if matches_ui_text(text, 'language_toggle'):
+                new_lang = toggle_user_lang(user_id)
+                context.bot.send_message(chat_id=user_id, text=get_ui_text('language_switch_done', lang=new_lang))
+                send_user_home(context, user_id)
+                return
 
-        if matches_ui_text(text, 'language_switch_zh') or matches_ui_text(text, 'language_switch_en'):
-            new_lang = 'zh' if matches_ui_text(text, 'language_switch_zh') else 'en'
-            if new_lang == 'en':
-                warm_storefront_translation_cache(user_id=user_id, lang=new_lang, wait=True)
-            set_user_lang(user_id, new_lang)
-            if new_lang == 'en':
-                warm_storefront_translation_cache(user_id=user_id, lang=new_lang)
-            context.bot.send_message(chat_id=user_id, text=get_ui_text('language_switch_done', lang=new_lang))
-            send_user_home(context, user_id)
-            return
-        if matches_ui_text(text, 'main_menu'):
-            send_user_home(context, user_id)
-            return
-        if matches_ui_text(text, 'menu_vip_opening'):
-            show_vip_open_menu(context, user_id)
-            return
-        if matches_ui_text(text, 'vip_premium_entry'):
-            show_vip_premium_menu(context, user_id)
-            return
-        if matches_ui_text(text, 'vip_star_entry'):
-            show_vip_star_menu(context, user_id)
-            return
+            if matches_ui_text(text, 'language_switch_zh') or matches_ui_text(text, 'language_switch_en'):
+                new_lang = 'zh' if matches_ui_text(text, 'language_switch_zh') else 'en'
+                if new_lang == 'en':
+                    warm_storefront_translation_cache(user_id=user_id, lang=new_lang, wait=True)
+                set_user_lang(user_id, new_lang)
+                if new_lang == 'en':
+                    warm_storefront_translation_cache(user_id=user_id, lang=new_lang)
+                context.bot.send_message(chat_id=user_id, text=get_ui_text('language_switch_done', lang=new_lang))
+                send_user_home(context, user_id)
+                return
+            if matches_ui_text(text, 'main_menu'):
+                send_user_home(context, user_id)
+                return
+            if matches_ui_text(text, 'menu_vip_opening'):
+                show_vip_open_menu(context, user_id)
+                return
+            if matches_ui_text(text, 'vip_premium_entry'):
+                show_vip_premium_menu(context, user_id)
+                return
+            if matches_ui_text(text, 'vip_star_entry'):
+                show_vip_star_menu(context, user_id)
+                return
         if sign != 0:
             if update.message.text:
 
