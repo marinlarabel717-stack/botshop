@@ -4356,13 +4356,17 @@ def build_vip_star_menu_text(user_id, plan=None, error_text=''):
         return f'{text}\n\n{html.escape(str(error_text), quote=False)}'
     if not plan:
         return f'{text}\n\n{get_ui_text("vip_star_no_plan", viewer_user_id=user_id)}'
-    return f'{text}\n\n1星价格：{format_admin_usdt_price(get_vip_star_unit_price(plan))} USDT'
+    return f'{text}\n\n💰 1星价格：{format_admin_usdt_price(get_vip_star_unit_price(plan))} USDT'
 
 
 def build_vip_star_menu_keyboard(user_id, plan=None):
     keyboard = []
-    for quantity in (50, 100, 500, 1000):
-        keyboard.append([InlineKeyboardButton(build_vip_star_quantity_label(quantity, user_id=user_id), callback_data=f'vipstarqty {quantity}')])
+    quantity_rows = ((50, 100), (200, 500))
+    for row in quantity_rows:
+        keyboard.append([
+            InlineKeyboardButton(build_vip_star_quantity_label(quantity, user_id=user_id), callback_data=f'vipstarqty {quantity}')
+            for quantity in row
+        ])
     keyboard.append([InlineKeyboardButton(get_ui_text('vip_star_custom_button', viewer_user_id=user_id), callback_data='vipstarcustom')])
     keyboard.append([
         InlineKeyboardButton(get_ui_text('back', viewer_user_id=user_id), callback_data='vipmenu'),
