@@ -723,8 +723,8 @@ TRANSLATION_UI_TEXTS = {
         'zh': '会员/星星接口暂未配置，请联系管理员。',
         'en': 'Premium/Stars is not configured yet. Please contact the admin.'
     },
-    'vip_premium_entry': {'zh': '💎开通会员', 'en': '💎 Premium'},
-    'vip_star_entry': {'zh': '⭐购买星星', 'en': '⭐ Stars'},
+    'vip_premium_entry': {'zh': '🎁 开通会员', 'en': '🎁 Premium'},
+    'vip_star_entry': {'zh': '⭐️ 购买星星', 'en': '⭐️ Stars'},
     'vip_premium_menu_title': {
         'zh': f'<b>💎 Telegram Premium</b>\n\n{VIP_PREMIUM_PRICE_TITLE_EMOJI} 会员价格：',
         'en': f'<b>💎 Telegram Premium</b>\n\n{VIP_PREMIUM_PRICE_TITLE_EMOJI} Premium prices:'
@@ -740,7 +740,6 @@ TRANSLATION_UI_TEXTS = {
         'en': '<b>🎁 Buy for others</b>\n\nPlease choose a plan:'
     },
     'vip_plan_button': {'zh': '{months}个月', 'en': '{months} Months'},
-    'vip_refresh_button': {'zh': '🔄刷新价格', 'en': '🔄 Refresh Prices'},
     'vip_enter_username': {
         'zh': '<b>🎁 为他人购买</b>\n\n您选择购买{plan_label}会员：\n售价：{price} USDT\n\n请输入要开通的用户名：\n▪️ 例如：\n▪️ <code>@luoshen00</code>\n▪️ <code>https://t.me/luoshen00</code>\n\n多个用户名批量购买方式：\n▪️ 每行一个用户名\n▪️ 最多支持提交 {batch_limit} 个用户',
         'en': '<b>🎁 Buy for others</b>\n\nYou selected {plan_label} Premium:\nPrice: {price} USDT\n\nPlease send the target username:\n▪️ Example:\n▪️ <code>@example_user</code>\n▪️ <code>https://t.me/example_user</code>\n\nBatch purchase:\n▪️ One username per line\n▪️ Up to {batch_limit} usernames'
@@ -1280,7 +1279,7 @@ def matches_ui_text(incoming_text, key):
         'menu_goods_list': {'商品列表'},
         'menu_profile': {'个人中心'},
         'menu_recharge': {'我要充值'},
-        'menu_vip_opening': {'会员开通', '开通会员|购买星星'},
+        'menu_vip_opening': {'会员开通', '开通会员|购买星星', '开通会员', '开通tg会员', 'tg会员开通'},
     }
     for alias in alias_candidates.get(key, set()):
         candidates.add(normalize_menu_text(alias))
@@ -1312,6 +1311,9 @@ def get_fixed_frontend_text_key(source_text):
         normalize_menu_text('🧧红包'): 'menu_redpacket',
         normalize_menu_text('💎会员开通'): 'menu_vip_opening',
         normalize_menu_text('💎开通会员|购买星星'): 'menu_vip_opening',
+        normalize_menu_text('开通会员'): 'menu_vip_opening',
+        normalize_menu_text('开通TG会员'): 'menu_vip_opening',
+        normalize_menu_text('TG会员开通'): 'menu_vip_opening',
         normalize_menu_text('🏠主菜单'): 'main_menu',
         normalize_menu_text('⬅️返回'): 'back',
         normalize_menu_text('❌关闭'): 'close_with_icon',
@@ -2314,7 +2316,7 @@ def send_key_content_preview(context, chat_id, text='', file_type='text', file_i
 
 def get_vip_media_label_candidates(*ui_keys):
     alias_candidates = {
-        'menu_vip_opening': {'会员开通', '开通会员|购买星星'},
+        'menu_vip_opening': {'会员开通', '开通会员|购买星星', '开通会员', '开通tg会员', 'tg会员开通'},
     }
     normalized = set()
     for key in ui_keys:
@@ -4186,7 +4188,6 @@ def build_vip_open_menu_keyboard(user_id):
     keyboard = [
         [InlineKeyboardButton(get_ui_text('vip_premium_entry', viewer_user_id=user_id), callback_data='vippremiummenu')],
         [InlineKeyboardButton(get_ui_text('vip_star_entry', viewer_user_id=user_id), callback_data='vipstarmenu')],
-        [InlineKeyboardButton(get_ui_text('vip_refresh_button', viewer_user_id=user_id), callback_data='vipmenu')],
     ]
     keyboard.append([
         InlineKeyboardButton(get_ui_text('main_menu', viewer_user_id=user_id), callback_data='viphome'),
@@ -4361,7 +4362,6 @@ def build_vip_star_menu_keyboard(user_id, plan=None):
     for quantity in (50, 100, 500, 1000):
         keyboard.append([InlineKeyboardButton(build_vip_star_quantity_label(quantity, user_id=user_id), callback_data=f'vipstarqty {quantity}')])
     keyboard.append([InlineKeyboardButton(get_ui_text('vip_star_custom_button', viewer_user_id=user_id), callback_data='vipstarcustom')])
-    keyboard.append([InlineKeyboardButton(get_ui_text('vip_refresh_button', viewer_user_id=user_id), callback_data='vipstarmenu')])
     keyboard.append([
         InlineKeyboardButton(get_ui_text('back', viewer_user_id=user_id), callback_data='vipmenu'),
         InlineKeyboardButton(get_ui_text('close_with_icon', viewer_user_id=user_id), callback_data=f'close {user_id}')
