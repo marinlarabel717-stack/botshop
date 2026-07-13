@@ -617,6 +617,15 @@ TRANSLATION_REPLACEMENT_FALLBACKS = {
         ('数量', 'Quantity'),
     ])
 }
+VIP_PREMIUM_PRICE_TITLE_EMOJI = '[emoji:5350501108659790021:⭐️]'
+VIP_PREMIUM_PLAN_EMOJIS = {
+    3: '[emoji:5427225953463972959:🎁]',
+    6: '[emoji:5429263077927300012:🎁]',
+    12: '[emoji:5427315847129478207:🎁]',
+}
+VIP_PREMIUM_SELF_BUTTON_EMOJI = '[emoji:5274017731211960502:⭐]'
+VIP_PREMIUM_OTHER_BUTTON_EMOJI = '[emoji:5274046919809704653:⭐]'
+
 TRANSLATION_UI_TEXTS = {
     'language_toggle': {'zh': '[emoji:5298584437338946835:🌐]English', 'en': '[emoji:5298584437338946835:🌐]中文'},
     'language_switch_prompt': {'zh': '请选择语言', 'en': 'Please choose your language'},
@@ -1852,14 +1861,6 @@ VIP_PREMIUM_PRICE_CONFIG_KEYS = {
     12: '会员价格12个月',
 }
 VIP_STAR_PRICE_CONFIG_KEY = '星星单价'
-VIP_PREMIUM_PRICE_TITLE_EMOJI = '[emoji:5350501108659790021:⭐️]'
-VIP_PREMIUM_PLAN_EMOJIS = {
-    3: '[emoji:5427225953463972959:🎁]',
-    6: '[emoji:5429263077927300012:🎁]',
-    12: '[emoji:5427315847129478207:🎁]',
-}
-VIP_PREMIUM_SELF_BUTTON_EMOJI = '[emoji:5274017731211960502:⭐]'
-VIP_PREMIUM_OTHER_BUTTON_EMOJI = '[emoji:5274046919809704653:⭐]'
 
 
 def ensure_topup_indexes():
@@ -4329,6 +4330,7 @@ def show_vip_premium_plan_menu(context, user_id, mode, *, edit_message=None):
             return
         except Exception:
             logging.warning('edit vip premium plan menu failed for user=%s mode=%s', user_id, mode, exc_info=True)
+            safe_delete_message(context.bot, user_id, edit_message.message_id, f'delete_vip_premium_plan_{mode}_message')
     context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML', reply_markup=reply_markup, disable_web_page_preview=True)
 
 
