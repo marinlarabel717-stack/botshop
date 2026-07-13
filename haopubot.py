@@ -865,6 +865,8 @@ ACCOUNT_CHECK_EMOJI_FROZEN = '[emoji:5449449325434266744:❄️]'
 ACCOUNT_CHECK_EMOJI_TIMEOUT = '[emoji:5382194935057372936:⏱️]'
 ACCOUNT_CHECK_EMOJI_TOTAL = '[emoji:5352625743081775722:🎚️]'
 
+VIP_PREMIUM_MENU_GIF_PATH = Path(__file__).resolve().parent / 'assets' / 'vip-premium.gif'
+
 ADMIN_STOCK_CHECK_ACTIVE = set()
 ADMIN_STOCK_CHECK_ACTIVE_LOCK = threading.Lock()
 
@@ -2291,6 +2293,95 @@ def send_key_content_preview(context, chat_id, text='', file_type='text', file_i
                                      reply_markup=reply_markup, caption_entities=entities)
     return context.bot.send_message(chat_id=chat_id, text=text or '', reply_markup=reply_markup,
                                     entities=entities)
+
+
+def get_vip_media_label_candidates(*ui_keys):
+    alias_candidates = {
+        'menu_vip_opening': {'会员开通', '开通会员|购买星星'},
+    }
+    normalized = set()
+    for key in ui_keys:
+        raw_candidates = {
+            get_ui_text(key, lang='zh'),
+            get_ui_text(key, lang='en'),
+            *alias_candidates.get(key, set()),
+        }
+        for item in raw_candidates:
+            if not item:
+                continue
+            normalized.add(normalize_menu_text(item))
+            normalized.add(normalize_menu_text(get_button_match_text(item)))
+            normalized.add(normalize_menu_text(strip_button_label_decoration(item)))
+    return {item for item in normalized if item}
+
+
+def find_vip_panel_media(*ui_keys, fallback_path=None, fallback_type='animation'):
+    label_candidates = get_vip_media_label_candidates(*ui_keys)
+    if label_candidates:
+        for key_doc in list(get_key.find({}, {'projectname': 1, 'file_type': 1, 'file_id': 1})):
+            file_type = str(key_doc.get('file_type') or 'text')
+            file_id = str(key_doc.get('file_id') or '').strip()
+            if file_type not in {'photo', 'animation', 'video'} or not file_id:
+                continue
+            projectname = str(key_doc.get('projectname') or '')
+            project_candidates = {
+                normalize_menu_text(projectname),
+                normalize_menu_text(get_button_match_text(projectname)),
+                normalize_menu_text(strip_button_label_decoration(projectname)),
+            }
+            if label_candidates & {item for item in project_candidates if item}:
+                return {'file_type': file_type, 'file_id': file_id}
+    if fallback_path and Path(fallback_path).exists():
+        return {'file_type': fallback_type, 'file_path': str(fallback_path)}
+    return None
+
+
+def send_vip_panel_media_message(context, chat_id, text, reply_markup, media_config):
+    send_kwargs = {
+        'chat_id': chat_id,
+        'caption': text or '',
+        'parse_mode': 'HTML',
+        'reply_markup': reply_markup,
+    }
+    file_type = str(media_config.get('file_type') or 'animation')
+    file_id = media_config.get('file_id')
+    file_path = media_config.get('file_path')
+
+    if file_path:
+        with open(file_path, 'rb') as media_file:
+            if file_type == 'photo':
+                return context.bot.send_photo(photo=media_file, **send_kwargs)
+            if file_type == 'video':
+                return context.bot.sendVideo(video=media_file, **send_kwargs)
+            return context.bot.sendAnimation(animation=media_file, **send_kwargs)
+
+    if file_type == 'photo':
+        return context.bot.send_photo(photo=file_id, **send_kwargs)
+    if file_type == 'video':
+        return context.bot.sendVideo(video=file_id, **send_kwargs)
+    return context.bot.sendAnimation(animation=file_id, **send_kwargs)
+
+
+def send_vip_panel_message(context, user_id, text, reply_markup, *, media_config=None, edit_message=None, log_label='vip_panel'):
+    if media_config:
+        if edit_message is not None:
+            safe_delete_message(context.bot, user_id, edit_message.message_id, f'delete_{log_label}_message')
+        return send_vip_panel_media_message(context, user_id, text, reply_markup, media_config)
+
+    if edit_message is not None:
+        try:
+            edit_message.edit_text(text=text, parse_mode='HTML', reply_markup=reply_markup, disable_web_page_preview=True)
+            return
+        except Exception:
+            logging.warning('edit %s failed for user=%s', log_label, user_id, exc_info=True)
+            safe_delete_message(context.bot, user_id, edit_message.message_id, f'delete_{log_label}_message')
+    return context.bot.send_message(
+        chat_id=user_id,
+        text=text,
+        parse_mode='HTML',
+        reply_markup=reply_markup,
+        disable_web_page_preview=True,
+    )
 
 
 def has_custom_emoji_entities(entities):
@@ -3973,13 +4064,16 @@ def show_vip_open_menu(context, user_id, *, edit_message=None):
         error_text = get_ui_text('vip_open_unavailable', lang=lang)
     text = build_vip_open_menu_text(user_id, error_text=error_text)
     reply_markup = build_vip_open_menu_keyboard(user_id)
-    if edit_message is not None:
-        try:
-            edit_message.edit_text(text=text, parse_mode='HTML', reply_markup=reply_markup, disable_web_page_preview=True)
-            return
-        except Exception:
-            logging.warning('edit vip open menu failed for user=%s', user_id, exc_info=True)
-    context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML', reply_markup=reply_markup, disable_web_page_preview=True)
+    media_config = find_vip_panel_media('menu_vip_opening')
+    send_vip_panel_message(
+        context,
+        user_id,
+        text,
+        reply_markup,
+        media_config=media_config,
+        edit_message=edit_message,
+        log_label='vip_open_menu',
+    )
 
 
 def vipmenu(update: Update, context: CallbackContext):
@@ -4033,13 +4127,16 @@ def show_vip_premium_menu(context, user_id, *, edit_message=None):
         error_text = get_ui_text('vip_no_plan', viewer_user_id=user_id)
     text = build_vip_premium_menu_text(user_id, plans=plans, error_text=error_text)
     reply_markup = build_vip_premium_menu_keyboard(user_id, plans=plans)
-    if edit_message is not None:
-        try:
-            edit_message.edit_text(text=text, parse_mode='HTML', reply_markup=reply_markup, disable_web_page_preview=True)
-            return
-        except Exception:
-            logging.warning('edit vip premium menu failed for user=%s', user_id, exc_info=True)
-    context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML', reply_markup=reply_markup, disable_web_page_preview=True)
+    media_config = find_vip_panel_media('vip_premium_entry', 'menu_vip_opening', fallback_path=VIP_PREMIUM_MENU_GIF_PATH)
+    send_vip_panel_message(
+        context,
+        user_id,
+        text,
+        reply_markup,
+        media_config=media_config,
+        edit_message=edit_message,
+        log_label='vip_premium_menu',
+    )
 
 
 def vippremiummenu(update: Update, context: CallbackContext):
@@ -4145,13 +4242,16 @@ def show_vip_star_menu(context, user_id, *, edit_message=None):
         error_text = get_ui_text('vip_star_no_plan', viewer_user_id=user_id)
     text = build_vip_star_menu_text(user_id, plan=plan, error_text=error_text)
     reply_markup = build_vip_star_menu_keyboard(user_id, plan=plan)
-    if edit_message is not None:
-        try:
-            edit_message.edit_text(text=text, parse_mode='HTML', reply_markup=reply_markup, disable_web_page_preview=True)
-            return
-        except Exception:
-            logging.warning('edit vip star menu failed for user=%s', user_id, exc_info=True)
-    context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML', reply_markup=reply_markup, disable_web_page_preview=True)
+    media_config = find_vip_panel_media('vip_star_entry')
+    send_vip_panel_message(
+        context,
+        user_id,
+        text,
+        reply_markup,
+        media_config=media_config,
+        edit_message=edit_message,
+        log_label='vip_star_menu',
+    )
 
 
 def vipstarmenu(update: Update, context: CallbackContext):
