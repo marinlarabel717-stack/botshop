@@ -2394,6 +2394,17 @@ def send_vip_panel_media_message(context, chat_id, text, reply_markup, media_con
     return context.bot.sendAnimation(animation=file_id, **send_kwargs)
 
 
+def vip_panel_edit_uses_caption(message):
+    if not message:
+        return False
+    if getattr(message, 'text', None):
+        return False
+    media_attrs = ('photo', 'video', 'animation', 'document')
+    if any(getattr(message, attr, None) for attr in media_attrs):
+        return True
+    return bool(getattr(message, 'caption', None))
+
+
 def send_vip_panel_message(context, user_id, text, reply_markup, *, media_config=None, edit_message=None, log_label='vip_panel'):
     if media_config:
         if edit_message is not None:
@@ -2402,14 +2413,23 @@ def send_vip_panel_message(context, user_id, text, reply_markup, *, media_config
 
     if edit_message is not None:
         try:
-            context.bot.edit_message_text(
-                chat_id=user_id,
-                message_id=edit_message.message_id,
-                text=text,
-                parse_mode='HTML',
-                reply_markup=reply_markup,
-                disable_web_page_preview=True,
-            )
+            if vip_panel_edit_uses_caption(edit_message):
+                context.bot.edit_message_caption(
+                    chat_id=user_id,
+                    message_id=edit_message.message_id,
+                    caption=text or '',
+                    parse_mode='HTML',
+                    reply_markup=reply_markup,
+                )
+            else:
+                context.bot.edit_message_text(
+                    chat_id=user_id,
+                    message_id=edit_message.message_id,
+                    text=text,
+                    parse_mode='HTML',
+                    reply_markup=reply_markup,
+                    disable_web_page_preview=True,
+                )
             return
         except Exception:
             logging.warning('edit %s failed for user=%s', log_label, user_id, exc_info=True)
@@ -4338,21 +4358,14 @@ def show_vip_premium_plan_menu(context, user_id, mode, *, edit_message=None):
         error_text = get_ui_text('vip_no_plan', viewer_user_id=user_id)
     text = build_vip_premium_plan_menu_text(user_id, plans=plans, error_text=error_text, mode=mode)
     reply_markup = build_vip_premium_plan_menu_keyboard(user_id, plans=plans, mode=mode)
-    if edit_message is not None:
-        try:
-            context.bot.edit_message_text(
-                chat_id=user_id,
-                message_id=edit_message.message_id,
-                text=text,
-                parse_mode='HTML',
-                reply_markup=reply_markup,
-                disable_web_page_preview=True,
-            )
-            return
-        except Exception:
-            logging.warning('edit vip premium plan menu failed for user=%s mode=%s', user_id, mode, exc_info=True)
-            safe_delete_message(context.bot, user_id, edit_message.message_id, f'delete_vip_premium_plan_{mode}_message')
-    context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML', reply_markup=reply_markup, disable_web_page_preview=True)
+    send_vip_panel_message(
+        context,
+        user_id,
+        text,
+        reply_markup,
+        edit_message=edit_message,
+        log_label=f'vip_premium_plan_{mode}',
+    )
 
 
 def vippremiumself(update: Update, context: CallbackContext):
