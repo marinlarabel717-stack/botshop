@@ -4241,9 +4241,10 @@ def build_vip_premium_menu_text(user_id, plans=None, error_text=''):
 
 def build_vip_premium_menu_keyboard(user_id, plans=None):
     keyboard = [
-        [InlineKeyboardButton(get_ui_text('vip_premium_mode_self', viewer_user_id=user_id), callback_data='vippremiumself')],
-        [InlineKeyboardButton(get_ui_text('vip_premium_mode_other', viewer_user_id=user_id), callback_data='vippremiumother')],
-        [InlineKeyboardButton(get_ui_text('vip_refresh_button', viewer_user_id=user_id), callback_data='vippremiummenu')],
+        [
+            InlineKeyboardButton(get_ui_text('vip_premium_mode_self', viewer_user_id=user_id), callback_data='vippremiumself'),
+            InlineKeyboardButton(get_ui_text('vip_premium_mode_other', viewer_user_id=user_id), callback_data='vippremiumother'),
+        ],
     ]
     keyboard.append([
         InlineKeyboardButton(get_ui_text('back', viewer_user_id=user_id), callback_data='vipmenu'),
