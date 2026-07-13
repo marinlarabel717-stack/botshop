@@ -625,6 +625,8 @@ VIP_PREMIUM_PLAN_EMOJIS = {
 }
 VIP_PREMIUM_SELF_BUTTON_EMOJI = '[emoji:5274017731211960502:⭐]'
 VIP_PREMIUM_OTHER_BUTTON_EMOJI = '[emoji:5274046919809704653:⭐]'
+VIP_OPEN_PREMIUM_ENTRY_EMOJI = '[emoji:5235826903490764103:🎁]'
+VIP_OPEN_STAR_ENTRY_EMOJI = '[emoji:5235611059909323996:⭐️]'
 
 TRANSLATION_UI_TEXTS = {
     'language_toggle': {'zh': '[emoji:5298584437338946835:🌐]English', 'en': '[emoji:5298584437338946835:🌐]中文'},
@@ -723,8 +725,8 @@ TRANSLATION_UI_TEXTS = {
         'zh': '会员/星星接口暂未配置，请联系管理员。',
         'en': 'Premium/Stars is not configured yet. Please contact the admin.'
     },
-    'vip_premium_entry': {'zh': '🎁 开通会员', 'en': '🎁 Premium'},
-    'vip_star_entry': {'zh': '⭐️ 购买星星', 'en': '⭐️ Stars'},
+    'vip_premium_entry': {'zh': f'{VIP_OPEN_PREMIUM_ENTRY_EMOJI}开通会员', 'en': f'{VIP_OPEN_PREMIUM_ENTRY_EMOJI} Premium'},
+    'vip_star_entry': {'zh': f'{VIP_OPEN_STAR_ENTRY_EMOJI}购买星星', 'en': f'{VIP_OPEN_STAR_ENTRY_EMOJI} Stars'},
     'vip_premium_menu_title': {
         'zh': f'<b>💎 Telegram Premium</b>\n\n{VIP_PREMIUM_PRICE_TITLE_EMOJI} 会员价格：',
         'en': f'<b>💎 Telegram Premium</b>\n\n{VIP_PREMIUM_PRICE_TITLE_EMOJI} Premium prices:'
@@ -793,22 +795,22 @@ TRANSLATION_UI_TEXTS = {
         'en': '<b>💎 Buy Premium</b>\n\nProduct: {product_name}\nTarget: {user_display}\nName: {display_name}\nAmount: {price} USDT\nBalance: {balance} USDT\n\n👉 Insufficient balance. Please recharge first.'
     },
     'vip_star_menu_title': {
-        'zh': '<b>⭐ 购买星星</b>\n\n请选择购买数量：',
-        'en': '<b>⭐ Buy Stars</b>\n\nPlease choose the quantity:'
+        'zh': f'<b>{VIP_OPEN_STAR_ENTRY_EMOJI}购买星星</b>\n\n请选择购买数量：',
+        'en': f'<b>{VIP_OPEN_STAR_ENTRY_EMOJI} Buy Stars</b>\n\nPlease choose the quantity:'
     },
     'vip_star_quantity_button': {'zh': '{quantity}星', 'en': '{quantity} Stars'},
     'vip_star_custom_button': {'zh': '✍️自定义数量', 'en': '✍️ Custom Quantity'},
     'vip_star_custom_prompt': {
-        'zh': '<b>⭐ 购买星星</b>\n\n请输入购买数量。\n范围：<code>50-10000</code>',
-        'en': '<b>⭐ Buy Stars</b>\n\nPlease enter the quantity.\nRange: <code>50-10000</code>'
+        'zh': f'<b>{VIP_OPEN_STAR_ENTRY_EMOJI}购买星星</b>\n\n请输入购买数量。\n范围：<code>50-10000</code>',
+        'en': f'<b>{VIP_OPEN_STAR_ENTRY_EMOJI} Buy Stars</b>\n\nPlease enter the quantity.\nRange: <code>50-10000</code>'
     },
     'vip_star_invalid_quantity': {
         'zh': '星星数量格式不正确，请输入 50-10000 之间的整数。',
         'en': 'Invalid stars quantity. Please enter an integer between 50 and 10000.'
     },
     'vip_star_enter_username': {
-        'zh': '<b>⭐ 购买星星</b>\n\n已选择：{quantity} 星\n价格：{price} USDT\n\n请直接发送要充值星星的 Telegram 用户名。\n格式示例：<code>example_user</code>',
-        'en': '<b>⭐ Buy Stars</b>\n\nSelected: {quantity} Stars\nPrice: {price} USDT\n\nPlease send the Telegram username to receive the stars.\nExample: <code>example_user</code>'
+        'zh': f'<b>{VIP_OPEN_STAR_ENTRY_EMOJI}购买星星</b>\n\n已选择：{{quantity}} 星\n价格：{{price}} USDT\n\n请直接发送要充值星星的 Telegram 用户名。\n格式示例：<code>example_user</code>',
+        'en': f'<b>{VIP_OPEN_STAR_ENTRY_EMOJI} Buy Stars</b>\n\nSelected: {{quantity}} Stars\nPrice: {{price}} USDT\n\nPlease send the Telegram username to receive the stars.\nExample: <code>example_user</code>'
     },
     'vip_star_confirm_text': {
         'zh': '<b>⭐ 请确认星星购买信息</b>\n\n账号：@{username}\n数量：{quantity} 星\n价格：{price} USDT\n余额：{balance} USDT\n\n确认后将走独立星星购买流程，不影响号铺商品发货。',
