@@ -717,11 +717,11 @@ TRANSLATION_UI_TEXTS = {
     'vip_premium_entry': {'zh': '💎开通会员', 'en': '💎 Premium'},
     'vip_star_entry': {'zh': '⭐购买星星', 'en': '⭐ Stars'},
     'vip_premium_menu_title': {
-        'zh': '<b>💎 Telegram Premium</b>\n\n💎 会员价格：',
-        'en': '<b>💎 Telegram Premium</b>\n\n💎 Premium prices:'
+        'zh': f'<b>💎 Telegram Premium</b>\n\n{VIP_PREMIUM_PRICE_TITLE_EMOJI} 会员价格：',
+        'en': f'<b>💎 Telegram Premium</b>\n\n{VIP_PREMIUM_PRICE_TITLE_EMOJI} Premium prices:'
     },
-    'vip_premium_mode_self': {'zh': '💎 为此账号购买', 'en': '💎 Buy for this account'},
-    'vip_premium_mode_other': {'zh': '🎁 为他人购买', 'en': '🎁 Buy for others'},
+    'vip_premium_mode_self': {'zh': f'{VIP_PREMIUM_SELF_BUTTON_EMOJI}为此账号购买', 'en': f'{VIP_PREMIUM_SELF_BUTTON_EMOJI} Buy for this account'},
+    'vip_premium_mode_other': {'zh': f'{VIP_PREMIUM_OTHER_BUTTON_EMOJI}为他人购买', 'en': f'{VIP_PREMIUM_OTHER_BUTTON_EMOJI} Buy for others'},
     'vip_premium_self_plan_title': {
         'zh': '<b>💎 为此账号购买</b>\n\n请选择开通时长：',
         'en': '<b>💎 Buy for this account</b>\n\nPlease choose a plan:'
@@ -1852,6 +1852,14 @@ VIP_PREMIUM_PRICE_CONFIG_KEYS = {
     12: '会员价格12个月',
 }
 VIP_STAR_PRICE_CONFIG_KEY = '星星单价'
+VIP_PREMIUM_PRICE_TITLE_EMOJI = '[emoji:5350501108659790021:⭐️]'
+VIP_PREMIUM_PLAN_EMOJIS = {
+    3: '[emoji:5427225953463972959:🎁]',
+    6: '[emoji:5429263077927300012:🎁]',
+    12: '[emoji:5427315847129478207:🎁]',
+}
+VIP_PREMIUM_SELF_BUTTON_EMOJI = '[emoji:5274017731211960502:⭐]'
+VIP_PREMIUM_OTHER_BUTTON_EMOJI = '[emoji:5274046919809704653:⭐]'
 
 
 def ensure_topup_indexes():
@@ -4225,7 +4233,8 @@ def build_vip_premium_menu_text(user_id, plans=None, error_text=''):
     lines = []
     for months in sorted(plans or {}):
         plan = plans[months]
-        lines.append(f'{months}月 {format_usdt_2(plan["price"])} USDT')
+        plan_emoji = VIP_PREMIUM_PLAN_EMOJIS.get(int(months), '🎁')
+        lines.append(f'{plan_emoji} {months}月 {format_usdt_2(plan["price"])} USDT')
     return f'{text}\n\n' + '\n'.join(lines) if lines else f'{text}\n\n{get_ui_text("vip_no_plan", viewer_user_id=user_id)}'
 
 
