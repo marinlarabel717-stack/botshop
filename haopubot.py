@@ -555,6 +555,7 @@ TRANSLATION_EXACT_FALLBACKS = {
         '✅购买': '✅ Buy Now',
         '⚠️暂无库存': '⚠️ Out of Stock',
         '🛒购买记录': '🛒 Purchase History',
+        '💎会员开通': '💎 Premium',
         '下一页': 'Next',
         '上一页': 'Previous',
         '返回个人中心': 'Back to Profile',
@@ -624,6 +625,7 @@ TRANSLATION_UI_TEXTS = {
     'menu_profile': {'zh': '👤个人中心', 'en': '👤 Profile'},
     'menu_recharge': {'zh': '💸我要充值', 'en': '💸 Recharge'},
     'menu_redpacket': {'zh': '🧧红包', 'en': '🧧 Red Packets'},
+    'menu_vip_opening': {'zh': '💎会员开通', 'en': '💎 Premium'},
     'menu_clone_same': {'zh': '#g [emoji:5287684458881756303:🤖]一键克隆同款', 'en': '#g [emoji:5287684458881756303:🤖]Clone This Bot'},
     'purchase_history_button': {'zh': '🛒购买记录', 'en': '🛒 Purchase History'},
     'close': {'zh': '关闭', 'en': 'Close'},
@@ -702,6 +704,46 @@ TRANSLATION_UI_TEXTS = {
     'redpacket_ongoing_tab': {'zh': '进行中', 'en': 'Ongoing'},
     'redpacket_ended_active': {'zh': '◾️已结束', 'en': '◾️ Ended'},
     'redpacket_add': {'zh': '➕添加', 'en': '➕ Add'},
+    'vip_open_title': {
+        'zh': '<b>💎 会员开通</b>\n\n这是独立于号铺商品区的单独开通入口。\n请选择需要开通的 Telegram Premium 时长：',
+        'en': '<b>💎 Premium</b>\n\nThis is a standalone entry separate from the BotShop catalog.\nPlease choose a Telegram Premium plan:'
+    },
+    'vip_open_unavailable': {
+        'zh': '会员开通暂未配置，请联系管理员。',
+        'en': 'Premium activation is not configured yet. Please contact the admin.'
+    },
+    'vip_plan_button': {'zh': '{months}个月', 'en': '{months} Months'},
+    'vip_refresh_button': {'zh': '🔄刷新价格', 'en': '🔄 Refresh Prices'},
+    'vip_enter_username': {
+        'zh': '<b>💎 会员开通</b>\n\n已选择：{plan_label}\n价格：{price} USDT\n\n请直接发送要开通的 Telegram 用户名。\n格式示例：<code>example_user</code>',
+        'en': '<b>💎 Premium</b>\n\nSelected: {plan_label}\nPrice: {price} USDT\n\nPlease send the Telegram username to activate for.\nExample: <code>example_user</code>'
+    },
+    'vip_invalid_username': {
+        'zh': '用户名格式不正确，请重新输入正确的 Telegram 用户名。',
+        'en': 'Invalid username format. Please enter a valid Telegram username.'
+    },
+    'vip_confirm_text': {
+        'zh': '<b>💎 请确认会员开通信息</b>\n\n账号：@{username}\n套餐：{plan_label}\n价格：{price} USDT\n余额：{balance} USDT\n\n确认后将走独立会员开通流程，不影响号铺商品发货。',
+        'en': '<b>💎 Confirm Premium Activation</b>\n\nAccount: @{username}\nPlan: {plan_label}\nPrice: {price} USDT\nBalance: {balance} USDT\n\nThis uses the standalone Premium flow and does not affect the BotShop catalog.'
+    },
+    'vip_submit_button': {'zh': '确认开通✅', 'en': 'Activate ✅'},
+    'vip_success_text': {
+        'zh': '<b>🎉 会员开通成功</b>\n\n账号：@{username}\n套餐：{plan_label}\n扣费：{price} USDT\n余额：{balance} USDT\n订单号：<code>{order_id}</code>',
+        'en': '<b>🎉 Premium Activated</b>\n\nAccount: @{username}\nPlan: {plan_label}\nCharged: {price} USDT\nBalance: {balance} USDT\nOrder ID: <code>{order_id}</code>'
+    },
+    'vip_failed_text': {
+        'zh': '会员开通失败：{reason}',
+        'en': 'Premium activation failed: {reason}'
+    },
+    'vip_manual_review_text': {
+        'zh': '会员开通请求已提交，但上游返回异常，订单已转人工核对。\n订单号：<code>{order_id}</code>\n账号：@{username}\n套餐：{plan_label}\n\n请稍后联系管理员确认结果。',
+        'en': 'The Premium request was submitted, but the upstream response was uncertain. The order is now pending manual review.\nOrder ID: <code>{order_id}</code>\nAccount: @{username}\nPlan: {plan_label}\n\nPlease contact the admin later to confirm the result.'
+    },
+    'vip_no_plan': {
+        'zh': '当前没有可用的会员套餐，请稍后再试。',
+        'en': 'No Premium plans are available right now. Please try again later.'
+    },
+    'vip_checking_text': {'zh': '正在提交会员开通，请稍候…', 'en': 'Submitting Premium activation, please wait…'},
 }
 
 _translation_memory_cache = {}
@@ -1145,6 +1187,7 @@ def matches_ui_text(incoming_text, key):
         'menu_goods_list': {'商品列表'},
         'menu_profile': {'个人中心'},
         'menu_recharge': {'我要充值'},
+        'menu_vip_opening': {'会员开通'},
     }
     for alias in alias_candidates.get(key, set()):
         candidates.add(normalize_menu_text(alias))
@@ -1174,6 +1217,7 @@ def get_fixed_frontend_text_key(source_text):
         normalize_menu_text('👤个人中心'): 'menu_profile',
         normalize_menu_text('💸我要充值'): 'menu_recharge',
         normalize_menu_text('🧧红包'): 'menu_redpacket',
+        normalize_menu_text('💎会员开通'): 'menu_vip_opening',
         normalize_menu_text('🏠主菜单'): 'main_menu',
         normalize_menu_text('⬅️返回'): 'back',
         normalize_menu_text('❌关闭'): 'close_with_icon',
@@ -1709,7 +1753,13 @@ TRC20_USDT_CONTRACT = os.getenv('TRC20_USDT_CONTRACT', 'TR7NHqjeKQxGTCi8q8ZY4pL8
 OKPAY_BOT = None
 OKPAY_HTTPD = None
 APP_EVENT_LOOP = None
+APP_BOT = None
 TOPUP_LOOP_STARTED = False
+VIPSTAR_API_BASE_URL = os.getenv('VIPSTAR_API_BASE_URL', 'https://vipstar.logon8.com/api/v1').strip().rstrip('/')
+VIPSTAR_API_KEY = os.getenv('VIPSTAR_API_KEY', '').strip()
+VIPSTAR_API_TIMEOUT_SECONDS = max(5, int(os.getenv('VIPSTAR_API_TIMEOUT_SECONDS', '20') or '20'))
+VIP_PREMIUM_MONTHS = (3, 6, 12)
+VIP_USERNAME_PATTERN = re.compile(r'^[A-Za-z][A-Za-z0-9_]{4,31}$')
 
 
 def ensure_topup_indexes():
@@ -1748,6 +1798,7 @@ restock_requests = mydb['restock_requests']
 translation_cache = mydb['fyb']
 translation_overrides = mydb['fyb_override']
 account_check_refunds = mydb['account_check_refunds']
+vip_orders = mydb['vip_orders']
 
 
 def ensure_clone_indexes():
@@ -1809,11 +1860,23 @@ def ensure_translation_indexes():
         pass
 
 
+def ensure_vip_order_indexes():
+    try:
+        vip_orders.create_index([('order_id', 1)], name='uniq_vip_order_id', unique=True)
+    except Exception:
+        pass
+    try:
+        vip_orders.create_index([('user_id', 1), ('created_at', -1)], name='vip_order_user_created')
+    except Exception:
+        pass
+
+
 ensure_clone_indexes()
 ensure_restock_notice_indexes()
 ensure_restock_request_indexes()
 ensure_account_check_refund_indexes()
 ensure_translation_indexes()
+ensure_vip_order_indexes()
 
 
 DYNAMIC_EMOJI_RE = re.compile(r'\[(?:emoji|ce|custom_emoji):([0-9]+)(?::([^:\]]+))?(?::(danger|success|primary))?\]')
@@ -3578,6 +3641,318 @@ def create_delivery_order_id():
     formatted_time = current_time.strftime('%Y%m%d%H%M%S')
     timestamp = str(current_time.timestamp()).replace('.', '')
     return formatted_time + timestamp
+
+
+class VipPurchaseError(Exception):
+    def __init__(self, message, *, explicit=False, payload=None):
+        super().__init__(message)
+        self.explicit = explicit
+        self.payload = payload or {}
+
+
+def vip_api_is_configured():
+    return bool(VIPSTAR_API_KEY and VIPSTAR_API_BASE_URL)
+
+
+def normalize_vip_username(value):
+    username = str(value or '').strip().lstrip('@')
+    if not VIP_USERNAME_PATTERN.fullmatch(username):
+        raise ValueError('invalid_username')
+    return username
+
+
+def build_vip_plan_label(months, user_id=None, lang=None):
+    return get_ui_text('vip_plan_button', viewer_user_id=user_id, lang=lang, months=int(months))
+
+
+def vip_api_request(method, path, payload=None):
+    if not vip_api_is_configured():
+        raise VipPurchaseError('会员开通暂未配置', explicit=True)
+    url = f'{VIPSTAR_API_BASE_URL}{path}'
+    headers = {'api-key': VIPSTAR_API_KEY}
+    if payload is not None:
+        headers['Content-Type'] = 'application/json'
+    try:
+        response = requests.request(method, url, headers=headers, json=payload, timeout=VIPSTAR_API_TIMEOUT_SECONDS)
+    except requests.RequestException as exc:
+        raise VipPurchaseError(f'上游连接失败：{exc}') from exc
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise VipPurchaseError('上游返回了无法解析的数据') from exc
+    if response.status_code >= 400 or str(data.get('status') or '').lower() == 'error':
+        message = str(data.get('message') or f'HTTP {response.status_code}').strip()
+        raise VipPurchaseError(message, explicit=True, payload=data)
+    return data
+
+
+def fetch_vip_premium_plans():
+    payload = vip_api_request('GET', '/plans')
+    plans = {}
+    for item in ((payload.get('plans') or {}).get('premiums') or []):
+        try:
+            months = int(item.get('months') or 0)
+            if months not in VIP_PREMIUM_MONTHS:
+                continue
+            price_value = Decimal(str(item.get('price') or '0'))
+            if price_value <= 0:
+                continue
+            plans[months] = {
+                'months': months,
+                'price': str(price_value),
+                'description': str(item.get('description') or '').strip(),
+                'currency': str(item.get('currency') or 'USDT').upper(),
+            }
+        except Exception:
+            logging.warning('skip invalid vip premium plan item=%r', item, exc_info=True)
+    return plans
+
+
+def get_vip_premium_plan(months):
+    plans = fetch_vip_premium_plans()
+    plan = plans.get(int(months))
+    if not plan:
+        raise VipPurchaseError('当前没有可用的会员套餐', explicit=True)
+    return plan
+
+
+def reserve_vip_wallet_balance(user_id, amount):
+    normalized = float(Decimal(str(amount)))
+    return user.find_one_and_update(
+        {'user_id': user_id, 'USDT': {'$gte': normalized}},
+        {'$inc': {'USDT': -normalized}},
+        return_document=ReturnDocument.AFTER,
+    )
+
+
+def refund_vip_wallet_balance(user_id, amount):
+    normalized = float(Decimal(str(amount)))
+    return user.find_one_and_update(
+        {'user_id': user_id},
+        {'$inc': {'USDT': normalized}},
+        return_document=ReturnDocument.AFTER,
+    )
+
+
+def notify_vip_manual_review(order_doc, reason):
+    username = str(order_doc.get('username') or '').strip()
+    months = int(order_doc.get('months') or 0)
+    amount = format_usdt_2(order_doc.get('amount', 0))
+    order_id = str(order_doc.get('order_id') or '')
+    lines = [
+        '<b>⚠️ 会员开通订单待人工核对</b>',
+        f'订单号：<code>{html.escape(order_id, quote=False)}</code>',
+        f'用户ID：<code>{order_doc.get("user_id")}</code>',
+        f'账号：@{html.escape(username, quote=False)}',
+        f'套餐：{months}个月',
+        f'金额：{amount} USDT',
+        f'原因：{html.escape(str(reason), quote=False)}',
+    ]
+    notice_text = '\n'.join(lines)
+    for admin_row in list(user.find({'state': '4'}, {'user_id': 1})):
+        admin_user_id = int(admin_row.get('user_id') or 0)
+        if admin_user_id <= 0:
+            continue
+        try:
+            send_html_message(APP_BOT, admin_user_id, notice_text)
+        except Exception:
+            logging.warning('notify vip manual review failed: admin=%s order=%s', admin_user_id, order_id, exc_info=True)
+
+
+def build_vip_open_menu_text(user_id, plans=None, error_text=''):
+    lang = get_user_lang(user_id)
+    text = get_ui_text('vip_open_title', viewer_user_id=user_id)
+    if error_text:
+        text = f'{text}\n\n{html.escape(str(error_text), quote=False)}'
+    elif plans:
+        lines = []
+        for months in sorted(plans):
+            plan = plans[months]
+            lines.append(f'• {build_vip_plan_label(months, user_id=user_id, lang=lang)}：{format_usdt_2(plan["price"])} USDT')
+        text = f'{text}\n\n' + '\n'.join(lines)
+    return text
+
+
+def build_vip_open_menu_keyboard(user_id, plans=None):
+    keyboard = []
+    for months in sorted(plans or {}):
+        label = build_vip_plan_label(months, user_id=user_id)
+        keyboard.append([InlineKeyboardButton(label, callback_data=f'vipplan {months}')])
+    keyboard.append([InlineKeyboardButton(get_ui_text('vip_refresh_button', viewer_user_id=user_id), callback_data='vipmenu')])
+    keyboard.append([
+        InlineKeyboardButton(get_ui_text('main_menu', viewer_user_id=user_id), callback_data='viphome'),
+        InlineKeyboardButton(get_ui_text('close_with_icon', viewer_user_id=user_id), callback_data=f'close {user_id}')
+    ])
+    return InlineKeyboardMarkup(keyboard)
+
+
+def show_vip_open_menu(context, user_id, *, edit_message=None):
+    lang = get_user_lang(user_id)
+    plans = {}
+    error_text = ''
+    if vip_api_is_configured():
+        try:
+            plans = fetch_vip_premium_plans()
+        except VipPurchaseError as exc:
+            error_text = str(exc)
+    else:
+        error_text = get_ui_text('vip_open_unavailable', lang=lang)
+    if vip_api_is_configured() and not plans and not error_text:
+        error_text = get_ui_text('vip_no_plan', lang=lang)
+    text = build_vip_open_menu_text(user_id, plans=plans, error_text=error_text)
+    reply_markup = build_vip_open_menu_keyboard(user_id, plans=plans)
+    if edit_message is not None:
+        try:
+            edit_message.edit_text(text=text, parse_mode='HTML', reply_markup=reply_markup, disable_web_page_preview=True)
+            return
+        except Exception:
+            logging.warning('edit vip open menu failed for user=%s', user_id, exc_info=True)
+    context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML', reply_markup=reply_markup, disable_web_page_preview=True)
+
+
+def vipmenu(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    show_vip_open_menu(context, query.from_user.id, edit_message=query.message)
+
+
+def viphome(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    safe_delete_message(context.bot, query.from_user.id, query.message.message_id, 'delete_vip_panel_message')
+    send_user_home(context, query.from_user.id)
+
+
+def vipplan(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    lang = get_user_lang(user_id)
+    query.answer()
+    months = int(str(query.data or '').replace('vipplan ', '', 1).strip() or 0)
+    try:
+        plan = get_vip_premium_plan(months)
+    except VipPurchaseError as exc:
+        context.bot.send_message(chat_id=user_id, text=get_ui_text('vip_failed_text', viewer_user_id=user_id, reason=str(exc)))
+        return
+    prompt_text = get_ui_text(
+        'vip_enter_username',
+        viewer_user_id=user_id,
+        plan_label=build_vip_plan_label(months, user_id=user_id, lang=lang),
+        price=format_usdt_2(plan['price']),
+    )
+    keyboard = [[InlineKeyboardButton(get_ui_text('cancel_input', viewer_user_id=user_id), callback_data=f'close {user_id}')]]
+    sent = context.bot.send_message(chat_id=user_id, text=prompt_text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
+    user.update_one({'user_id': user_id}, {'$set': {'sign': f'vipusername {months}:{sent.message_id}'}})
+
+
+def vipconfirm(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    lang = get_user_lang(user_id)
+    raw = str(query.data or '').replace('vipconfirm ', '', 1).strip()
+    parts = raw.split(':', 1)
+    months = int(parts[0]) if parts and parts[0].isdigit() else 0
+    username = parts[1] if len(parts) > 1 else ''
+    query.answer(get_ui_text('vip_checking_text', lang=lang))
+    try:
+        username = normalize_vip_username(username)
+        plan = get_vip_premium_plan(months)
+    except (ValueError, VipPurchaseError) as exc:
+        context.bot.send_message(chat_id=user_id, text=get_ui_text('vip_failed_text', viewer_user_id=user_id, reason=str(exc)))
+        return
+
+    amount = Decimal(str(plan['price']))
+    order_id = create_delivery_order_id()
+    now_str = beijing_now_str()
+    reserved_user = reserve_vip_wallet_balance(user_id, amount)
+    if not reserved_user:
+        context.bot.send_message(chat_id=user_id, text=get_ui_text('insufficient_balance', viewer_user_id=user_id))
+        return
+
+    vip_order_doc = {
+        'order_id': order_id,
+        'user_id': user_id,
+        'username': username,
+        'months': months,
+        'amount': float(amount),
+        'currency': 'USDT',
+        'state': 'processing',
+        'created_at': now_str,
+        'updated_at': now_str,
+        'balance_after_reserve': reserved_user.get('USDT', 0),
+        'source': 'vipstar_premium',
+    }
+    vip_orders.insert_one(vip_order_doc)
+
+    try:
+        payload = vip_api_request('POST', '/premium/purchase', {'username': username, 'months': months})
+    except VipPurchaseError as exc:
+        if exc.explicit:
+            refund_row = refund_vip_wallet_balance(user_id, amount)
+            vip_orders.update_one(
+                {'order_id': order_id},
+                {'$set': {
+                    'state': 'failed',
+                    'updated_at': beijing_now_str(),
+                    'error_message': str(exc),
+                    'response_payload': exc.payload,
+                    'refunded': True,
+                    'balance_after_refund': (refund_row or {}).get('USDT', 0),
+                }}
+            )
+            context.bot.send_message(chat_id=user_id, text=get_ui_text('vip_failed_text', viewer_user_id=user_id, reason=str(exc)))
+            return
+
+        vip_orders.update_one(
+            {'order_id': order_id},
+            {'$set': {
+                'state': 'manual_review',
+                'updated_at': beijing_now_str(),
+                'error_message': str(exc),
+                'response_payload': exc.payload,
+                'refunded': False,
+            }}
+        )
+        order_doc = vip_orders.find_one({'order_id': order_id}) or vip_order_doc
+        notify_vip_manual_review(order_doc, str(exc))
+        context.bot.send_message(
+            chat_id=user_id,
+            text=get_ui_text(
+                'vip_manual_review_text',
+                viewer_user_id=user_id,
+                order_id=order_id,
+                username=username,
+                plan_label=build_vip_plan_label(months, user_id=user_id, lang=lang),
+            ),
+            parse_mode='HTML',
+        )
+        return
+
+    vip_orders.update_one(
+        {'order_id': order_id},
+        {'$set': {
+            'state': 'success',
+            'updated_at': beijing_now_str(),
+            'response_payload': payload,
+            'upstream_order_id': str(payload.get('order_id') or ''),
+            'upstream_message': str(payload.get('message') or ''),
+        }}
+    )
+    user_logging(order_id, f'会员开通 {months}个月 @{username}', user_id, float(amount), now_str)
+    current_user = user.find_one({'user_id': user_id}, {'USDT': 1}) or {}
+    context.bot.send_message(
+        chat_id=user_id,
+        text=get_ui_text(
+            'vip_success_text',
+            viewer_user_id=user_id,
+            username=username,
+            plan_label=build_vip_plan_label(months, user_id=user_id, lang=lang),
+            price=format_usdt_2(amount),
+            balance=format_usdt_2(current_user.get('USDT', 0)),
+            order_id=order_id,
+        ),
+        parse_mode='HTML',
+    )
 
 
 def reserve_inventory_items(base_query, count, user_id, order_id, timer):
@@ -7868,6 +8243,7 @@ def build_user_home_reply_keyboard(user_id):
         label = localize_button_label(item.get('projectname', ''), user_id=user_id, lang=lang)
         keyboard[row].append(KeyboardButton(label))
     keyboard = [row for row in keyboard if row]
+    keyboard.append([KeyboardButton(get_ui_text('menu_vip_opening', viewer_user_id=user_id, lang=lang))])
     keyboard.append([KeyboardButton(get_ui_text('language_toggle', lang=lang))])
     if BOT_CLONE_ENABLED and ALLOW_PUBLIC_BOT_CLONE:
         keyboard.append([KeyboardButton(localize_button_label('#g [emoji:5287684458881756303:🤖]一键克隆同款', user_id=user_id, lang=lang))])
@@ -8827,9 +9203,10 @@ def start_okpay_callback_server(bot):
 
 
 async def on_post_init(application):
-    global APP_EVENT_LOOP
+    global APP_EVENT_LOOP, APP_BOT
     APP_EVENT_LOOP = asyncio.get_running_loop()
-    start_okpay_callback_server(SyncTelegramProxy(application.bot, lambda: APP_EVENT_LOOP))
+    APP_BOT = SyncTelegramProxy(application.bot, lambda: APP_EVENT_LOOP)
+    start_okpay_callback_server(APP_BOT)
     warm_storefront_translation_cache(lang='en')
 
 
@@ -10048,6 +10425,9 @@ def textkeyboard(update: Update, context: CallbackContext):
         if matches_ui_text(text, 'main_menu'):
             send_user_home(context, user_id)
             return
+        if matches_ui_text(text, 'menu_vip_opening'):
+            show_vip_open_menu(context, user_id)
+            return
         if sign != 0:
             if update.message.text:
 
@@ -10180,6 +10560,45 @@ def textkeyboard(update: Update, context: CallbackContext):
                                                  reply_markup=InlineKeyboardMarkup(keyboard))
 
 
+                elif sign.startswith('vipusername '):
+                    del_message(update.message)
+                    data = sign.replace('vipusername ', '', 1)
+                    months_text, _, prompt_message_id = data.partition(':')
+                    months = int(months_text) if months_text.isdigit() else 0
+                    if prompt_message_id.isdigit():
+                        safe_delete_message(context.bot, user_id, int(prompt_message_id), 'delete_vip_username_prompt')
+                    try:
+                        username = normalize_vip_username(text)
+                        plan = get_vip_premium_plan(months)
+                    except ValueError:
+                        keyboard = [[InlineKeyboardButton(get_ui_text('cancel_input', viewer_user_id=user_id), callback_data=f'close {user_id}')]]
+                        context.bot.send_message(
+                            chat_id=user_id,
+                            text=get_ui_text('vip_invalid_username', viewer_user_id=user_id),
+                            reply_markup=InlineKeyboardMarkup(keyboard),
+                        )
+                        return
+                    except VipPurchaseError as exc:
+                        user.update_one({'user_id': user_id}, {'$set': {'sign': 0}})
+                        context.bot.send_message(chat_id=user_id, text=get_ui_text('vip_failed_text', viewer_user_id=user_id, reason=str(exc)))
+                        return
+
+                    user_row = user.find_one({'user_id': user_id}, {'USDT': 1}) or {}
+                    confirm_text = get_ui_text(
+                        'vip_confirm_text',
+                        viewer_user_id=user_id,
+                        username=username,
+                        plan_label=build_vip_plan_label(months, user_id=user_id, lang=lang),
+                        price=format_usdt_2(plan['price']),
+                        balance=format_usdt_2(user_row.get('USDT', 0)),
+                    )
+                    keyboard = [
+                        [InlineKeyboardButton(get_ui_text('cancel_trade', viewer_user_id=user_id), callback_data=f'close {user_id}'),
+                         InlineKeyboardButton(get_ui_text('vip_submit_button', viewer_user_id=user_id), callback_data=f'vipconfirm {months}:{username}')],
+                        [InlineKeyboardButton(get_ui_text('main_menu', viewer_user_id=user_id), callback_data='viphome')],
+                    ]
+                    user.update_one({'user_id': user_id}, {'$set': {'sign': 0}})
+                    context.bot.send_message(chat_id=user_id, text=confirm_text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
                 elif 'gmqq' in sign:
                     del_message(update.message)
                     data = sign.replace('gmqq ', '')
@@ -11732,6 +12151,7 @@ def main():
         ('backgmjl ', backgmjl), ('backcha ', backcha), ('qchuall ', qchuall), ('checkstockalive ', checkstockalive), ('update_wbts ', update_wbts),
         ('update_gg ', update_gg), ('zdycz', zdycz), ('okzdycz', okzdycz), ('recharge_menu', recharge_menu), ('recharge_trc20', recharge_trc20), ('recharge_okpay', recharge_okpay), ('addhb', addhb), ('lqhb ', lqhb),
         ('xzhb ', xzhb), ('yjshb', yjshb), ('jxzhb', jxzhb), ('shokuan ', shokuan),
+        ('vipmenu', vipmenu), ('viphome', viphome), ('vipplan ', vipplan), ('vipconfirm ', vipconfirm),
         ('update_sysm ', update_sysm), ('qxdingdan ', qxdingdan), ('okpay_paid ', okpay_paid), ('sifa', sifa),
         ('kaiqisifa', kaiqisifa), ('tuwen', tuwen), ('anniu', anniu), ('cattu', cattu),
     ]

@@ -55,6 +55,7 @@ agent_product_prices = mydb['agent_product_prices']
 agent_orders = mydb['agent_orders']
 agent_withdrawals = mydb['agent_withdrawals']
 commission_log = mydb['commission_log']
+vip_orders = mydb['vip_orders']
 
 mydb1 = teleclient[MONGO_CHAIN_DB_NAME]
 qukuai = mydb1['qukuai']
