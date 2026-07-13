@@ -866,6 +866,7 @@ ACCOUNT_CHECK_EMOJI_TIMEOUT = '[emoji:5382194935057372936:⏱️]'
 ACCOUNT_CHECK_EMOJI_TOTAL = '[emoji:5352625743081775722:🎚️]'
 
 VIP_PREMIUM_MENU_GIF_PATH = Path(__file__).resolve().parent / 'assets' / 'vip-premium.gif'
+VIP_PREMIUM_MENU_VIDEO_PATH = Path(__file__).resolve().parent / 'assets' / 'vip-premium.mp4'
 
 ADMIN_STOCK_CHECK_ACTIVE = set()
 ADMIN_STOCK_CHECK_ACTIVE_LOCK = threading.Lock()
@@ -2333,6 +2334,14 @@ def find_vip_panel_media(*ui_keys, fallback_path=None, fallback_type='animation'
                 return {'file_type': file_type, 'file_id': file_id}
     if fallback_path and Path(fallback_path).exists():
         return {'file_type': fallback_type, 'file_path': str(fallback_path)}
+    return None
+
+
+def get_vip_premium_default_media():
+    if VIP_PREMIUM_MENU_VIDEO_PATH.exists():
+        return {'file_type': 'video', 'file_path': str(VIP_PREMIUM_MENU_VIDEO_PATH)}
+    if VIP_PREMIUM_MENU_GIF_PATH.exists():
+        return {'file_type': 'animation', 'file_path': str(VIP_PREMIUM_MENU_GIF_PATH)}
     return None
 
 
@@ -4127,7 +4136,7 @@ def show_vip_premium_menu(context, user_id, *, edit_message=None):
         error_text = get_ui_text('vip_no_plan', viewer_user_id=user_id)
     text = build_vip_premium_menu_text(user_id, plans=plans, error_text=error_text)
     reply_markup = build_vip_premium_menu_keyboard(user_id, plans=plans)
-    media_config = find_vip_panel_media('vip_premium_entry', 'menu_vip_opening', fallback_path=VIP_PREMIUM_MENU_GIF_PATH)
+    media_config = find_vip_panel_media('vip_premium_entry', 'menu_vip_opening') or get_vip_premium_default_media()
     send_vip_panel_message(
         context,
         user_id,
