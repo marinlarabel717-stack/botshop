@@ -892,6 +892,7 @@ def build_admin_dashboard_keyboard(user_id):
         InlineKeyboardButton(f'{ADMIN_EMOJI_DM}对话用户私发', callback_data='sifa'),
         InlineKeyboardButton(f'{ADMIN_EMOJI_TRC20}充值地址设置', callback_data='settrc20'),
         InlineKeyboardButton(f'{ADMIN_EMOJI_OKPAY}OKPay配置', callback_data='okpaycfg'),
+        InlineKeyboardButton('💎会员星星价格', callback_data='vippricecfg'),
         InlineKeyboardButton(f'{ADMIN_EMOJI_GOODS}商品管理', callback_data='spgli'),
         InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}欢迎语修改', callback_data='startupdate'),
         InlineKeyboardButton(f'{ADMIN_EMOJI_BUY_NOTICE}购买提醒', callback_data='buynoticecfg'),
@@ -1845,6 +1846,12 @@ VIPSTAR_API_TIMEOUT_SECONDS = max(5, int(os.getenv('VIPSTAR_API_TIMEOUT_SECONDS'
 VIP_PREMIUM_MONTHS = (3, 6, 12)
 VIP_BATCH_LIMIT = 50
 VIP_USERNAME_PATTERN = re.compile(r'^[A-Za-z][A-Za-z0-9_]{4,31}$')
+VIP_PREMIUM_PRICE_CONFIG_KEYS = {
+    3: '会员价格3个月',
+    6: '会员价格6个月',
+    12: '会员价格12个月',
+}
+VIP_STAR_PRICE_CONFIG_KEY = '星星单价'
 
 
 def ensure_topup_indexes():
@@ -2530,6 +2537,8 @@ def should_preserve_sign_on_menu_match(sign):
         'setkeyname ',
         'settuwenset ',
         'setkeyboard ',
+        'setvipprice ',
+        'setvipstarprice',
         'setrestocktarget',
         'setbuynotice',
         'update_sysm ',
@@ -3870,6 +3879,98 @@ def build_vip_plan_label(months, user_id=None, lang=None):
     return get_ui_text('vip_plan_button', viewer_user_id=user_id, lang=lang, months=int(months))
 
 
+def normalize_admin_usdt_price_input(value):
+    try:
+        amount = Decimal(str(value or '').strip())
+    except Exception as exc:
+        raise ValueError('invalid_price') from exc
+    if amount < 0:
+        raise ValueError('invalid_price')
+    return amount.quantize(Decimal('0.01'))
+
+
+def format_admin_usdt_price(value):
+    return format_usdt_2(value)
+
+
+def get_vip_premium_price_override(months):
+    key = VIP_PREMIUM_PRICE_CONFIG_KEYS.get(int(months or 0))
+    if not key:
+        return None
+    raw_value = str(get_text_config(key, '') or '').strip()
+    if not raw_value:
+        return None
+    try:
+        amount = Decimal(raw_value).quantize(Decimal('0.01'))
+    except Exception:
+        return None
+    if amount <= 0:
+        return None
+    return amount
+
+
+def get_vip_star_unit_price_override():
+    raw_value = str(get_text_config(VIP_STAR_PRICE_CONFIG_KEY, '') or '').strip()
+    if not raw_value:
+        return None
+    try:
+        amount = Decimal(raw_value).quantize(Decimal('0.01'))
+    except Exception:
+        return None
+    if amount <= 0:
+        return None
+    return amount
+
+
+def get_vip_star_unit_price(plan):
+    if not plan:
+        return Decimal('0.00')
+    try:
+        quantity = int(plan.get('quantity') or 1)
+    except Exception:
+        quantity = 1
+    if quantity <= 0:
+        quantity = 1
+    try:
+        total_price = Decimal(str(plan.get('price') or '0'))
+    except Exception:
+        total_price = Decimal('0')
+    return (total_price / Decimal(str(quantity))).quantize(Decimal('0.01'))
+
+
+def apply_vip_premium_price_overrides(plans):
+    merged = {}
+    for months, plan in (plans or {}).items():
+        merged[int(months)] = dict(plan or {})
+    for months in VIP_PREMIUM_MONTHS:
+        override_price = get_vip_premium_price_override(months)
+        if override_price is None:
+            continue
+        current = dict(merged.get(months) or {})
+        current.update({
+            'months': months,
+            'price': format(override_price, 'f'),
+            'currency': str(current.get('currency') or 'USDT').upper(),
+            'source': 'admin_override',
+        })
+        merged[months] = current
+    return merged
+
+
+def apply_vip_star_price_override(plan):
+    override_price = get_vip_star_unit_price_override()
+    if override_price is None:
+        return plan
+    current = dict(plan or {})
+    current.update({
+        'quantity': 1,
+        'price': format(override_price, 'f'),
+        'currency': str(current.get('currency') or 'USDT').upper(),
+        'source': 'admin_override',
+    })
+    return current
+
+
 def build_vip_user_display(usernames):
     usernames = [str(item or '').strip() for item in (usernames or []) if str(item or '').strip()]
     if not usernames:
@@ -3933,8 +4034,13 @@ def vip_api_request(method, path, payload=None):
 
 
 def fetch_vip_premium_plans():
-    payload = vip_api_request('GET', '/plans')
     plans = {}
+    api_error = None
+    try:
+        payload = vip_api_request('GET', '/plans')
+    except VipPurchaseError as exc:
+        payload = {}
+        api_error = exc
     for item in ((payload.get('plans') or {}).get('premiums') or []):
         try:
             months = int(item.get('months') or 0)
@@ -3951,6 +4057,11 @@ def fetch_vip_premium_plans():
             }
         except Exception:
             logging.warning('skip invalid vip premium plan item=%r', item, exc_info=True)
+    plans = apply_vip_premium_price_overrides(plans)
+    if plans:
+        return plans
+    if api_error is not None:
+        raise api_error
     return plans
 
 
@@ -3963,21 +4074,30 @@ def get_vip_premium_plan(months):
 
 
 def fetch_vip_star_plan():
-    payload = vip_api_request('GET', '/plans')
-    item = ((payload.get('plans') or {}).get('star') or {})
+    plan = None
+    api_error = None
     try:
+        payload = vip_api_request('GET', '/plans')
+        item = ((payload.get('plans') or {}).get('star') or {})
         unit_quantity = int(item.get('quantity') or 1)
         price_value = Decimal(str(item.get('price') or '0'))
+        if unit_quantity > 0 and price_value > 0:
+            plan = {
+                'quantity': unit_quantity,
+                'price': str(price_value),
+                'description': str(item.get('description') or '').strip(),
+                'currency': str(item.get('currency') or 'USDT').upper(),
+            }
+    except VipPurchaseError as exc:
+        api_error = exc
     except Exception as exc:
         raise VipPurchaseError('当前没有可用的星星价格', explicit=True) from exc
-    if unit_quantity <= 0 or price_value <= 0:
-        raise VipPurchaseError('当前没有可用的星星价格', explicit=True)
-    return {
-        'quantity': unit_quantity,
-        'price': str(price_value),
-        'description': str(item.get('description') or '').strip(),
-        'currency': str(item.get('currency') or 'USDT').upper(),
-    }
+    plan = apply_vip_star_price_override(plan)
+    if plan:
+        return plan
+    if api_error is not None:
+        raise api_error
+    raise VipPurchaseError('当前没有可用的星星价格', explicit=True)
 
 
 def normalize_vip_star_quantity(value):
@@ -4221,7 +4341,7 @@ def build_vip_star_menu_text(user_id, plan=None, error_text=''):
         return f'{text}\n\n{html.escape(str(error_text), quote=False)}'
     if not plan:
         return f'{text}\n\n{get_ui_text("vip_star_no_plan", viewer_user_id=user_id)}'
-    return f'{text}\n\n1星价格：{format_usdt_2(plan["price"])} USDT'
+    return f'{text}\n\n1星价格：{format_admin_usdt_price(get_vip_star_unit_price(plan))} USDT'
 
 
 def build_vip_star_menu_keyboard(user_id, plan=None):
@@ -7241,6 +7361,67 @@ def build_buy_notice_config_text():
     ), notice_text
 
 
+def build_vip_price_config_text():
+    premium_plans = {}
+    star_plan = None
+    premium_error = ''
+    star_error = ''
+    try:
+        premium_plans = fetch_vip_premium_plans()
+    except VipPurchaseError as exc:
+        premium_error = str(exc)
+    try:
+        star_plan = fetch_vip_star_plan()
+    except VipPurchaseError as exc:
+        star_error = str(exc)
+
+    lines = [
+        '<b>💎 会员 / 星星价格配置</b>',
+        '',
+        '这里设置的是前台展示和实际扣费价格，上游接口继续负责开通会员/发星。',
+        '输入 <code>0</code> 可清除本地覆盖，恢复跟随上游默认价格。',
+        '',
+    ]
+
+    for months in VIP_PREMIUM_MONTHS:
+        plan = premium_plans.get(months)
+        override_price = get_vip_premium_price_override(months)
+        source_text = '后台自定义' if override_price is not None else ('上游默认' if plan else '未配置')
+        price_text = format_admin_usdt_price(plan['price']) if plan else '未配置'
+        lines.append(f'💎 {months}个月会员：<code>{price_text}</code> USDT（{source_text}）')
+
+    star_override = get_vip_star_unit_price_override()
+    star_source_text = '后台自定义' if star_override is not None else ('上游默认' if star_plan else '未配置')
+    star_price_text = format_admin_usdt_price(get_vip_star_unit_price(star_plan)) if star_plan else '未配置'
+    lines.append(f'⭐ 1星价格：<code>{star_price_text}</code> USDT（{star_source_text}）')
+
+    if premium_error or star_error:
+        lines.extend(['', '<b>接口状态</b>'])
+        if premium_error:
+            lines.append(f'会员套餐读取：{html.escape(premium_error, quote=False)}')
+        if star_error:
+            lines.append(f'星星价格读取：{html.escape(star_error, quote=False)}')
+
+    return '\n'.join(lines)
+
+
+def build_vip_price_config_keyboard(user_id):
+    return [
+        [
+            InlineKeyboardButton('💎设置3个月', callback_data='setvipprice 3'),
+            InlineKeyboardButton('💎设置6个月', callback_data='setvipprice 6'),
+        ],
+        [
+            InlineKeyboardButton('💎设置12个月', callback_data='setvipprice 12'),
+            InlineKeyboardButton('⭐设置星星单价', callback_data='setvipstarprice'),
+        ],
+        [
+            InlineKeyboardButton('⬅️返回主界面', callback_data='backstart'),
+            InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')
+        ]
+    ]
+
+
 def build_buy_notice_config_keyboard(user_id):
     return [
         [InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}修改购买提醒', callback_data='setbuynotice')],
@@ -7272,6 +7453,52 @@ def setbuynotice(update: Update, context: CallbackContext):
     context.bot.send_message(
         chat_id=user_id,
         text='请直接发送新的购买提醒文案\n\n支持 HTML，也支持会员 emoji。',
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+def vippricecfg(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
+    text = build_vip_price_config_text()
+    keyboard = InlineKeyboardMarkup(build_vip_price_config_keyboard(user_id))
+    try:
+        query.edit_message_text(text=text, parse_mode='HTML', reply_markup=keyboard)
+    except Exception:
+        context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML', reply_markup=keyboard)
+
+
+def setvipprice(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
+    months = int(str(query.data or '').replace('setvipprice ', '', 1).strip() or 0)
+    if months not in VIP_PREMIUM_MONTHS:
+        context.bot.send_message(chat_id=user_id, text='会员套餐时长无效')
+        return
+    current_override = get_vip_premium_price_override(months)
+    current_text = format_admin_usdt_price(current_override) if current_override is not None else '跟随上游'
+    user.update_one({'user_id': user_id}, {'$set': {'sign': f'setvipprice {months}'}})
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
+    context.bot.send_message(
+        chat_id=user_id,
+        text=f'请发送 {months} 个月会员价格（USDT）\n\n当前：{current_text}\n输入 0 表示清除本地覆盖，恢复跟随上游。',
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+def setvipstarprice(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
+    current_override = get_vip_star_unit_price_override()
+    current_text = format_admin_usdt_price(current_override) if current_override is not None else '跟随上游'
+    user.update_one({'user_id': user_id}, {'$set': {'sign': 'setvipstarprice'}})
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消', callback_data=f'close {user_id}')]]
+    context.bot.send_message(
+        chat_id=user_id,
+        text=f'请发送 1 星价格（USDT）\n\n当前：{current_text}\n输入 0 表示清除本地覆盖，恢复跟随上游。',
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -11602,6 +11829,54 @@ def textkeyboard(update: Update, context: CallbackContext):
                         start_okpay_callback_server(SyncTelegramProxy(context.bot, lambda: APP_EVENT_LOOP))
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                     context.bot.send_message(chat_id=user_id, text=f'OKPay 名称已保存\n\n{build_okpay_config_text()}', parse_mode='HTML', reply_markup=InlineKeyboardMarkup(build_okpay_config_keyboard(user_id)))
+                elif sign.startswith('setvipprice '):
+                    months = int(sign.replace('setvipprice ', '', 1).strip() or 0)
+                    if months not in VIP_PREMIUM_MONTHS:
+                        user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                        context.bot.send_message(chat_id=user_id, text='会员套餐时长无效')
+                        return
+                    try:
+                        price = normalize_admin_usdt_price_input(text)
+                    except ValueError:
+                        keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消输入', callback_data=f'close {user_id}')]]
+                        context.bot.send_message(chat_id=user_id, text='请输入有效价格，例如：1.99\n输入 0 表示清除本地覆盖。', reply_markup=InlineKeyboardMarkup(keyboard))
+                        return
+                    config_key = VIP_PREMIUM_PRICE_CONFIG_KEYS.get(months)
+                    if price == 0:
+                        set_text_config(config_key, '')
+                        saved_text = f'{months} 个月会员价格已恢复跟随上游'
+                    else:
+                        set_text_config(config_key, format(price, 'f'))
+                        saved_text = f'{months} 个月会员价格已保存：{format_admin_usdt_price(price)} USDT'
+                    user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                    context.bot.send_message(chat_id=user_id, text=saved_text, parse_mode='HTML')
+                    context.bot.send_message(
+                        chat_id=user_id,
+                        text=build_vip_price_config_text(),
+                        parse_mode='HTML',
+                        reply_markup=InlineKeyboardMarkup(build_vip_price_config_keyboard(user_id))
+                    )
+                elif sign == 'setvipstarprice':
+                    try:
+                        price = normalize_admin_usdt_price_input(text)
+                    except ValueError:
+                        keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消输入', callback_data=f'close {user_id}')]]
+                        context.bot.send_message(chat_id=user_id, text='请输入有效价格，例如：0.02\n输入 0 表示清除本地覆盖。', reply_markup=InlineKeyboardMarkup(keyboard))
+                        return
+                    if price == 0:
+                        set_text_config(VIP_STAR_PRICE_CONFIG_KEY, '')
+                        saved_text = '星星单价已恢复跟随上游'
+                    else:
+                        set_text_config(VIP_STAR_PRICE_CONFIG_KEY, format(price, 'f'))
+                        saved_text = f'星星单价已保存：{format_admin_usdt_price(price)} USDT/星'
+                    user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                    context.bot.send_message(chat_id=user_id, text=saved_text, parse_mode='HTML')
+                    context.bot.send_message(
+                        chat_id=user_id,
+                        text=build_vip_price_config_text(),
+                        parse_mode='HTML',
+                        reply_markup=InlineKeyboardMarkup(build_vip_price_config_keyboard(user_id))
+                    )
                 elif sign == 'setcloneprice':
                     if not is_number(text):
                         keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}取消输入', callback_data=f'close {user_id}')]]
@@ -12957,7 +13232,7 @@ def main():
         application.add_handler(CommandHandler(command_name, sync_handler(callback)))
 
     callback_handlers = [
-        ('startupdate', startupdate), ('clonebot', clonebot), ('cloneagent', cloneagent), ('clonepay', clonepay), ('clonelist', clonelist), ('agentlist', agentlist), ('cloneinfo ', cloneinfo), ('agentinfo ', agentinfo), ('agentusers ', agentusers), ('clonerestart ', clonerestart), ('agentrestart ', agentrestart), ('clonedelete ', clonedelete), ('agentdelete ', agentdelete), ('setcloneprice', setcloneprice), ('restockpushcfg', restockpushcfg), ('buynoticecfg', buynoticecfg), ('setbuynotice', setbuynotice), ('setrestocktarget', setrestocktarget), ('restockrequestarea ', restockrequestarea), ('nostock ', nostock), ('okpaycfg', okpaycfg), ('setokpayid', setokpayid), ('setokpaytoken', setokpaytoken), ('setokpayname', setokpayname), ('toggleacctcheck', toggleacctcheck), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
+        ('startupdate', startupdate), ('clonebot', clonebot), ('cloneagent', cloneagent), ('clonepay', clonepay), ('clonelist', clonelist), ('agentlist', agentlist), ('cloneinfo ', cloneinfo), ('agentinfo ', agentinfo), ('agentusers ', agentusers), ('clonerestart ', clonerestart), ('agentrestart ', agentrestart), ('clonedelete ', clonedelete), ('agentdelete ', agentdelete), ('setcloneprice', setcloneprice), ('restockpushcfg', restockpushcfg), ('buynoticecfg', buynoticecfg), ('setbuynotice', setbuynotice), ('setrestocktarget', setrestocktarget), ('restockrequestarea ', restockrequestarea), ('nostock ', nostock), ('okpaycfg', okpaycfg), ('setokpayid', setokpayid), ('setokpaytoken', setokpaytoken), ('setokpayname', setokpayname), ('vippricecfg', vippricecfg), ('setvipprice ', setvipprice), ('setvipstarprice', setvipstarprice), ('toggleacctcheck', toggleacctcheck), ('delrow', delrow), ('newrow', newrow), ('newkey', newkey),
         ('backstart', backstart), ('paixurow', paixurow), ('addzdykey', addzdykey),
         ('qrscdelrow ', qrscdelrow), ('addhangkey ', addhangkey), ('delhangkey ', delhangkey),
         ('qrdelliekey ', qrdelliekey), ('keyxq ', keyxq), ('setkeyname ', setkeyname),
