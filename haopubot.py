@@ -627,6 +627,7 @@ VIP_PREMIUM_SELF_BUTTON_EMOJI = '[emoji:5274017731211960502:⭐]'
 VIP_PREMIUM_OTHER_BUTTON_EMOJI = '[emoji:5274046919809704653:⭐]'
 VIP_OPEN_PREMIUM_ENTRY_EMOJI = '[emoji:5235826903490764103:🎁]'
 VIP_OPEN_STAR_ENTRY_EMOJI = '[emoji:5235611059909323996:⭐️]'
+VIP_STAR_PRICE_TITLE_EMOJI = '[emoji:4965219701572503640:💰]'
 
 TRANSLATION_UI_TEXTS = {
     'language_toggle': {'zh': '[emoji:5298584437338946835:🌐]English', 'en': '[emoji:5298584437338946835:🌐]中文'},
@@ -759,8 +760,8 @@ TRANSLATION_UI_TEXTS = {
         'en': 'This account has no Telegram username yet. Set one in Telegram first, or use "Buy for others".'
     },
     'vip_confirm_text': {
-        'zh': '<b>💎 购买会员</b>\n\n商品名称：{plan_label} Telegram Premium 会员\n购买用户：{user_display}\n用户昵称：{display_name}\n订单金额：{price} USDT\n当前余额：{balance} USDT\n\n确认后将走独立会员开通流程，不影响号铺商品发货。',
-        'en': '<b>💎 Buy Premium</b>\n\nProduct: {plan_label} Telegram Premium\nTarget: {user_display}\nName: {display_name}\nAmount: {price} USDT\nBalance: {balance} USDT\n\nThis uses the standalone Premium flow and does not affect the BotShop catalog.'
+        'zh': '<b>💎 购买会员</b>\n\n商品名称：{plan_label} Telegram Premium 会员\n购买用户：{user_display}\n用户昵称：{display_name}\n订单金额：{price} USDT\n当前余额：{balance} USDT',
+        'en': '<b>💎 Buy Premium</b>\n\nProduct: {plan_label} Telegram Premium\nTarget: {user_display}\nName: {display_name}\nAmount: {price} USDT\nBalance: {balance} USDT'
     },
     'vip_batch_confirm_text': {
         'zh': '<b>💎 批量购买会员</b>\n\n商品名称：{plan_label} Telegram Premium 会员\n购买数量：{count} 个账号\n订单金额：{price} USDT\n当前余额：{balance} USDT\n\n用户名列表：\n{user_list}\n\n确认后将逐个提交开通请求。',
@@ -813,8 +814,8 @@ TRANSLATION_UI_TEXTS = {
         'en': f'<b>{VIP_OPEN_STAR_ENTRY_EMOJI} Buy Stars</b>\n\nSelected: {{quantity}} Stars\nPrice: {{price}} USDT\n\nPlease send the Telegram username to receive the stars.\nExample: <code>example_user</code>'
     },
     'vip_star_confirm_text': {
-        'zh': '<b>⭐ 请确认星星购买信息</b>\n\n账号：@{username}\n数量：{quantity} 星\n价格：{price} USDT\n余额：{balance} USDT\n\n确认后将走独立星星购买流程，不影响号铺商品发货。',
-        'en': '<b>⭐ Confirm Stars Purchase</b>\n\nAccount: @{username}\nQuantity: {quantity} Stars\nPrice: {price} USDT\nBalance: {balance} USDT\n\nThis uses the standalone stars flow and does not affect the BotShop catalog.'
+        'zh': '<b>⭐ 请确认星星购买信息</b>\n\n账号：@{username}\n数量：{quantity} 星\n价格：{price} USDT\n余额：{balance} USDT',
+        'en': '<b>⭐ Confirm Stars Purchase</b>\n\nAccount: @{username}\nQuantity: {quantity} Stars\nPrice: {price} USDT\nBalance: {balance} USDT'
     },
     'vip_star_submit_button': {'zh': '确认购买✅', 'en': 'Buy ✅'},
     'vip_star_success_text': {
@@ -2401,7 +2402,14 @@ def send_vip_panel_message(context, user_id, text, reply_markup, *, media_config
 
     if edit_message is not None:
         try:
-            edit_message.edit_text(text=text, parse_mode='HTML', reply_markup=reply_markup, disable_web_page_preview=True)
+            context.bot.edit_message_text(
+                chat_id=user_id,
+                message_id=edit_message.message_id,
+                text=text,
+                parse_mode='HTML',
+                reply_markup=reply_markup,
+                disable_web_page_preview=True,
+            )
             return
         except Exception:
             logging.warning('edit %s failed for user=%s', log_label, user_id, exc_info=True)
@@ -4332,7 +4340,14 @@ def show_vip_premium_plan_menu(context, user_id, mode, *, edit_message=None):
     reply_markup = build_vip_premium_plan_menu_keyboard(user_id, plans=plans, mode=mode)
     if edit_message is not None:
         try:
-            edit_message.edit_text(text=text, parse_mode='HTML', reply_markup=reply_markup, disable_web_page_preview=True)
+            context.bot.edit_message_text(
+                chat_id=user_id,
+                message_id=edit_message.message_id,
+                text=text,
+                parse_mode='HTML',
+                reply_markup=reply_markup,
+                disable_web_page_preview=True,
+            )
             return
         except Exception:
             logging.warning('edit vip premium plan menu failed for user=%s mode=%s', user_id, mode, exc_info=True)
@@ -4358,7 +4373,7 @@ def build_vip_star_menu_text(user_id, plan=None, error_text=''):
         return f'{text}\n\n{html.escape(str(error_text), quote=False)}'
     if not plan:
         return f'{text}\n\n{get_ui_text("vip_star_no_plan", viewer_user_id=user_id)}'
-    return f'{text}\n\n💰 1星价格：{format_admin_usdt_price(get_vip_star_unit_price(plan))} USDT'
+    return f'{text}\n\n{VIP_STAR_PRICE_TITLE_EMOJI} 1星价格：{format_admin_usdt_price(get_vip_star_unit_price(plan))} USDT'
 
 
 def build_vip_star_menu_keyboard(user_id, plan=None):
