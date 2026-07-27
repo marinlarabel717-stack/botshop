@@ -2540,6 +2540,62 @@ def safe_send_message(context, chat_id, text='', **kwargs):
         raise
 
 
+def fetch_uploaded_document(update, context, user_id, allowed_exts=None):
+    message = getattr(update, 'message', None)
+    document = getattr(message, 'document', None)
+    if document is None:
+        safe_send_message(context, user_id, '未检测到上传文件，请重新发送一次')
+        return None, None
+
+    filename = str(getattr(document, 'file_name', '') or '').strip()
+    if not filename:
+        fallback_name = getattr(document, 'file_unique_id', None) or int(time.time())
+        filename = f'upload_{fallback_name}.dat'
+    filename = os.path.basename(filename).replace('\\', '_').replace('/', '_')
+
+    if allowed_exts:
+        allowed_exts = tuple(str(ext).lower() for ext in allowed_exts if ext)
+        if allowed_exts and not filename.lower().endswith(allowed_exts):
+            joined_exts = ' / '.join(allowed_exts)
+            safe_send_message(context, user_id, f'请上传 {joined_exts} 格式文件')
+            return None, None
+
+    try:
+        telegram_file = context.bot.get_file(document.file_id)
+    except Exception as exc:
+        logging.exception('Failed to get Telegram file: user_id=%s file_name=%s', user_id, filename)
+        exc_text = str(exc).lower()
+        if 'file is too big' in exc_text or 'too big' in exc_text:
+            safe_send_message(context, user_id, '上传失败：文件过大，请压缩后重试')
+        else:
+            safe_send_message(context, user_id, '上传失败：文件获取异常，请重新上传一次')
+        return None, None
+
+    if telegram_file is None:
+        safe_send_message(context, user_id, '上传失败：文件获取异常，请重新上传一次')
+        return None, None
+
+    temp_dir = './临时文件夹'
+    os.makedirs(temp_dir, exist_ok=True)
+    new_file_path = os.path.join(temp_dir, filename)
+    try:
+        telegram_file.download(new_file_path)
+    except Exception as exc:
+        logging.exception('Failed to download Telegram file: user_id=%s file_name=%s', user_id, filename)
+        exc_text = str(exc).lower()
+        if 'file is too big' in exc_text or 'too big' in exc_text:
+            safe_send_message(context, user_id, '上传失败：文件过大，请压缩后重试')
+        else:
+            safe_send_message(context, user_id, '上传失败：文件下载异常，请重新上传一次')
+        return None, None
+
+    if not os.path.exists(new_file_path):
+        safe_send_message(context, user_id, '上传失败：文件下载未完成，请重新上传一次')
+        return None, None
+
+    return filename, new_file_path
+
+
 def safe_delete_message(bot, chat_id, message_id, log_label='delete_message'):
     if not chat_id or not message_id:
         return False
@@ -2819,7 +2875,7 @@ class SyncTelegramProxy:
                 transient_methods = {
                     'send_message', 'send_photo', 'send_document', 'send_animation', 'send_media_group',
                     'edit_message_text', 'edit_message_caption', 'edit_message_reply_markup',
-                    'answer', 'answer_callback_query', 'delete_message'
+                    'answer', 'answer_callback_query', 'delete_message', 'get_file', 'download_to_drive'
                 }
                 timeout_defaults = {
                     'send_document': {'connect_timeout': 20, 'read_timeout': 120, 'write_timeout': 120, 'pool_timeout': 20},
@@ -2833,9 +2889,11 @@ class SyncTelegramProxy:
                     'answer': {'connect_timeout': 10, 'read_timeout': 20, 'write_timeout': 20, 'pool_timeout': 10},
                     'answer_callback_query': {'connect_timeout': 10, 'read_timeout': 20, 'write_timeout': 20, 'pool_timeout': 10},
                     'delete_message': {'connect_timeout': 10, 'read_timeout': 20, 'write_timeout': 20, 'pool_timeout': 10},
+                    'get_file': {'connect_timeout': 20, 'read_timeout': 60, 'write_timeout': 60, 'pool_timeout': 20},
+                    'download_to_drive': {'connect_timeout': 20, 'read_timeout': 120, 'write_timeout': 120, 'pool_timeout': 20},
                 }
                 last_exc = None
-                max_attempts = 3 if target_name in {'send_document', 'send_photo', 'send_animation', 'send_media_group', 'answer', 'answer_callback_query', 'delete_message'} else (2 if target_name in transient_methods else 1)
+                max_attempts = 3 if target_name in {'send_document', 'send_photo', 'send_animation', 'send_media_group', 'answer', 'answer_callback_query', 'delete_message', 'get_file', 'download_to_drive'} else (2 if target_name in transient_methods else 1)
                 max_attempts = max(max_attempts, TELEGRAM_RETRYAFTER_MAX_ATTEMPTS if target_name in transient_methods else 1)
                 for timeout_key, timeout_value in timeout_defaults.get(target_name, {}).items():
                     kwargs.setdefault(timeout_key, timeout_value)
@@ -12209,17 +12267,9 @@ def textkeyboard(update: Update, context: CallbackContext):
                     uid = ejfl.find_one({'nowuid': nowuid})['uid']
                     previous_stock = get_stock_count(nowuid)
 
-                    file = update.message.document
-                    # 获取文件名
-                    filename = file.file_name
-
-                    # 获取文件ID
-                    file_id = file.file_id
-                    # 下载文件
-                    new_file = context.bot.get_file(file_id)
-                    # 将文件保存到本地
-                    new_file_path = f'./临时文件夹/{filename}'
-                    new_file.download(new_file_path)
+                    filename, new_file_path = fetch_uploaded_document(update, context, user_id)
+                    if not new_file_path:
+                        return
 
                     context.bot.send_message(chat_id=user_id, text='上传中，请勿重复操作')
                     # 解压缩文件
@@ -12278,17 +12328,9 @@ def textkeyboard(update: Update, context: CallbackContext):
                     uid = ejfl.find_one({'nowuid': nowuid})['uid']
                     previous_stock = get_stock_count(nowuid)
 
-                    file = update.message.document
-                    # 获取文件名
-                    filename = file.file_name
-
-                    # 获取文件ID
-                    file_id = file.file_id
-                    # 下载文件
-                    new_file = context.bot.get_file(file_id)
-                    # 将文件保存到本地
-                    new_file_path = f'./临时文件夹/{filename}'
-                    new_file.download(new_file_path)
+                    filename, new_file_path = fetch_uploaded_document(update, context, user_id)
+                    if not new_file_path:
+                        return
 
                     context.bot.send_message(chat_id=user_id, text='上传中，请勿重复操作')
 
@@ -12341,17 +12383,9 @@ def textkeyboard(update: Update, context: CallbackContext):
                     uid = ejfl.find_one({'nowuid': nowuid})['uid']
                     previous_stock = get_stock_count(nowuid)
 
-                    file = update.message.document
-                    # 获取文件名
-                    filename = file.file_name
-
-                    # 获取文件ID
-                    file_id = file.file_id
-                    # 下载文件
-                    new_file = context.bot.get_file(file_id)
-                    # 将文件保存到本地
-                    new_file_path = f'./临时文件夹/{filename}'
-                    new_file.download(new_file_path)
+                    filename, new_file_path = fetch_uploaded_document(update, context, user_id)
+                    if not new_file_path:
+                        return
 
                     context.bot.send_message(chat_id=user_id, text='上传中，请勿重复操作')
 
@@ -12395,16 +12429,9 @@ def textkeyboard(update: Update, context: CallbackContext):
                     uid = ejfl.find_one({'nowuid': nowuid})['uid']
                     previous_stock = get_stock_count(nowuid)
 
-                    file = update.message.document
-                    filename = file.file_name or ''
-                    if not filename.lower().endswith('.txt'):
-                        update.message.reply_text('请上传txt格式文件')
+                    filename, new_file_path = fetch_uploaded_document(update, context, user_id, allowed_exts=('.txt',))
+                    if not new_file_path:
                         return
-
-                    file_id = file.file_id
-                    new_file = context.bot.get_file(file_id)
-                    new_file_path = f'./临时文件夹/{filename}'
-                    new_file.download(new_file_path)
 
                     context.bot.send_message(chat_id=user_id, text='上传中，请勿重复操作')
 
@@ -12455,17 +12482,9 @@ def textkeyboard(update: Update, context: CallbackContext):
                     uid = ejfl.find_one({'nowuid': nowuid})['uid']
                     previous_stock = get_stock_count(nowuid)
 
-                    file = update.message.document
-                    # 获取文件名
-                    filename = file.file_name
-
-                    # 获取文件ID
-                    file_id = file.file_id
-                    # 下载文件
-                    new_file = context.bot.get_file(file_id)
-                    # 将文件保存到本地
-                    new_file_path = f'./临时文件夹/{filename}'
-                    new_file.download(new_file_path)
+                    filename, new_file_path = fetch_uploaded_document(update, context, user_id)
+                    if not new_file_path:
+                        return
 
                     context.bot.send_message(chat_id=user_id, text='上传中，请勿重复操作')
                     # 解压缩文件
