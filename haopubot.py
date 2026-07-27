@@ -2547,6 +2547,18 @@ def fetch_uploaded_document(update, context, user_id, allowed_exts=None):
         safe_send_message(context, user_id, '未检测到上传文件，请重新发送一次')
         return None, None
 
+    file_size = int(getattr(document, 'file_size', 0) or 0)
+    bot_download_limit = 19 * 1024 * 1024
+    if file_size and file_size > bot_download_limit:
+        file_size_mb = round(file_size / 1024 / 1024, 2)
+        limit_mb = round(bot_download_limit / 1024 / 1024, 2)
+        safe_send_message(
+            context,
+            user_id,
+            f'上传失败：文件大小约 {file_size_mb}MB，超过机器人可处理上限 {limit_mb}MB，请先压缩或拆分后再上传'
+        )
+        return None, None
+
     filename = str(getattr(document, 'file_name', '') or '').strip()
     if not filename:
         fallback_name = getattr(document, 'file_unique_id', None) or int(time.time())
