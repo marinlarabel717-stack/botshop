@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import logging
 import os
@@ -48,6 +49,7 @@ patch_zipfile_duplicate_name_warning()
 
 from dotenv import load_dotenv
 from telegram import Bot, InlineKeyboardMarkup, InputFile, Update
+from telegram.error import NetworkError, RetryAfter, TimedOut
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -56,6 +58,7 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from telegram.request import HTTPXRequest
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
@@ -119,6 +122,86 @@ logging.basicConfig(
 logging.getLogger('httpx').setLevel(logging.WARNING)
 logging.getLogger('httpcore').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
+
+TELEGRAM_CONNECT_TIMEOUT = max(float(os.getenv('UPLOAD_TELEGRAM_CONNECT_TIMEOUT', '20') or 20), 5.0)
+TELEGRAM_POOL_TIMEOUT = max(float(os.getenv('UPLOAD_TELEGRAM_POOL_TIMEOUT', '20') or 20), 5.0)
+TELEGRAM_READ_TIMEOUT = max(float(os.getenv('UPLOAD_TELEGRAM_READ_TIMEOUT', '180') or 180), 30.0)
+TELEGRAM_WRITE_TIMEOUT = max(float(os.getenv('UPLOAD_TELEGRAM_WRITE_TIMEOUT', '180') or 180), 30.0)
+TELEGRAM_DOWNLOAD_MAX_ATTEMPTS = max(int(os.getenv('UPLOAD_TELEGRAM_DOWNLOAD_MAX_ATTEMPTS', '3') or 3), 1)
+TELEGRAM_SEND_MAX_ATTEMPTS = max(int(os.getenv('UPLOAD_TELEGRAM_SEND_MAX_ATTEMPTS', '3') or 3), 1)
+
+
+def build_telegram_timeout_kwargs(
+    *,
+    connect_timeout: Optional[float] = None,
+    read_timeout: Optional[float] = None,
+    write_timeout: Optional[float] = None,
+    pool_timeout: Optional[float] = None,
+) -> Dict[str, float]:
+    return {
+        'connect_timeout': float(TELEGRAM_CONNECT_TIMEOUT if connect_timeout is None else connect_timeout),
+        'read_timeout': float(TELEGRAM_READ_TIMEOUT if read_timeout is None else read_timeout),
+        'write_timeout': float(TELEGRAM_WRITE_TIMEOUT if write_timeout is None else write_timeout),
+        'pool_timeout': float(TELEGRAM_POOL_TIMEOUT if pool_timeout is None else pool_timeout),
+    }
+
+
+async def run_telegram_request_with_retry(
+    request_name: str,
+    factory,
+    *,
+    task_id: Optional[str] = None,
+    max_attempts: int = 3,
+) -> object:
+    last_exc: Optional[Exception] = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return await factory()
+        except RetryAfter as exc:
+            last_exc = exc
+            retry_after = max(int(getattr(exc, 'retry_after', 1) or 1), 1)
+            if task_id:
+                log_task(task_id, f'Telegram {request_name} 触发限流，第 {attempt}/{max_attempts} 次，{retry_after}s 后重试', logging.WARNING)
+            if attempt >= max_attempts:
+                raise
+            await asyncio.sleep(retry_after + 1)
+        except (TimedOut, NetworkError) as exc:
+            last_exc = exc
+            if task_id:
+                log_task(task_id, f'Telegram {request_name} 异常，第 {attempt}/{max_attempts} 次：{exc}', logging.WARNING)
+            if attempt >= max_attempts:
+                raise
+            await asyncio.sleep(min(3, attempt))
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError(f'Telegram {request_name} 未执行')
+
+
+async def send_document_with_retry(
+    bot: Bot,
+    chat_id: int,
+    file_path: Path,
+    *,
+    filename: str,
+    caption: str,
+    task_id: Optional[str] = None,
+    max_attempts: int = TELEGRAM_SEND_MAX_ATTEMPTS,
+) -> object:
+    async def _factory():
+        with file_path.open('rb') as fh:
+            return await bot.send_document(
+                chat_id=chat_id,
+                document=InputFile(fh, filename=filename),
+                caption=caption,
+                **build_telegram_timeout_kwargs(),
+            )
+
+    return await run_telegram_request_with_retry(
+        'send_document',
+        _factory,
+        task_id=task_id,
+        max_attempts=max_attempts,
+    )
 
 
 def log_task(task_id: str, message: str, level: int = logging.INFO) -> None:
@@ -859,7 +942,6 @@ async def run_upload_task(update: Update, context: ContextTypes.DEFAULT_TYPE, pr
         await send_rendered(context.bot, chat_id, '文件信息丢了，请重新发送。')
         return
 
-    tg_file = await context.bot.get_file(file_id)
     task_id = gen_uid()
     log_task(task_id, f'开始处理上传：user_id={update.effective_user.id if update.effective_user else 0} file={file_name} 商品={product["category_name"]}/{product["project_name"]} 商品类型={entry_type}')
     upload_path = TEMP_DIR / f'{task_id}_{Path(file_name).name}'
@@ -877,7 +959,18 @@ async def run_upload_task(update: Update, context: ContextTypes.DEFAULT_TYPE, pr
     })
 
     try:
-        await tg_file.download_to_drive(custom_path=str(upload_path))
+        tg_file = await run_telegram_request_with_retry(
+            'get_file',
+            lambda: context.bot.get_file(file_id, **build_telegram_timeout_kwargs(read_timeout=90, write_timeout=90)),
+            task_id=task_id,
+            max_attempts=TELEGRAM_DOWNLOAD_MAX_ATTEMPTS,
+        )
+        await run_telegram_request_with_retry(
+            'download_to_drive',
+            lambda: tg_file.download_to_drive(custom_path=str(upload_path), **build_telegram_timeout_kwargs(read_timeout=300, write_timeout=300)),
+            task_id=task_id,
+            max_attempts=TELEGRAM_DOWNLOAD_MAX_ATTEMPTS,
+        )
         file_size = upload_path.stat().st_size if upload_path.exists() else 0
         log_task(task_id, f'文件下载完成：path={upload_path} size={file_size}')
         if not zipfile.is_zipfile(upload_path):
@@ -925,12 +1018,14 @@ async def run_upload_task(update: Update, context: ContextTypes.DEFAULT_TYPE, pr
         if duplicate_file and duplicate_file.exists():
             duplicate_size = duplicate_file.stat().st_size if duplicate_file.exists() else 0
             log_task(task_id, f'开始回传重复文件包：file={duplicate_file.name} size={duplicate_size}')
-            with duplicate_file.open('rb') as fh:
-                await context.bot.send_document(
-                    chat_id=chat_id,
-                    document=InputFile(fh, filename='duplicate_files.zip'),
-                    caption='重复文件 zip 已回传，请查收。',
-                )
+            await send_document_with_retry(
+                context.bot,
+                chat_id,
+                duplicate_file,
+                filename='duplicate_files.zip',
+                caption='重复文件 zip 已回传，请查收。',
+                task_id=task_id,
+            )
             log_task(task_id, '重复文件包回传完成')
         else:
             log_task(task_id, '无重复文件需要回传')
@@ -938,12 +1033,14 @@ async def run_upload_task(update: Update, context: ContextTypes.DEFAULT_TYPE, pr
         if failed_file and failed_file.exists():
             failed_size = failed_file.stat().st_size if failed_file.exists() else 0
             log_task(task_id, f'开始回传失败文件包：file={failed_file.name} size={failed_size}')
-            with failed_file.open('rb') as fh:
-                await context.bot.send_document(
-                    chat_id=chat_id,
-                    document=InputFile(fh, filename='failed_files.zip'),
-                    caption='失败文件 zip 已回传，请查收。',
-                )
+            await send_document_with_retry(
+                context.bot,
+                chat_id,
+                failed_file,
+                filename='failed_files.zip',
+                caption='失败文件 zip 已回传，请查收。',
+                task_id=task_id,
+            )
             log_task(task_id, '失败文件包回传完成')
         else:
             log_task(task_id, '无失败文件需要回传')
@@ -951,6 +1048,22 @@ async def run_upload_task(update: Update, context: ContextTypes.DEFAULT_TYPE, pr
             await send_store_restock_notice(product['nowuid'], added, task_id=task_id)
         else:
             log_task(task_id, '新增为 0，跳过补货通知')
+    except TimedOut as exc:
+        logger.exception('upload task timed out')
+        log_task(task_id, f'任务超时退出：{exc}', logging.ERROR)
+        UPLOAD_TASKS.update_one(
+            {'task_id': task_id},
+            {'$set': {'state': 'failed', 'reason': 'telegram_timeout', 'finished_at': int(time.time())}},
+        )
+        await send_rendered(context.bot, chat_id, 'Telegram 文件下载或回传超时，已自动重试仍失败。请稍后直接重新发一次 zip 即可。')
+    except NetworkError as exc:
+        logger.exception('upload task network failed')
+        log_task(task_id, f'任务网络异常退出：{exc}', logging.ERROR)
+        UPLOAD_TASKS.update_one(
+            {'task_id': task_id},
+            {'$set': {'state': 'failed', 'reason': 'telegram_network_error', 'finished_at': int(time.time())}},
+        )
+        await send_rendered(context.bot, chat_id, f'Telegram 网络波动导致处理失败：{exc}\n请稍后重试一次。')
     except Exception as exc:
         logger.exception('upload task failed')
         log_task(task_id, f'任务异常退出：{exc}', logging.ERROR)
@@ -973,7 +1086,15 @@ def main() -> None:
         raise RuntimeError('缺少 UPLOAD_BOT_TOKEN / SHANGCHUAN_BOT_TOKEN')
     ensure_dirs()
     ensure_indexes()
-    app = ApplicationBuilder().token(UPLOAD_BOT_TOKEN).build()
+    request = HTTPXRequest(**build_telegram_timeout_kwargs())
+    get_updates_request = HTTPXRequest(**build_telegram_timeout_kwargs(read_timeout=60, write_timeout=60))
+    app = (
+        ApplicationBuilder()
+        .token(UPLOAD_BOT_TOKEN)
+        .request(request)
+        .get_updates_request(get_updates_request)
+        .build()
+    )
     app.add_handler(CommandHandler('start', start))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.Document.ALL, handle_document))
