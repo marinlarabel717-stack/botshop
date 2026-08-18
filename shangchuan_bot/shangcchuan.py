@@ -998,9 +998,23 @@ async def run_upload_task(update: Update, context: ContextTypes.DEFAULT_TYPE, pr
             return
 
         if actual_entry_type == '协议号':
-            added, duplicated, failed, duplicate_file, failed_file = process_protocol_zip(upload_path, product, duplicate_zip_path, failed_zip_path, task_id)
+            added, duplicated, failed, duplicate_file, failed_file = await asyncio.to_thread(
+                process_protocol_zip,
+                upload_path,
+                product,
+                duplicate_zip_path,
+                failed_zip_path,
+                task_id,
+            )
         else:
-            added, duplicated, failed, duplicate_file, failed_file = process_tdata_zip(upload_path, product, duplicate_zip_path, failed_zip_path, task_id)
+            added, duplicated, failed, duplicate_file, failed_file = await asyncio.to_thread(
+                process_tdata_zip,
+                upload_path,
+                product,
+                duplicate_zip_path,
+                failed_zip_path,
+                task_id,
+            )
 
         log_task(task_id, f'处理完成统计：新增={added} 重复={duplicated} 失败={failed} 重复包={duplicate_file if duplicate_file else "无"} 失败包={failed_file if failed_file else "无"}')
 
