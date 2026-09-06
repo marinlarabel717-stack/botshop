@@ -468,6 +468,87 @@ def unique_preserve_order(values):
     return result
 
 
+def hash_bytes(parts):
+    digest = hashlib.sha256()
+    for part in parts or []:
+        if part is None:
+            continue
+        digest.update(part)
+        digest.update(b'\0')
+    return digest.hexdigest()
+
+
+def hash_file_sha256(path):
+    path = Path(path)
+    if not path.exists() or not path.is_file():
+        return ''
+    digest = hashlib.sha256()
+    with path.open('rb') as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b''):
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def hash_folder_tree(path):
+    folder = Path(path)
+    if not folder.exists() or not folder.is_dir():
+        return ''
+    parts = []
+    for file_path in sorted((item for item in folder.rglob('*') if item.is_file()), key=lambda item: str(item.relative_to(folder)).replace('\\', '/')):
+        rel_path = str(file_path.relative_to(folder)).replace('\\', '/')
+        file_hash = hash_file_sha256(file_path)
+        if not file_hash:
+            continue
+        parts.append(rel_path.encode('utf-8'))
+        parts.append(file_hash.encode('utf-8'))
+    return hash_bytes(parts) if parts else ''
+
+
+def normalize_inventory_fingerprint_type(leixing):
+    value = str(leixing or '').strip()
+    if value == '协议号':
+        return '协议号'
+    if value == '直登号':
+        return '直登号'
+    return ''
+
+
+def hash_protocol_entry_from_storage(nowuid, projectname):
+    parts = []
+    for suffix in ('.json', '.session'):
+        source_path = find_existing_storage_path('协议号', nowuid, f'{projectname}{suffix}')
+        if not source_path.exists() or not source_path.is_file():
+            continue
+        file_hash = hash_file_sha256(source_path)
+        if not file_hash:
+            continue
+        parts.append(suffix.encode('utf-8'))
+        parts.append(file_hash.encode('utf-8'))
+    return hash_bytes(parts) if parts else ''
+
+
+def hash_tdata_entry_from_storage(nowuid, projectname):
+    folder_path = find_existing_storage_path('号包', nowuid, projectname)
+    return hash_folder_tree(folder_path)
+
+
+def get_inventory_entry_fingerprint(leixing, nowuid, projectname):
+    normalized_type = normalize_inventory_fingerprint_type(leixing)
+    if normalized_type == '协议号':
+        return hash_protocol_entry_from_storage(nowuid, projectname)
+    if normalized_type == '直登号':
+        return hash_tdata_entry_from_storage(nowuid, projectname)
+    return ''
+
+
+def get_inventory_doc_fingerprint(doc):
+    if not doc:
+        return ''
+    return get_inventory_entry_fingerprint(doc.get('leixing'), doc.get('nowuid'), doc.get('projectname'))
+
+
 WS_ACCOUNT_FIELD_COUNT = 6
 
 
@@ -4958,6 +5039,9 @@ def vipstarconfirm(update: Update, context: CallbackContext):
 
 def reserve_inventory_items(base_query, count, user_id, order_id, timer):
     reserved_docs = []
+    skipped_duplicate_docs = []
+    seen_fingerprints = set()
+    attempted_ids = []
     query = dict(base_query or {})
     query['state'] = 0
     update_fields = {
@@ -4966,18 +5050,41 @@ def reserve_inventory_items(base_query, count, user_id, order_id, timer):
         'gmid': user_id,
         'delivery_order_id': order_id,
     }
-    for _ in range(max(0, int(count or 0))):
+    target_count = max(0, int(count or 0))
+    while len(reserved_docs) < target_count:
+        next_query = dict(query)
+        if attempted_ids:
+            next_query['_id'] = {'$nin': attempted_ids}
         reserved = hb.find_one_and_update(
-            query,
+            next_query,
             {'$set': update_fields},
             sort=[('_id', 1)],
             return_document=ReturnDocument.AFTER,
         )
         if not reserved:
             break
+        if reserved.get('_id') is not None:
+            attempted_ids.append(reserved['_id'])
+        fingerprint = get_inventory_doc_fingerprint(reserved)
+        if fingerprint and fingerprint in seen_fingerprints:
+            skipped_duplicate_docs.append(reserved)
+            continue
+        if fingerprint:
+            seen_fingerprints.add(fingerprint)
         reserved_docs.append(reserved)
 
-    if len(reserved_docs) < count:
+    if skipped_duplicate_docs:
+        release_reserved_inventory_items(skipped_duplicate_docs, user_id, order_id)
+        logging.warning(
+            'skip duplicate inventory rows during reservation: order=%s user_id=%s query=%s duplicate_count=%s names=%s',
+            order_id,
+            user_id,
+            query,
+            len(skipped_duplicate_docs),
+            ', '.join(str(doc.get('projectname') or '') for doc in skipped_duplicate_docs[:20]),
+        )
+
+    if len(reserved_docs) < target_count:
         if reserved_docs:
             hb.update_many(
                 {
@@ -4996,6 +5103,15 @@ def reserve_inventory_items(base_query, count, user_id, order_id, timer):
                         'delivery_check_timer': '',
                     }
                 }
+            )
+        if skipped_duplicate_docs:
+            logging.warning(
+                'insufficient unique inventory after duplicate filtering: order=%s user_id=%s query=%s requested=%s unique_found=%s',
+                order_id,
+                user_id,
+                query,
+                target_count,
+                len(reserved_docs),
             )
         return []
     return reserved_docs
