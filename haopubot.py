@@ -1926,7 +1926,7 @@ ACCOUNT_CHECK_PROGRESS_INTERVAL_SECONDS = max(3, int(os.getenv('ACCOUNT_CHECK_PR
 ACCOUNT_CHECK_PROGRESS_STEP = max(1, int(os.getenv('ACCOUNT_CHECK_PROGRESS_STEP', '3') or '3'))
 ACCOUNT_CHECK_PROGRESS_HEARTBEAT_SECONDS = 2.0
 ACCOUNT_CHECK_STALL_HEARTBEATS = max(2, int(os.getenv('ACCOUNT_CHECK_STALL_HEARTBEATS', '3') or '3'))
-TELEGRAM_RETRYAFTER_INLINE_MAX_SECONDS = max(1, int(os.getenv('TELEGRAM_RETRYAFTER_INLINE_MAX_SECONDS', '5') or '5'))
+TELEGRAM_RETRYAFTER_INLINE_MAX_SECONDS = max(1, int(os.getenv('TELEGRAM_RETRYAFTER_INLINE_MAX_SECONDS', '10') or '10'))
 TELEGRAM_RETRYAFTER_PADDING_SECONDS = max(1, int(os.getenv('TELEGRAM_RETRYAFTER_PADDING_SECONDS', '1') or '1'))
 TELEGRAM_RETRYAFTER_MAX_ATTEMPTS = max(1, int(os.getenv('TELEGRAM_RETRYAFTER_MAX_ATTEMPTS', '3') or '3'))
 ACCOUNT_CHECK_SUPPORTED_TYPES = {'协议号', '直登号'}
@@ -2607,18 +2607,32 @@ def should_skip_optional_telegram_action(label):
 def safe_send_message(context, chat_id, text='', **kwargs):
     if should_skip_optional_telegram_action('send_message'):
         return None
-    try:
-        return context.bot.send_message(chat_id=chat_id, text=text or '', **kwargs)
-    except RetryAfter as exc:
-        note_telegram_transient_error('send_message', exc)
-        return None
-    except (TimedOut, NetworkError) as exc:
-        note_telegram_transient_error('send_message', exc)
-        return None
-    except BadRequest as exc:
-        if 'message is not modified' in str(exc).lower():
+    last_exc = None
+    for attempt in range(TELEGRAM_RETRYAFTER_MAX_ATTEMPTS):
+        try:
+            return context.bot.send_message(chat_id=chat_id, text=text or '', **kwargs)
+        except RetryAfter as exc:
+            last_exc = exc
+            retry_seconds = get_retry_after_seconds(exc, TELEGRAM_RETRYAFTER_PADDING_SECONDS) + TELEGRAM_RETRYAFTER_PADDING_SECONDS
+            if retry_seconds <= TELEGRAM_RETRYAFTER_INLINE_MAX_SECONDS and attempt + 1 < TELEGRAM_RETRYAFTER_MAX_ATTEMPTS:
+                time.sleep(retry_seconds)
+                continue
+            note_telegram_transient_error('send_message', exc)
             return None
-        raise
+        except (TimedOut, NetworkError) as exc:
+            last_exc = exc
+            if attempt + 1 < TELEGRAM_RETRYAFTER_MAX_ATTEMPTS:
+                time.sleep(min(3, 1 + attempt))
+                continue
+            note_telegram_transient_error('send_message', exc)
+            return None
+        except BadRequest as exc:
+            if 'message is not modified' in str(exc).lower():
+                return None
+            raise
+    if last_exc is not None:
+        note_telegram_transient_error('send_message', last_exc)
+    return None
 
 
 def fetch_uploaded_document(update, context, user_id, allowed_exts=None):
@@ -3115,6 +3129,9 @@ def sync_job(callback):
 
 async def global_error_handler(update, context):
     err = context.error
+    if isinstance(err, RetryAfter):
+        note_telegram_transient_error('global_error_handler', err)
+        return
     if isinstance(err, (NetworkError, TimedOut)):
         note_telegram_transient_error('global_error_handler', err)
         return
@@ -8787,7 +8804,8 @@ def handle_area_code_search(context, user_id, fullname, username, area_code):
     if results:
         for item in results:
             item['search_keyword'] = area_code
-        context.bot.send_message(
+        safe_send_message(
+            context,
             chat_id=user_id,
             text=build_area_code_search_text(area_code, results, user_id=user_id),
             parse_mode='HTML',
@@ -8796,7 +8814,8 @@ def handle_area_code_search(context, user_id, fullname, username, area_code):
         return True
 
     tip_text = get_ui_text('area_search_empty', viewer_user_id=user_id, area_code=area_code)
-    context.bot.send_message(
+    safe_send_message(
+        context,
         chat_id=user_id,
         text=tip_text,
         parse_mode='HTML',
@@ -8846,10 +8865,11 @@ def restockrequestarea(update: Update, context: CallbackContext):
 def send_product_purchase_page(context, chat_id, user_id, nowuid):
     payload = get_product_purchase_payload(nowuid)
     if not payload:
-        context.bot.send_message(chat_id=chat_id, text=get_ui_text('product_not_found', viewer_user_id=user_id))
+        safe_send_message(context, chat_id=chat_id, text=get_ui_text('product_not_found', viewer_user_id=user_id))
         return None
     keyboard = build_product_purchase_keyboard(payload['nowuid'], payload['uid'], user_id, payload['stock_count'])
-    return context.bot.send_message(
+    return safe_send_message(
+        context,
         chat_id=chat_id,
         text=build_product_purchase_text(payload['projectname'], payload['money'], payload['stock_count'], user_id=user_id),
         parse_mode='HTML',
@@ -12728,8 +12748,8 @@ def textkeyboard(update: Update, context: CallbackContext):
             elif matches_ui_text(text, 'menu_profile'):
                 profile_username = username or fullname
                 fstext = build_user_profile_text(user_id, profile_username, creation_time, zgsl, zgje, USDT)
-                context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
-                                         reply_markup=InlineKeyboardMarkup(build_profile_keyboard(user_id)), disable_web_page_preview=True)
+                safe_send_message(context, chat_id=user_id, text=fstext, parse_mode='HTML',
+                                  reply_markup=InlineKeyboardMarkup(build_profile_keyboard(user_id)), disable_web_page_preview=True)
             elif matches_ui_text(text, 'menu_recharge'):
                 send_recharge_method_menu(context, user_id)
 
@@ -12741,14 +12761,14 @@ def textkeyboard(update: Update, context: CallbackContext):
                     [InlineKeyboardButton(get_ui_text('redpacket_add', viewer_user_id=user_id), callback_data='addhb')],
                     [InlineKeyboardButton(get_ui_text('close', viewer_user_id=user_id), callback_data=f'close {user_id}')]
                 ]
-                context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
+                safe_send_message(context, chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
 
             elif matches_ui_text(text, 'menu_goods_list'):
                 keyboard = build_category_catalog_keyboard(user_id)
                 fstext = get_ui_text('category_list_text', viewer_user_id=user_id)
                 keyboard.append([InlineKeyboardButton(get_ui_text('close_with_icon', viewer_user_id=user_id), callback_data=f'close {user_id}')])
-                context.bot.send_message(chat_id=user_id, text=fstext, parse_mode='HTML',
-                                         reply_markup=InlineKeyboardMarkup(keyboard))
+                safe_send_message(context, chat_id=user_id, text=fstext, parse_mode='HTML',
+                                  reply_markup=InlineKeyboardMarkup(keyboard))
 
             else:
                 if key_list != None:
