@@ -2586,6 +2586,11 @@ def get_retry_after_seconds(exc, default_seconds=1):
     return max(int(default_seconds or 1), retry_after)
 
 
+def is_missing_message_error(exc):
+    exc_text = str(exc).lower()
+    return 'message to edit not found' in exc_text or 'message to delete not found' in exc_text
+
+
 def should_skip_optional_telegram_action(label):
     now = time.monotonic()
     should_log_skip = False
@@ -5611,6 +5616,13 @@ def send_account_check_delivery_followup(bot, user_id, zip_filename=None, notice
 
 
 def finalize_account_check_message(bot, user_id, progress_message_id, final_text):
+    if not progress_message_id:
+        try:
+            send_html_message(bot, user_id, final_text)
+            return 'sent'
+        except Exception:
+            logging.exception('Failed to send account-check completion message for user %s', user_id)
+            return 'failed'
     try:
         edit_html_message(bot, user_id, progress_message_id, final_text)
         return 'edited'
@@ -5631,6 +5643,11 @@ def finalize_account_check_message(bot, user_id, progress_message_id, final_text
             final_text,
         )
         return 'deferred'
+    except BadRequest as exc:
+        if is_missing_message_error(exc):
+            logging.warning('Account-check progress message missing while finalizing for user %s', user_id)
+        else:
+            logging.exception('Failed to edit account-check progress message for user %s', user_id)
     except Exception:
         logging.exception('Failed to edit account-check progress message for user %s', user_id)
 
@@ -5667,11 +5684,22 @@ def begin_account_check_progress_message(bot, query, user_id, total_count):
         try:
             edit_html_message(bot, user_id, existing_message.message_id, progress_text)
             return existing_message.message_id, True
+        except BadRequest as exc:
+            if is_missing_message_error(exc):
+                logging.warning('Purchase confirmation message already missing before account-check progress for user %s', user_id)
+            else:
+                logging.warning('Failed to reuse purchase confirmation message for account-check progress of user %s', user_id, exc_info=True)
         except Exception:
             logging.warning('Failed to reuse purchase confirmation message for account-check progress of user %s', user_id, exc_info=True)
     try:
         progress_message = send_html_message(bot, user_id, progress_text)
-        return progress_message.message_id, False
+        progress_message_id = getattr(progress_message, 'message_id', None)
+        if progress_message_id:
+            return progress_message_id, False
+        logging.warning('Account-check progress message send was skipped or deferred for user %s', user_id)
+        if existing_message:
+            return existing_message.message_id, True
+        return None, False
     except Exception:
         logging.exception('Failed to create account-check progress message for user %s', user_id)
         if existing_message:
@@ -5684,6 +5712,11 @@ def update_account_check_status_message(bot, user_id, progress_message_id, text)
         try:
             edit_html_message(bot, user_id, progress_message_id, text)
             return 'edited'
+        except BadRequest as exc:
+            if is_missing_message_error(exc):
+                logging.warning('Account-check status message already missing for user %s', user_id)
+            else:
+                logging.warning('Failed to update account-check status message for user %s', user_id, exc_info=True)
         except Exception:
             logging.warning('Failed to update account-check status message for user %s', user_id, exc_info=True)
     try:
@@ -11285,6 +11318,8 @@ def run_admin_stock_alive_check(bot, operator_user_id, nowuid, fhtype, selected_
 
         def push_progress(force=False):
             nonlocal last_progress_ts, progress_retry_after_until
+            if not progress_message_id:
+                return
             now_ts = time.monotonic()
             if checked_count >= total_count and total_count > 0:
                 force = True
@@ -11460,14 +11495,20 @@ def run_admin_stock_alive_check(bot, operator_user_id, nowuid, fhtype, selected_
             remaining_count,
         )
         update_account_check_status_message(bot, operator_user_id, progress_message_id, result_text)
-        try:
-            bot.edit_message_reply_markup(
-                chat_id=operator_user_id,
-                message_id=progress_message_id,
-                reply_markup=InlineKeyboardMarkup(build_product_detail_keyboard(nowuid, uid, operator_user_id)),
-            )
-        except Exception:
-            logging.warning('Failed to update admin stock-check keyboard for user %s', operator_user_id, exc_info=True)
+        if progress_message_id:
+            try:
+                bot.edit_message_reply_markup(
+                    chat_id=operator_user_id,
+                    message_id=progress_message_id,
+                    reply_markup=InlineKeyboardMarkup(build_product_detail_keyboard(nowuid, uid, operator_user_id)),
+                )
+            except BadRequest as exc:
+                if is_missing_message_error(exc):
+                    logging.warning('Admin stock-check progress message already missing for user %s', operator_user_id)
+                else:
+                    logging.warning('Failed to update admin stock-check keyboard for user %s', operator_user_id, exc_info=True)
+            except Exception:
+                logging.warning('Failed to update admin stock-check keyboard for user %s', operator_user_id, exc_info=True)
 
         archive_zip_path, archive_file_count = build_invalid_archive_bundle_zip(order_id)
         admin_notice = build_admin_stock_check_notice(
