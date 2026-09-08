@@ -2591,6 +2591,17 @@ def is_missing_message_error(exc):
     return 'message to edit not found' in exc_text or 'message to delete not found' in exc_text
 
 
+def is_ignorable_delete_message_error(exc):
+    exc_text = str(exc).lower()
+    return (
+        'message to delete not found' in exc_text
+        or "message can't be deleted" in exc_text
+        or 'message can\'t be deleted' in exc_text
+        or 'message identifier is not specified' in exc_text
+        or 'message id invalid' in exc_text
+    )
+
+
 def should_skip_optional_telegram_action(label):
     now = time.monotonic()
     should_log_skip = False
@@ -2720,17 +2731,12 @@ def safe_delete_message(bot, chat_id, message_id, log_label='delete_message'):
         note_telegram_transient_error(log_label, exc)
         return False
     except (TimedOut, NetworkError) as exc:
+        if is_ignorable_delete_message_error(exc):
+            return False
         note_telegram_transient_error(log_label, exc)
         return False
     except BadRequest as exc:
-        exc_text = str(exc).lower()
-        if (
-            'message to delete not found' in exc_text
-            or "message can't be deleted" in exc_text
-            or 'message can\'t be deleted' in exc_text
-            or 'message identifier is not specified' in exc_text
-            or 'message id invalid' in exc_text
-        ):
+        if is_ignorable_delete_message_error(exc):
             return False
         raise
     except Forbidden:
@@ -12879,10 +12885,11 @@ def del_message(message):
     try:
         message.delete()
     except (TimedOut, NetworkError) as exc:
+        if is_ignorable_delete_message_error(exc):
+            return
         note_telegram_transient_error('message.delete', exc)
     except BadRequest as exc:
-        exc_text = str(exc).lower()
-        if 'message to delete not found' in exc_text or "message can't be deleted" in exc_text or 'message can\'t be deleted' in exc_text:
+        if is_ignorable_delete_message_error(exc):
             return
         raise
     except Forbidden:
