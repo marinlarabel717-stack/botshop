@@ -2951,6 +2951,45 @@ class SyncTelegramProxy:
             kwargs['parse_mode'] = 'HTML'
         return args, kwargs
 
+    @staticmethod
+    def _build_retry_placeholder(method_name, args, kwargs):
+        chat_id = kwargs.get('chat_id')
+        if chat_id is None and args:
+            chat_id = args[0]
+
+        class _NoopTelegramResult:
+            def __init__(self, resolved_chat_id=None):
+                self.message_id = 0
+                self.id = 0
+                self.chat_id = resolved_chat_id
+                self.chat = None
+                self.text = ''
+                self.caption = ''
+
+            def delete(self, *args, **kwargs):
+                return None
+
+            def edit_text(self, *args, **kwargs):
+                return None
+
+            def edit_caption(self, *args, **kwargs):
+                return None
+
+            def edit_reply_markup(self, *args, **kwargs):
+                return None
+
+            def reply_text(self, *args, **kwargs):
+                return None
+
+            def reply_html(self, *args, **kwargs):
+                return None
+
+        if method_name == 'send_media_group':
+            return []
+        if method_name in {'send_message', 'send_photo', 'send_document', 'send_animation', 'send_video', 'reply_text', 'reply_html', 'reply_photo', 'reply_animation', 'reply_video'}:
+            return _NoopTelegramResult(chat_id)
+        return None
+
     def __getitem__(self, key):
         if hasattr(self._obj, '__getitem__'):
             try:
@@ -3048,7 +3087,7 @@ class SyncTelegramProxy:
                             time.sleep(retry_seconds)
                             continue
                         note_telegram_transient_error(target_name, exc)
-                        raise
+                        return self._build_retry_placeholder(target_name, args, kwargs)
                     except (TimedOut, NetworkError) as exc:
                         last_exc = exc
                         if attempt + 1 < max_attempts:
@@ -3057,7 +3096,8 @@ class SyncTelegramProxy:
                         note_telegram_transient_error(target_name, exc)
                         return None
                 if last_exc is not None:
-                    raise last_exc
+                    note_telegram_transient_error(target_name, last_exc)
+                    return self._build_retry_placeholder(target_name, args, kwargs)
 
             return wrapped
 
