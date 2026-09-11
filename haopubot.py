@@ -2651,7 +2651,7 @@ def safe_send_message(context, chat_id, text='', **kwargs):
     return None
 
 
-def fetch_uploaded_document(update, context, user_id, allowed_exts=None):
+def fetch_uploaded_document(update, context, user_id, allowed_exts=None, start_notice_text='已收到文件，正在下载并处理，请勿重复操作'):
     message = getattr(update, 'message', None)
     document = getattr(message, 'document', None)
     if document is None:
@@ -2683,8 +2683,21 @@ def fetch_uploaded_document(update, context, user_id, allowed_exts=None):
             safe_send_message(context, user_id, f'请上传 {joined_exts} 格式文件')
             return None, None
 
+    if start_notice_text:
+        safe_send_message(context, user_id, start_notice_text)
+
     try:
-        telegram_file = context.bot.get_file(document.file_id)
+        telegram_file = context.bot.get_file(
+            document.file_id,
+            connect_timeout=20,
+            read_timeout=90,
+            write_timeout=90,
+            pool_timeout=20,
+        )
+    except (TimedOut, NetworkError) as exc:
+        logging.exception('Telegram file metadata request failed: user_id=%s file_name=%s', user_id, filename)
+        safe_send_message(context, user_id, f'上传失败：Telegram 获取文件超时或网络异常，请稍后重试\n{exc}')
+        return None, None
     except Exception as exc:
         logging.exception('Failed to get Telegram file: user_id=%s file_name=%s', user_id, filename)
         exc_text = str(exc).lower()
@@ -2700,11 +2713,32 @@ def fetch_uploaded_document(update, context, user_id, allowed_exts=None):
 
     temp_dir = './临时文件夹'
     os.makedirs(temp_dir, exist_ok=True)
-    new_file_path = os.path.join(temp_dir, filename)
+    unique_prefix = f'{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}'
+    new_file_path = os.path.join(temp_dir, f'{unique_prefix}_{filename}')
     try:
-        telegram_file.download(new_file_path)
+        telegram_file.download(
+            custom_path=new_file_path,
+            connect_timeout=20,
+            read_timeout=300,
+            write_timeout=300,
+            pool_timeout=20,
+        )
+    except (TimedOut, NetworkError) as exc:
+        logging.exception('Telegram file download failed: user_id=%s file_name=%s', user_id, filename)
+        if os.path.exists(new_file_path):
+            try:
+                os.remove(new_file_path)
+            except OSError:
+                pass
+        safe_send_message(context, user_id, f'上传失败：Telegram 下载文件超时或网络异常，请稍后重试\n{exc}')
+        return None, None
     except Exception as exc:
         logging.exception('Failed to download Telegram file: user_id=%s file_name=%s', user_id, filename)
+        if os.path.exists(new_file_path):
+            try:
+                os.remove(new_file_path)
+            except OSError:
+                pass
         exc_text = str(exc).lower()
         if 'file is too big' in exc_text or 'too big' in exc_text:
             safe_send_message(context, user_id, '上传失败：文件过大，请压缩后重试')
@@ -2717,6 +2751,17 @@ def fetch_uploaded_document(update, context, user_id, allowed_exts=None):
         return None, None
 
     return filename, new_file_path
+
+
+def cleanup_uploaded_temp_file(file_path):
+    if not file_path:
+        return
+    try:
+        os.remove(file_path)
+    except FileNotFoundError:
+        return
+    except OSError:
+        logging.warning('Failed to cleanup uploaded temp file: %s', file_path, exc_info=True)
 
 
 def safe_delete_message(bot, chat_id, message_id, log_label='delete_message'):
@@ -12506,35 +12551,46 @@ def textkeyboard(update: Update, context: CallbackContext):
                     if not new_file_path:
                         return
 
-                    context.bot.send_message(chat_id=user_id, text='上传中，请勿重复操作')
+                    context.bot.send_message(chat_id=user_id, text='文件下载完成，开始解压入库，请勿重复操作')
                     # 解压缩文件
                     count = 0
                     timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
                     extracted_folder_names = set()
-                    with zipfile.ZipFile(new_file_path, 'r') as zip_ref:
-                        for file_info in zip_ref.infolist():
-                            match = re.match(r'^([^/]+)/.*$', file_info.filename)
-                            if match:
-                                extracted_folder_names.add(match.group(1))
-                            zip_ref.extract(file_info, f'号包/{nowuid}')
+                    try:
+                        with zipfile.ZipFile(new_file_path, 'r') as zip_ref:
+                            for file_info in zip_ref.infolist():
+                                match = re.match(r'^([^/]+)/.*$', file_info.filename)
+                                if match:
+                                    extracted_folder_names.add(match.group(1))
+                                zip_ref.extract(file_info, f'号包/{nowuid}')
 
-                    for extracted_folder_name in sorted(extracted_folder_names):
-                        source_paths = collect_delivery_source_paths('直登号', nowuid, extracted_folder_name)
-                        if not source_paths:
-                            logging.warning(
-                                'skip empty direct inventory upload: nowuid=%s projectname=%s',
-                                nowuid,
-                                extracted_folder_name,
-                            )
-                            empty_folder_path = find_existing_storage_path('号包', nowuid, extracted_folder_name)
-                            if empty_folder_path.exists() and empty_folder_path.is_dir():
-                                shutil.rmtree(empty_folder_path, ignore_errors=True)
-                            continue
+                        for extracted_folder_name in sorted(extracted_folder_names):
+                            source_paths = collect_delivery_source_paths('直登号', nowuid, extracted_folder_name)
+                            if not source_paths:
+                                logging.warning(
+                                    'skip empty direct inventory upload: nowuid=%s projectname=%s',
+                                    nowuid,
+                                    extracted_folder_name,
+                                )
+                                empty_folder_path = find_existing_storage_path('号包', nowuid, extracted_folder_name)
+                                if empty_folder_path.exists() and empty_folder_path.is_dir():
+                                    shutil.rmtree(empty_folder_path, ignore_errors=True)
+                                continue
 
-                        if hb.find_one({'nowuid': nowuid, 'projectname': extracted_folder_name}) is None:
-                            count += 1
-                            hbid = generate_24bit_uid()
-                            shangchuanhaobao('直登号',uid, nowuid, hbid, extracted_folder_name, timer)
+                            if hb.find_one({'nowuid': nowuid, 'projectname': extracted_folder_name}) is None:
+                                count += 1
+                                hbid = generate_24bit_uid()
+                                shangchuanhaobao('直登号',uid, nowuid, hbid, extracted_folder_name, timer)
+                    except zipfile.BadZipFile:
+                        logging.warning('Invalid direct inventory zip upload: user_id=%s nowuid=%s file=%s', user_id, nowuid, filename, exc_info=True)
+                        safe_send_message(context, user_id, '上传失败：压缩包损坏、不是标准 zip，或内部结构不正确，请重新打包后再试')
+                        return
+                    except Exception as exc:
+                        logging.exception('Failed to process direct inventory upload: user_id=%s nowuid=%s file=%s', user_id, nowuid, filename)
+                        safe_send_message(context, user_id, f'上传失败：解压或入库时发生异常，请稍后重试\n{exc}')
+                        return
+                    finally:
+                        cleanup_uploaded_temp_file(new_file_path)
 
                     safe_send_message(context, user_id, f'解压并处理完成！本次上传了{count}个号')
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
@@ -12721,30 +12777,38 @@ def textkeyboard(update: Update, context: CallbackContext):
                     if not new_file_path:
                         return
 
-                    context.bot.send_message(chat_id=user_id, text='上传中，请勿重复操作')
+                    context.bot.send_message(chat_id=user_id, text='文件下载完成，开始解压入库，请勿重复操作')
                     # 解压缩文件
                     count = 0
                     tj_dict = {}
                     timer = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                    with zipfile.ZipFile(new_file_path, 'r') as zip_ref:
-                        for file_info in zip_ref.infolist():
-                            filename = file_info.filename
-                            if filename.endswith('.json') or filename.endswith('.session'):
-                                # 仅解压 session 或者 json 格式的文件
-                                fli1 = filename.replace('.json', '').replace('.session', '')
-                                if fli1 not in tj_dict.keys():
+                    try:
+                        with zipfile.ZipFile(new_file_path, 'r') as zip_ref:
+                            for file_info in zip_ref.infolist():
+                                zip_member_name = file_info.filename
+                                if zip_member_name.endswith('.json') or zip_member_name.endswith('.session'):
+                                    # 仅解压 session 或者 json 格式的文件
+                                    fli1 = zip_member_name.replace('.json', '').replace('.session', '')
+                                    if fli1 not in tj_dict.keys():
 
-                                    hbid = generate_24bit_uid()
-                                    if hb.find_one({'nowuid': nowuid, 'projectname': fli1}) is None:
-                                        tj_dict[fli1] = 1
-                                        shangchuanhaobao('协议号',uid, nowuid, hbid, fli1, timer)
+                                        hbid = generate_24bit_uid()
+                                        if hb.find_one({'nowuid': nowuid, 'projectname': fli1}) is None:
+                                            tj_dict[fli1] = 1
+                                            shangchuanhaobao('协议号',uid, nowuid, hbid, fli1, timer)
 
-                                zip_ref.extract(member=file_info, path=f'协议号/{nowuid}')
-                                pass
-                            else:
-                                pass
-                    for i in tj_dict:
-                        count += 1
+                                    zip_ref.extract(member=file_info, path=f'协议号/{nowuid}')
+                        for i in tj_dict:
+                            count += 1
+                    except zipfile.BadZipFile:
+                        logging.warning('Invalid protocol inventory zip upload: user_id=%s nowuid=%s file=%s', user_id, nowuid, filename, exc_info=True)
+                        safe_send_message(context, user_id, '上传失败：压缩包损坏、不是标准 zip，或内部结构不正确，请重新打包后再试')
+                        return
+                    except Exception as exc:
+                        logging.exception('Failed to process protocol inventory upload: user_id=%s nowuid=%s file=%s', user_id, nowuid, filename)
+                        safe_send_message(context, user_id, f'上传失败：解压或入库时发生异常，请稍后重试\n{exc}')
+                        return
+                    finally:
+                        cleanup_uploaded_temp_file(new_file_path)
 
                     safe_send_message(context, user_id, f'解压并处理完成！本次上传了{count}个协议号')
 
