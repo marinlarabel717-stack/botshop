@@ -9656,7 +9656,17 @@ def clone_inline_keyboard_rows(rows):
                     text=button.text,
                     url=getattr(button, 'url', None),
                     callback_data=getattr(button, 'callback_data', None),
+                    callback_game=getattr(button, 'callback_game', None),
+                    copy_text=getattr(button, 'copy_text', None),
+                    login_url=getattr(button, 'login_url', None),
+                    pay=getattr(button, 'pay', None),
+                    style=getattr(button, 'style', None),
+                    icon_custom_emoji_id=getattr(button, 'icon_custom_emoji_id', None),
+                    switch_inline_query_chosen_chat=getattr(button, 'switch_inline_query_chosen_chat', None),
                     switch_inline_query_current_chat=getattr(button, 'switch_inline_query_current_chat', None),
+                    switch_inline_query=getattr(button, 'switch_inline_query', None),
+                    web_app=getattr(button, 'web_app', None),
+                    api_kwargs=dict(getattr(button, 'api_kwargs', {}) or {}),
                 )
             )
         cloned_rows.append(cloned_row)
@@ -9668,7 +9678,20 @@ def clone_reply_keyboard_rows(rows):
     for row in rows or []:
         cloned_row = []
         for button in row or []:
-            cloned_row.append(KeyboardButton(button.text))
+            cloned_row.append(
+                KeyboardButton(
+                    button.text,
+                    style=getattr(button, 'style', None),
+                    icon_custom_emoji_id=getattr(button, 'icon_custom_emoji_id', None),
+                    request_contact=getattr(button, 'request_contact', None),
+                    request_location=getattr(button, 'request_location', None),
+                    request_poll=getattr(button, 'request_poll', None),
+                    web_app=getattr(button, 'web_app', None),
+                    request_users=getattr(button, 'request_users', None),
+                    request_chat=getattr(button, 'request_chat', None),
+                    api_kwargs=dict(getattr(button, 'api_kwargs', {}) or {}),
+                )
+            )
         cloned_rows.append(cloned_row)
     return cloned_rows
 
