@@ -927,11 +927,17 @@ _translation_warm_done = set()
 _home_keyboard_cache = {}
 _category_catalog_cache = {}
 _admin_dashboard_cache = {}
+_menu_route_cache = {}
+_category_children_cache = {}
+_product_payload_cache = {}
 _storefront_cache_lock = threading.Lock()
 
 HOME_KEYBOARD_CACHE_TTL_SECONDS = max(10, int(os.getenv('HOME_KEYBOARD_CACHE_TTL_SECONDS', '60') or '60'))
 CATEGORY_CATALOG_CACHE_TTL_SECONDS = max(5, int(os.getenv('CATEGORY_CATALOG_CACHE_TTL_SECONDS', '20') or '20'))
 ADMIN_DASHBOARD_CACHE_TTL_SECONDS = max(5, int(os.getenv('ADMIN_DASHBOARD_CACHE_TTL_SECONDS', '15') or '15'))
+MENU_ROUTE_CACHE_TTL_SECONDS = max(5, int(os.getenv('MENU_ROUTE_CACHE_TTL_SECONDS', '10') or '10'))
+CATEGORY_CHILDREN_CACHE_TTL_SECONDS = max(5, int(os.getenv('CATEGORY_CHILDREN_CACHE_TTL_SECONDS', '10') or '10'))
+PRODUCT_PAYLOAD_CACHE_TTL_SECONDS = max(5, int(os.getenv('PRODUCT_PAYLOAD_CACHE_TTL_SECONDS', '10') or '10'))
 
 
 ADMIN_EMOJI_USERLIST = '[emoji:6321041414067068140:👤]'
@@ -6529,15 +6535,8 @@ def backstart(update: Update, context: CallbackContext):
     query.answer()
     user_id = query.from_user.id
     keyboard = build_admin_dashboard_keyboard(user_id)
-    jqrsyrs = len(list(user.find({})))
-
-    numu = 0
-    for i in list(user.find({"USDT": {"$gt": 0}})): 
-        USDT = i['USDT']
-
-        numu += USDT
-
-    fstext = build_admin_dashboard_text(jqrsyrs, numu)
+    stats = get_admin_dashboard_stats()
+    fstext = build_admin_dashboard_text(stats['user_count'], stats['total_balance'])
     query.edit_message_text(text=fstext, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -6551,14 +6550,10 @@ def toggleacctcheck(update: Update, context: CallbackContext):
     current_enabled = get_account_check_enabled()
     set_account_check_enabled(not current_enabled)
 
+    invalidate_storefront_runtime_cache(admin=True)
     keyboard = build_admin_dashboard_keyboard(user_id)
-    jqrsyrs = len(list(user.find({})))
-    numu = 0
-    for i in list(user.find({"USDT": {"$gt": 0}})):
-        USDT = i['USDT']
-        numu += USDT
-
-    fstext = build_admin_dashboard_text(jqrsyrs, numu)
+    stats = get_admin_dashboard_stats()
+    fstext = build_admin_dashboard_text(stats['user_count'], stats['total_balance'])
     query.edit_message_text(text=fstext, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -8802,7 +8797,7 @@ def catejflsp(update: Update, context: CallbackContext):
     lang = get_user_lang(user_id)
 
     product_rows = []
-    ej_list = list(ejfl.find({'uid': uid}, sort=[('row', 1)]))
+    ej_list = get_category_child_products(uid)
     stock_map = get_batch_stock([str(item.get('nowuid') or '') for item in ej_list])
     for i in ej_list:
         nowuid = i['nowuid']
@@ -8861,6 +8856,15 @@ def get_product_purchase_payload(nowuid):
         'stock_count': stock_count,
         'category_name': category_name,
     }
+
+
+def get_product_purchase_payload_cached(nowuid):
+    base_payload = get_product_payload_base(nowuid)
+    if not base_payload:
+        return None
+    payload = dict(base_payload)
+    payload['stock_count'] = get_stock_count(payload['nowuid'])
+    return payload
 
 
 def build_product_purchase_text(projectname, money, stock_count, user_id=None):
@@ -9031,7 +9035,7 @@ def restockrequestarea(update: Update, context: CallbackContext):
 
 
 def send_product_purchase_page(context, chat_id, user_id, nowuid):
-    payload = get_product_purchase_payload(nowuid)
+    payload = get_product_purchase_payload_cached(nowuid)
     if not payload:
         safe_send_message(context, chat_id=chat_id, text=get_ui_text('product_not_found', viewer_user_id=user_id))
         return None
@@ -9064,7 +9068,7 @@ def gmsp(update: Update, context: CallbackContext):
     bot_id = context.bot.id
     user_id = query.from_user.id
 
-    payload = get_product_purchase_payload(nowuid)
+    payload = get_product_purchase_payload_cached(nowuid)
     if not payload:
         query.answer(get_ui_text('product_not_found', viewer_user_id=user_id), show_alert=bool("true"))
         return
@@ -9596,7 +9600,7 @@ def notify_restock_broadcast(context, nowuid, added_count=0):
     target = get_restock_push_target()
     if not target:
         return
-    payload = get_product_purchase_payload(nowuid)
+    payload = get_product_purchase_payload_cached(nowuid)
     if not payload:
         return
     projectname = payload['projectname']
@@ -9714,8 +9718,11 @@ def invalidate_storefront_runtime_cache(*, home=False, catalog=False, admin=Fals
     with _storefront_cache_lock:
         if home:
             _home_keyboard_cache.clear()
+            _menu_route_cache.clear()
         if catalog:
             _category_catalog_cache.clear()
+            _category_children_cache.clear()
+            _product_payload_cache.clear()
         if admin:
             _admin_dashboard_cache.clear()
 
@@ -9726,9 +9733,59 @@ def warm_storefront_runtime_cache():
         for lang in ('zh', 'en'):
             set_cached_storefront_value(_home_keyboard_cache, lang, build_user_home_reply_keyboard_lang(lang))
             set_cached_storefront_value(_category_catalog_cache, lang, build_category_catalog_keyboard_lang(lang))
+            set_cached_storefront_value(_menu_route_cache, lang, build_menu_route_index_lang(lang))
         get_admin_dashboard_stats()
     except Exception:
         logging.warning('Warm storefront runtime cache failed', exc_info=True)
+
+
+def build_menu_route_index_lang(lang):
+    lang = normalize_lang_code(lang)
+    rows = list(get_key.find({}))
+    exact_map = {}
+    normalized_map = {}
+    for item in rows:
+        projectname = str(item.get('projectname') or '').strip()
+        if not projectname:
+            continue
+        variants = [projectname]
+        button_match_text = get_button_match_text(projectname)
+        if button_match_text and button_match_text != projectname:
+            variants.append(button_match_text)
+        stripped_projectname = strip_button_label_decoration(projectname)
+        if stripped_projectname and stripped_projectname != projectname:
+            variants.append(stripped_projectname)
+
+        localized_projectname = localize_button_label(projectname, user_id=0, lang=lang)
+        if localized_projectname and localized_projectname != projectname:
+            variants.append(localized_projectname)
+        localized_button_match_text = get_button_match_text(localized_projectname)
+        if localized_button_match_text and localized_button_match_text != localized_projectname:
+            variants.append(localized_button_match_text)
+        stripped_localized_projectname = strip_button_label_decoration(localized_projectname)
+        if stripped_localized_projectname and stripped_localized_projectname != localized_projectname:
+            variants.append(stripped_localized_projectname)
+
+        for variant in variants:
+            clean_variant = str(variant or '').strip()
+            if not clean_variant:
+                continue
+            exact_map.setdefault(clean_variant, item)
+            normalized_variant = normalize_menu_text(clean_variant)
+            if normalized_variant:
+                normalized_map.setdefault(normalized_variant, item)
+
+    return {'exact_map': exact_map, 'normalized_map': normalized_map}
+
+
+def get_menu_route_index(lang):
+    lang = normalize_lang_code(lang)
+    cached = get_cached_storefront_value(_menu_route_cache, lang, MENU_ROUTE_CACHE_TTL_SECONDS)
+    if cached is not None:
+        return cached
+    index = build_menu_route_index_lang(lang)
+    set_cached_storefront_value(_menu_route_cache, lang, index)
+    return index
 
 
 def build_user_home_reply_keyboard_lang(lang):
@@ -9915,6 +9972,55 @@ def build_category_catalog_keyboard(user_id):
     built_keyboard = build_category_catalog_keyboard_lang(lang)
     set_cached_storefront_value(_category_catalog_cache, lang, built_keyboard)
     return clone_inline_keyboard_rows(built_keyboard)
+
+
+def get_category_child_products(uid):
+    uid = str(uid or '').strip()
+    if not uid:
+        return []
+    cached = get_cached_storefront_value(_category_children_cache, uid, CATEGORY_CHILDREN_CACHE_TTL_SECONDS)
+    if cached is not None:
+        return [dict(item) for item in cached]
+
+    rows = []
+    for item in ejfl.find({'uid': uid}, {'nowuid': 1, 'projectname': 1, 'row': 1, 'money': 1}, sort=[('row', 1)]):
+        rows.append({
+            'nowuid': str(item.get('nowuid') or ''),
+            'projectname': str(item.get('projectname') or ''),
+            'row': int(item.get('row', 1) or 1),
+            'money': item.get('money', 0),
+        })
+    set_cached_storefront_value(_category_children_cache, uid, rows)
+    return [dict(item) for item in rows]
+
+
+def get_product_payload_base(nowuid):
+    nowuid = str(nowuid or '').strip()
+    if not nowuid:
+        return None
+    cached = get_cached_storefront_value(_product_payload_cache, nowuid, PRODUCT_PAYLOAD_CACHE_TTL_SECONDS)
+    if cached is not None:
+        return dict(cached)
+
+    ejfl_list = ejfl.find_one({'nowuid': nowuid}, {'uid': 1, 'projectname': 1, 'money': 1}) or {}
+    if not ejfl_list:
+        return None
+
+    uid = ejfl_list.get('uid')
+    category_name = ''
+    if uid:
+        fl_list = fenlei.find_one({'uid': uid}, {'projectname': 1}) or {}
+        category_name = str(fl_list.get('projectname') or '')
+
+    payload = {
+        'nowuid': nowuid,
+        'uid': uid,
+        'projectname': str(ejfl_list.get('projectname') or '商品'),
+        'money': ejfl_list.get('money', 0),
+        'category_name': category_name,
+    }
+    set_cached_storefront_value(_product_payload_cache, nowuid, payload)
+    return dict(payload)
 
 
 def get_clone_price_decimal():
@@ -11908,25 +12014,11 @@ def textkeyboard(update: Update, context: CallbackContext):
             if state != '4':
                 return
 
-        get_key_list = list(get_key.find({}))
-        get_prolist = []
-        normalized_key_map = {}
-        for i in get_key_list:
-            projectname = i["projectname"]
-            button_match_text = get_button_match_text(projectname)
-            localized_projectname = localize_dynamic_text(projectname, user_id=user_id, lang=lang)
-            localized_button_match_text = get_button_match_text(localized_projectname)
-            get_prolist.extend([projectname, localized_projectname])
-            if button_match_text != projectname:
-                get_prolist.append(button_match_text)
-            if localized_button_match_text != localized_projectname:
-                get_prolist.append(localized_button_match_text)
-            normalized_key_map.setdefault(normalize_menu_text(projectname), i)
-            normalized_key_map.setdefault(normalize_menu_text(button_match_text), i)
-            normalized_key_map.setdefault(normalize_menu_text(localized_projectname), i)
-            normalized_key_map.setdefault(normalize_menu_text(localized_button_match_text), i)
+        menu_route_index = get_menu_route_index(lang)
+        exact_key_map = menu_route_index['exact_map']
+        normalized_key_map = menu_route_index['normalized_map']
         if update.message.text:
-            if (raw_text in get_prolist or text in get_prolist or normalized_text in normalized_key_map) and not should_preserve_sign_on_menu_match(sign):
+            if (raw_text in exact_key_map or text in exact_key_map or normalized_text in normalized_key_map) and not should_preserve_sign_on_menu_match(sign):
                 sign = 0
 
         if sign == 0:
@@ -13037,9 +13129,9 @@ def textkeyboard(update: Update, context: CallbackContext):
                 handle_area_code_search(context, user_id, fullname, username, raw_text.strip())
                 return
 
-            key_list = get_key.find_one({"projectname": raw_text})
+            key_list = exact_key_map.get(raw_text)
             if key_list is None and text != raw_text:
-                key_list = get_key.find_one({"projectname": text})
+                key_list = exact_key_map.get(text)
             if key_list is None and normalized_text:
                 key_list = normalized_key_map.get(normalized_text)
             if matches_ui_text(text, 'menu_clone_same'):
