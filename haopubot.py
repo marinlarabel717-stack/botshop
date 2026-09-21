@@ -924,6 +924,14 @@ _user_lang_cache = {}
 _localized_button_cache = {}
 _translation_warm_jobs = {}
 _translation_warm_done = set()
+_home_keyboard_cache = {}
+_category_catalog_cache = {}
+_admin_dashboard_cache = {}
+_storefront_cache_lock = threading.Lock()
+
+HOME_KEYBOARD_CACHE_TTL_SECONDS = max(10, int(os.getenv('HOME_KEYBOARD_CACHE_TTL_SECONDS', '60') or '60'))
+CATEGORY_CATALOG_CACHE_TTL_SECONDS = max(5, int(os.getenv('CATEGORY_CATALOG_CACHE_TTL_SECONDS', '20') or '20'))
+ADMIN_DASHBOARD_CACHE_TTL_SECONDS = max(5, int(os.getenv('ADMIN_DASHBOARD_CACHE_TTL_SECONDS', '15') or '15'))
 
 
 ADMIN_EMOJI_USERLIST = '[emoji:6321041414067068140:👤]'
@@ -3923,14 +3931,56 @@ def ensure_user_exists(user_id, username, fullname, lastname, language_code=None
 
 def sum_user_log_amount_by_day(day_text):
     total = Decimal('0')
-    for row in user_log.find({'today_time': {'$regex': f'^{day_text}'}}):
-        try:
-            money = Decimal(str(row.get('today_money', 0) or 0))
-        except Exception:
-            continue
-        if money > 0:
-            total += money
+    pipeline = [
+        {'$match': {'today_time': {'$regex': f'^{day_text}'}}},
+        {'$group': {'_id': None, 'total': {'$sum': {'$toDouble': '$today_money'}}}},
+    ]
+    try:
+        rows = list(user_log.aggregate(pipeline))
+        if rows:
+            try:
+                total = Decimal(str(rows[0].get('total', 0) or 0))
+            except Exception:
+                total = Decimal('0')
+    except Exception:
+        for row in user_log.find({'today_time': {'$regex': f'^{day_text}'}}):
+            try:
+                money = Decimal(str(row.get('today_money', 0) or 0))
+            except Exception:
+                continue
+            if money > 0:
+                total += money
     return standard_num(total)
+
+
+def get_admin_dashboard_stats():
+    cached = get_cached_storefront_value(_admin_dashboard_cache, 'stats', ADMIN_DASHBOARD_CACHE_TTL_SECONDS)
+    if cached is not None:
+        return dict(cached)
+    user_count = user.count_documents({})
+    balance_total = Decimal('0')
+    try:
+        rows = list(user.aggregate([
+            {'$match': {'USDT': {'$gt': 0}}},
+            {'$group': {'_id': None, 'total': {'$sum': {'$toDouble': '$USDT'}}}},
+        ]))
+        if rows:
+            try:
+                balance_total = Decimal(str(rows[0].get('total', 0) or 0))
+            except Exception:
+                balance_total = Decimal('0')
+    except Exception:
+        for row in user.find({"USDT": {"$gt": 0}}, {'USDT': 1}):
+            try:
+                balance_total += Decimal(str(row.get('USDT', 0) or 0))
+            except Exception:
+                continue
+    stats = {
+        'user_count': int(user_count or 0),
+        'total_balance': standard_num(balance_total),
+    }
+    set_cached_storefront_value(_admin_dashboard_cache, 'stats', stats)
+    return dict(stats)
 
 
 def build_admin_dashboard_text(user_count, total_balance):
@@ -6209,14 +6259,8 @@ def start(update: Update, context: CallbackContext):
     send_user_home(context, user_id)
     if state == '4':
         keyboard = build_admin_dashboard_keyboard(user_id)
-        jqrsyrs = len(list(user.find({})))
-        numu = 0
-        for i in list(user.find({"USDT": {"$gt": 0}})):
-            USDT = i['USDT']
-
-            numu += USDT
-
-        fstext = build_admin_dashboard_text(jqrsyrs, numu)
+        stats = get_admin_dashboard_stats()
+        fstext = build_admin_dashboard_text(stats['user_count'], stats['total_balance'])
         context.bot.send_message(chat_id=user_id, text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
         # message_id = context.bot.send_photo(chat_id=user_id,  photo=open('辛迪充值图片.png', 'rb'))
         # print(message_id)
@@ -9602,19 +9646,104 @@ def get_localized_welcome_content(user_id):
     return DEFAULT_CLONE_WELCOME_TEXT_EN, []
 
 
-def build_user_home_reply_keyboard(user_id):
-    lang = get_user_lang(user_id)
+def clone_inline_keyboard_rows(rows):
+    cloned_rows = []
+    for row in rows or []:
+        cloned_row = []
+        for button in row or []:
+            cloned_row.append(
+                InlineKeyboardButton(
+                    text=button.text,
+                    url=getattr(button, 'url', None),
+                    callback_data=getattr(button, 'callback_data', None),
+                    switch_inline_query_current_chat=getattr(button, 'switch_inline_query_current_chat', None),
+                )
+            )
+        cloned_rows.append(cloned_row)
+    return cloned_rows
+
+
+def clone_reply_keyboard_rows(rows):
+    cloned_rows = []
+    for row in rows or []:
+        cloned_row = []
+        for button in row or []:
+            cloned_row.append(KeyboardButton(button.text))
+        cloned_rows.append(cloned_row)
+    return cloned_rows
+
+
+def get_cached_storefront_value(cache_box, cache_key, ttl_seconds):
+    now_ts = time.time()
+    with _storefront_cache_lock:
+        cached = cache_box.get(cache_key)
+        if cached and now_ts - float(cached.get('ts') or 0) < ttl_seconds:
+            return cached.get('value')
+    return None
+
+
+def set_cached_storefront_value(cache_box, cache_key, value):
+    with _storefront_cache_lock:
+        cache_box[cache_key] = {'ts': time.time(), 'value': value}
+
+
+def invalidate_storefront_runtime_cache(*, home=False, catalog=False, admin=False):
+    with _storefront_cache_lock:
+        if home:
+            _home_keyboard_cache.clear()
+        if catalog:
+            _category_catalog_cache.clear()
+        if admin:
+            _admin_dashboard_cache.clear()
+
+
+def warm_storefront_runtime_cache():
+    try:
+        invalidate_storefront_runtime_cache(home=True, catalog=True, admin=True)
+        for lang in ('zh', 'en'):
+            set_cached_storefront_value(_home_keyboard_cache, lang, build_user_home_reply_keyboard_lang(lang))
+            set_cached_storefront_value(_category_catalog_cache, lang, build_category_catalog_keyboard_lang(lang))
+        get_admin_dashboard_stats()
+    except Exception:
+        logging.warning('Warm storefront runtime cache failed', exc_info=True)
+
+
+def build_user_home_reply_keyboard_lang(lang):
     keylist = get_key.find({}, sort=[('Row', 1), ('first', 1)])
     keyboard = [[] for _ in range(100)]
     for item in keylist:
         row = max(1, int(item.get('Row', 1))) - 1
-        label = localize_button_label(item.get('projectname', ''), user_id=user_id, lang=lang)
+        label = localize_button_label(item.get('projectname', ''), user_id=0, lang=lang)
         keyboard[row].append(KeyboardButton(label))
     keyboard = [row for row in keyboard if row]
     keyboard.append([KeyboardButton(get_ui_text('language_toggle', lang=lang))])
     if BOT_CLONE_ENABLED and ALLOW_PUBLIC_BOT_CLONE:
-        keyboard.append([KeyboardButton(localize_button_label('#g [emoji:5287684458881756303:🤖]一键克隆同款', user_id=user_id, lang=lang))])
+        keyboard.append([KeyboardButton(localize_button_label('#g [emoji:5287684458881756303:🤖]一键克隆同款', user_id=0, lang=lang))])
     return keyboard
+
+
+def build_category_catalog_keyboard_lang(lang):
+    keylist = list(fenlei.find({}, sort=[('row', 1)]))
+    stock_totals = get_category_stock_totals([item.get('uid') for item in keylist])
+    keyboard = [[] for _ in range(100)]
+    for item in keylist:
+        uid = item['uid']
+        row = max(1, int(item.get('row', 1))) - 1
+        hsl = stock_totals.get(str(uid), 0)
+        projectname = localize_catalog_name(item.get('projectname'), 0, lang=lang)
+        button_text = shorten_catalog_button_label(projectname, stock_count=hsl, lang=lang)
+        keyboard[row].append(InlineKeyboardButton(button_text, callback_data=f'catejflsp {uid}:{hsl}'))
+    return [row for row in keyboard if row]
+
+
+def build_user_home_reply_keyboard(user_id):
+    lang = get_user_lang(user_id)
+    cached = get_cached_storefront_value(_home_keyboard_cache, lang, HOME_KEYBOARD_CACHE_TTL_SECONDS)
+    if cached is not None:
+        return clone_reply_keyboard_rows(cached)
+    keyboard = build_user_home_reply_keyboard_lang(lang)
+    set_cached_storefront_value(_home_keyboard_cache, lang, keyboard)
+    return clone_reply_keyboard_rows(keyboard)
 
 
 def send_user_home(context, user_id):
@@ -9757,17 +9886,12 @@ def shorten_catalog_button_label(text, stock_count=None, lang=None):
 
 def build_category_catalog_keyboard(user_id):
     lang = get_user_lang(user_id)
-    keylist = list(fenlei.find({}, sort=[('row', 1)]))
-    stock_totals = get_category_stock_totals([item.get('uid') for item in keylist])
-    keyboard = [[] for _ in range(100)]
-    for item in keylist:
-        uid = item['uid']
-        row = max(1, int(item.get('row', 1))) - 1
-        hsl = stock_totals.get(str(uid), 0)
-        projectname = localize_catalog_name(item.get('projectname'), user_id, lang=lang)
-        button_text = shorten_catalog_button_label(projectname, stock_count=hsl, lang=lang)
-        keyboard[row].append(InlineKeyboardButton(button_text, callback_data=f'catejflsp {uid}:{hsl}'))
-    return [row for row in keyboard if row]
+    cached = get_cached_storefront_value(_category_catalog_cache, lang, CATEGORY_CATALOG_CACHE_TTL_SECONDS)
+    if cached is not None:
+        return clone_inline_keyboard_rows(cached)
+    built_keyboard = build_category_catalog_keyboard_lang(lang)
+    set_cached_storefront_value(_category_catalog_cache, lang, built_keyboard)
+    return clone_inline_keyboard_rows(built_keyboard)
 
 
 def get_clone_price_decimal():
@@ -10575,6 +10699,7 @@ async def on_post_init(application):
     APP_BOT = SyncTelegramProxy(application.bot, lambda: APP_EVENT_LOOP)
     start_okpay_callback_server(APP_BOT)
     warm_storefront_translation_cache(lang='en')
+    await asyncio.to_thread(warm_storefront_runtime_cache)
 
 
 def create_trc20_deposit_order(context, user_id, amount):
