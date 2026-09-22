@@ -930,6 +930,7 @@ _admin_dashboard_cache = {}
 _menu_route_cache = {}
 _category_children_cache = {}
 _product_payload_cache = {}
+_stock_count_cache = {}
 _storefront_cache_lock = threading.Lock()
 
 HOME_KEYBOARD_CACHE_TTL_SECONDS = max(10, int(os.getenv('HOME_KEYBOARD_CACHE_TTL_SECONDS', '60') or '60'))
@@ -938,6 +939,7 @@ ADMIN_DASHBOARD_CACHE_TTL_SECONDS = max(5, int(os.getenv('ADMIN_DASHBOARD_CACHE_
 MENU_ROUTE_CACHE_TTL_SECONDS = max(5, int(os.getenv('MENU_ROUTE_CACHE_TTL_SECONDS', '10') or '10'))
 CATEGORY_CHILDREN_CACHE_TTL_SECONDS = max(5, int(os.getenv('CATEGORY_CHILDREN_CACHE_TTL_SECONDS', '10') or '10'))
 PRODUCT_PAYLOAD_CACHE_TTL_SECONDS = max(5, int(os.getenv('PRODUCT_PAYLOAD_CACHE_TTL_SECONDS', '10') or '10'))
+STOCK_COUNT_CACHE_TTL_SECONDS = max(2, int(os.getenv('STOCK_COUNT_CACHE_TTL_SECONDS', '5') or '5'))
 
 
 ADMIN_EMOJI_USERLIST = '[emoji:6321041414067068140:👤]'
@@ -6563,18 +6565,19 @@ def gmaijilu(update: Update, context: CallbackContext):
     user_id = query.from_user.id
     lang = get_user_lang(user_id)
     df_id = int(query.data.replace('gmaijilu ', ''))
-    jilu_list = list(gmjlu.find({'user_id': df_id}, sort=[('timer', -1)], limit=10))
+    jilu_list = list(gmjlu.find({'user_id': df_id}, sort=[('timer', -1)], limit=11))
     keyboard = []
     text_list = []
     count = 1
-    for i in jilu_list:
+    has_next_page = len(jilu_list) > 10
+    for i in jilu_list[:10]:
         bianhao = i['bianhao']
         projectname = i['projectname']
         fhtext = i['text']
 
         keyboard.append([InlineKeyboardButton(localize_catalog_name(projectname, user_id, lang=lang), callback_data=f'zcfshuo {bianhao}')])
         count += 1
-    if len(list(gmjlu.find({'user_id': df_id}))) > 10:
+    if has_next_page:
         keyboard.append([InlineKeyboardButton(get_ui_text('next_page', viewer_user_id=user_id), callback_data=f'gmainext {df_id}:10')])
     keyboard.append([InlineKeyboardButton(get_ui_text('back', viewer_user_id=user_id), callback_data=f'backgmjl {df_id}')])
     try:
@@ -6593,23 +6596,25 @@ def gmainext(update: Update, context: CallbackContext):
     lang = get_user_lang(user_id)
     keyboard = []
     text_list = []
-    jilu_list = list(gmjlu.find({"user_id": df_id}, sort=[("timer", -1)], skip=int(page), limit=10))
+    page_int = max(0, int(page))
+    jilu_list = list(gmjlu.find({"user_id": df_id}, sort=[("timer", -1)], skip=page_int, limit=11))
     count = 1
-    for i in jilu_list:
+    has_next_page = len(jilu_list) > 10
+    for i in jilu_list[:10]:
         bianhao = i['bianhao']
         projectname = i['projectname']
         fhtext = i['text']
 
         keyboard.append([InlineKeyboardButton(localize_catalog_name(projectname, user_id, lang=lang), callback_data=f'zcfshuo {bianhao}')])
         count += 1
-    if len(list(gmjlu.find({"user_id": df_id}, sort=[("timer", -1)], skip=int(page)))) > 10:
-        if int(page) == 0:
-            keyboard.append([InlineKeyboardButton(get_ui_text('next_page', viewer_user_id=user_id), callback_data=f'gmainext {df_id}:{int(page) + 10}')])
+    if has_next_page:
+        if page_int == 0:
+            keyboard.append([InlineKeyboardButton(get_ui_text('next_page', viewer_user_id=user_id), callback_data=f'gmainext {df_id}:{page_int + 10}')])
         else:
-            keyboard.append([InlineKeyboardButton(get_ui_text('prev_page', viewer_user_id=user_id), callback_data=f'gmainext {df_id}:{int(page) - 10}'),
-                             InlineKeyboardButton(get_ui_text('next_page', viewer_user_id=user_id), callback_data=f'gmainext {df_id}:{int(page) + 10}')])
-    else:
-        keyboard.append([InlineKeyboardButton(get_ui_text('prev_page', viewer_user_id=user_id), callback_data=f'gmainext {df_id}:{int(page) - 10}')])
+            keyboard.append([InlineKeyboardButton(get_ui_text('prev_page', viewer_user_id=user_id), callback_data=f'gmainext {df_id}:{page_int - 10}'),
+                             InlineKeyboardButton(get_ui_text('next_page', viewer_user_id=user_id), callback_data=f'gmainext {df_id}:{page_int + 10}')])
+    elif page_int > 0:
+        keyboard.append([InlineKeyboardButton(get_ui_text('prev_page', viewer_user_id=user_id), callback_data=f'gmainext {df_id}:{page_int - 10}')])
 
     keyboard.append([InlineKeyboardButton(get_ui_text('back', viewer_user_id=user_id), callback_data=f'backgmjl {df_id}')])
     try:
@@ -8798,7 +8803,7 @@ def catejflsp(update: Update, context: CallbackContext):
 
     product_rows = []
     ej_list = get_category_child_products(uid)
-    stock_map = get_batch_stock([str(item.get('nowuid') or '') for item in ej_list])
+    stock_map = get_batch_stock_cached([str(item.get('nowuid') or '') for item in ej_list])
     for i in ej_list:
         nowuid = i['nowuid']
         projectname = i['projectname']
@@ -9067,10 +9072,14 @@ def gmsp(update: Update, context: CallbackContext):
 
     bot_id = context.bot.id
     user_id = query.from_user.id
+    query.answer()
 
     payload = get_product_purchase_payload_cached(nowuid)
     if not payload:
-        query.answer(get_ui_text('product_not_found', viewer_user_id=user_id), show_alert=bool("true"))
+        try:
+            query.edit_message_text(get_ui_text('product_not_found', viewer_user_id=user_id))
+        except Exception:
+            pass
         return
     hsl = payload['stock_count']
     projectname = payload['projectname']
@@ -9084,7 +9093,6 @@ def gmsp(update: Update, context: CallbackContext):
     #         query.answer(fstext, show_alert=bool("true"))
     #         return
     # else:
-    query.answer()
     fstext = build_product_purchase_text(projectname, money, hsl, user_id=user_id)
 
     keyboard = build_product_purchase_keyboard(nowuid, uid, user_id, hsl)
@@ -9723,6 +9731,7 @@ def invalidate_storefront_runtime_cache(*, home=False, catalog=False, admin=Fals
             _category_catalog_cache.clear()
             _category_children_cache.clear()
             _product_payload_cache.clear()
+            _stock_count_cache.clear()
         if admin:
             _admin_dashboard_cache.clear()
 
@@ -9994,6 +10003,43 @@ def get_category_child_products(uid):
     return [dict(item) for item in rows]
 
 
+def get_batch_stock_cached(nowuid_list):
+    normalized = []
+    seen = set()
+    for item in nowuid_list or []:
+        nowuid = str(item or '').strip()
+        if not nowuid or nowuid in seen:
+            continue
+        seen.add(nowuid)
+        normalized.append(nowuid)
+
+    if not normalized:
+        return {}
+
+    stock_map = {}
+    missing = []
+    now_ts = time.time()
+    with _storefront_cache_lock:
+        for nowuid in normalized:
+            cached = _stock_count_cache.get(nowuid)
+            if cached and now_ts - float(cached.get('ts') or 0) < STOCK_COUNT_CACHE_TTL_SECONDS:
+                stock_map[nowuid] = int(cached.get('value') or 0)
+            else:
+                missing.append(nowuid)
+
+    if missing:
+        fetched = get_batch_stock(missing)
+        with _storefront_cache_lock:
+            for nowuid in missing:
+                count = int(fetched.get(nowuid, 0) or 0)
+                _stock_count_cache[nowuid] = {'ts': now_ts, 'value': count}
+                stock_map[nowuid] = count
+
+    for nowuid in normalized:
+        stock_map.setdefault(nowuid, 0)
+    return stock_map
+
+
 def get_product_payload_base(nowuid):
     nowuid = str(nowuid or '').strip()
     if not nowuid:
@@ -10042,7 +10088,10 @@ def format_clone_price(value=None):
 
 
 def get_stock_count(nowuid):
-    return hb.count_documents({'nowuid': str(nowuid), 'state': 0})
+    nowuid = str(nowuid or '').strip()
+    if not nowuid:
+        return 0
+    return int(get_batch_stock_cached([nowuid]).get(nowuid, 0))
 
 
 def is_restock_notice_subscribed(nowuid, user_id):
