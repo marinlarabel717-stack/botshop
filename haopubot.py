@@ -930,6 +930,8 @@ _admin_dashboard_cache = {}
 _menu_route_cache = {}
 _category_children_cache = {}
 _product_payload_cache = {}
+_category_product_rows_cache = {}
+_product_view_cache = {}
 _stock_count_cache = {}
 _storefront_cache_lock = threading.Lock()
 
@@ -939,6 +941,8 @@ ADMIN_DASHBOARD_CACHE_TTL_SECONDS = max(5, int(os.getenv('ADMIN_DASHBOARD_CACHE_
 MENU_ROUTE_CACHE_TTL_SECONDS = max(5, int(os.getenv('MENU_ROUTE_CACHE_TTL_SECONDS', '10') or '10'))
 CATEGORY_CHILDREN_CACHE_TTL_SECONDS = max(5, int(os.getenv('CATEGORY_CHILDREN_CACHE_TTL_SECONDS', '10') or '10'))
 PRODUCT_PAYLOAD_CACHE_TTL_SECONDS = max(5, int(os.getenv('PRODUCT_PAYLOAD_CACHE_TTL_SECONDS', '10') or '10'))
+CATEGORY_PRODUCT_ROWS_CACHE_TTL_SECONDS = max(3, int(os.getenv('CATEGORY_PRODUCT_ROWS_CACHE_TTL_SECONDS', '8') or '8'))
+PRODUCT_VIEW_CACHE_TTL_SECONDS = max(3, int(os.getenv('PRODUCT_VIEW_CACHE_TTL_SECONDS', '8') or '8'))
 STOCK_COUNT_CACHE_TTL_SECONDS = max(2, int(os.getenv('STOCK_COUNT_CACHE_TTL_SECONDS', '5') or '5'))
 
 
@@ -8801,6 +8805,20 @@ def catejflsp(update: Update, context: CallbackContext):
     user_id = query.from_user.id
     lang = get_user_lang(user_id)
 
+    product_rows = get_category_product_rows_cached(uid, user_id, lang=lang)
+    keyboard = []
+    for item in product_rows:
+        keyboard.append([InlineKeyboardButton(item['button_text'], callback_data=f"gmsp {item['nowuid']}:{item['stock']}")])
+
+    fstext = get_ui_text('category_list_text', viewer_user_id=user_id)
+    if not keyboard:
+        fstext = get_ui_text('category_empty_text', viewer_user_id=user_id)
+
+    keyboard.append([InlineKeyboardButton(get_ui_text('main_menu', viewer_user_id=user_id), callback_data='backzcd'),
+                     InlineKeyboardButton(get_ui_text('back', viewer_user_id=user_id), callback_data='backzcd')])
+    query.edit_message_text(fstext, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    return
+
     product_rows = []
     ej_list = get_category_child_products(uid)
     stock_map = get_batch_stock_cached([str(item.get('nowuid') or '') for item in ej_list])
@@ -9040,6 +9058,15 @@ def restockrequestarea(update: Update, context: CallbackContext):
 
 
 def send_product_purchase_page(context, chat_id, user_id, nowuid):
+    view_state = get_cached_product_view_state(nowuid, user_id)
+    if view_state:
+        return safe_send_message(
+            context,
+            chat_id=chat_id,
+            text=view_state['text'],
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup(view_state['keyboard'])
+        )
     payload = get_product_purchase_payload_cached(nowuid)
     if not payload:
         safe_send_message(context, chat_id=chat_id, text=get_ui_text('product_not_found', viewer_user_id=user_id))
@@ -9073,6 +9100,11 @@ def gmsp(update: Update, context: CallbackContext):
     bot_id = context.bot.id
     user_id = query.from_user.id
     query.answer()
+
+    view_state = get_cached_product_view_state(nowuid, user_id)
+    if view_state:
+        query.edit_message_text(view_state['text'], parse_mode='HTML', reply_markup=InlineKeyboardMarkup(view_state['keyboard']))
+        return
 
     payload = get_product_purchase_payload_cached(nowuid)
     if not payload:
@@ -9730,7 +9762,9 @@ def invalidate_storefront_runtime_cache(*, home=False, catalog=False, admin=Fals
         if catalog:
             _category_catalog_cache.clear()
             _category_children_cache.clear()
+            _category_product_rows_cache.clear()
             _product_payload_cache.clear()
+            _product_view_cache.clear()
             _stock_count_cache.clear()
         if admin:
             _admin_dashboard_cache.clear()
@@ -10040,6 +10074,41 @@ def get_batch_stock_cached(nowuid_list):
     return stock_map
 
 
+def build_product_view_cache_key(nowuid, lang):
+    return f'{normalize_lang_code(lang)}:{str(nowuid or "").strip()}'
+
+
+def build_product_view_state(payload, user_id, lang=None):
+    lang = normalize_lang_code(lang or get_user_lang(user_id))
+    stock_count = int(payload.get('stock_count') or 0)
+    return {
+        'text': build_product_purchase_text(payload['projectname'], payload['money'], stock_count, user_id=user_id),
+        'keyboard': build_product_purchase_keyboard(payload['nowuid'], payload['uid'], user_id, stock_count),
+    }
+
+
+def prime_product_view_cache(payload, user_id, lang=None):
+    if not payload:
+        return None
+    lang = normalize_lang_code(lang or get_user_lang(user_id))
+    cache_key = build_product_view_cache_key(payload.get('nowuid'), lang)
+    view_state = build_product_view_state(payload, user_id, lang=lang)
+    set_cached_storefront_value(_product_view_cache, cache_key, view_state)
+    return view_state
+
+
+def get_cached_product_view_state(nowuid, user_id, lang=None):
+    lang = normalize_lang_code(lang or get_user_lang(user_id))
+    cache_key = build_product_view_cache_key(nowuid, lang)
+    cached = get_cached_storefront_value(_product_view_cache, cache_key, PRODUCT_VIEW_CACHE_TTL_SECONDS)
+    if cached is not None:
+        return cached
+    payload = get_product_purchase_payload_cached(nowuid)
+    if not payload:
+        return None
+    return prime_product_view_cache(payload, user_id, lang=lang)
+
+
 def get_product_payload_base(nowuid):
     nowuid = str(nowuid or '').strip()
     if not nowuid:
@@ -10106,6 +10175,50 @@ def build_product_purchase_keyboard(nowuid, uid, user_id, stock_count=None):
         [InlineKeyboardButton(get_ui_text('main_menu', viewer_user_id=user_id), callback_data='backzcd'),
          InlineKeyboardButton(get_ui_text('back', viewer_user_id=user_id), callback_data=f'catejflsp {uid}:1000')]
     ]
+
+
+def get_category_product_rows_cached(uid, user_id, lang=None):
+    uid = str(uid or '').strip()
+    if not uid:
+        return []
+    lang = normalize_lang_code(lang or get_user_lang(user_id))
+    cache_key = f'{lang}:{uid}'
+    cached = get_cached_storefront_value(_category_product_rows_cache, cache_key, CATEGORY_PRODUCT_ROWS_CACHE_TTL_SECONDS)
+    if cached is not None:
+        return [dict(item) for item in cached]
+
+    product_rows = []
+    ej_list = get_category_child_products(uid)
+    stock_map = get_batch_stock_cached([str(item.get('nowuid') or '') for item in ej_list])
+    for item in ej_list:
+        nowuid = str(item.get('nowuid') or '')
+        stock_count = int(stock_map.get(nowuid, 0))
+        if stock_count <= 0:
+            continue
+        payload = {
+            'nowuid': nowuid,
+            'uid': uid,
+            'projectname': str(item.get('projectname') or ''),
+            'money': item.get('money', 0),
+            'stock_count': stock_count,
+            'category_name': '',
+        }
+        prime_product_view_cache(payload, user_id, lang=lang)
+        price_text = standard_num(payload['money'])
+        catalog_name = localize_catalog_name(payload['projectname'], user_id, lang=lang)
+        button_name = shorten_catalog_button_label(catalog_name, lang=lang)
+        product_rows.append({
+            'nowuid': nowuid,
+            'projectname': payload['projectname'],
+            'row': int(item.get('row', 1) or 1),
+            'money': payload['money'],
+            'stock': stock_count,
+            'button_text': f"{button_name} （{stock_count}） - ${price_text}",
+        })
+
+    product_rows.sort(key=lambda item: (-int(item['stock']), int(item['row']), str(item['projectname'])))
+    set_cached_storefront_value(_category_product_rows_cache, cache_key, product_rows)
+    return [dict(item) for item in product_rows]
 
 
 def nostock(update: Update, context: CallbackContext):
