@@ -935,6 +935,11 @@ _product_view_cache = {}
 _stock_count_cache = {}
 _storefront_cache_lock = threading.Lock()
 
+STOREFRONT_SLOW_LOG_THRESHOLD_SECONDS = max(0.2, float(os.getenv('STOREFRONT_SLOW_LOG_THRESHOLD_SECONDS', '1.2') or '1.2'))
+TELEGRAM_SLOW_METHOD_THRESHOLD_SECONDS = max(0.2, float(os.getenv('TELEGRAM_SLOW_METHOD_THRESHOLD_SECONDS', '2.0') or '2.0'))
+CALLBACK_QUEUE_WAIT_THRESHOLD_SECONDS = max(0.1, float(os.getenv('CALLBACK_QUEUE_WAIT_THRESHOLD_SECONDS', '0.8') or '0.8'))
+CALLBACK_TOTAL_SLOW_THRESHOLD_SECONDS = max(0.2, float(os.getenv('CALLBACK_TOTAL_SLOW_THRESHOLD_SECONDS', '1.5') or '1.5'))
+
 HOME_KEYBOARD_CACHE_TTL_SECONDS = max(10, int(os.getenv('HOME_KEYBOARD_CACHE_TTL_SECONDS', '60') or '60'))
 CATEGORY_CATALOG_CACHE_TTL_SECONDS = max(5, int(os.getenv('CATEGORY_CATALOG_CACHE_TTL_SECONDS', '20') or '20'))
 ADMIN_DASHBOARD_CACHE_TTL_SECONDS = max(5, int(os.getenv('ADMIN_DASHBOARD_CACHE_TTL_SECONDS', '15') or '15'))
@@ -995,6 +1000,33 @@ def parse_admin_user_ids(value):
         except ValueError:
             pass
     return admin_ids
+
+
+def format_perf_fields(**fields):
+    parts = []
+    for key, value in fields.items():
+        if value is None:
+            continue
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                continue
+            if len(value) > 120:
+                value = value[:117] + '...'
+        parts.append(f'{key}={value!r}')
+    return ' '.join(parts)
+
+
+def maybe_log_slow_event(label, started_at, threshold_seconds=None, **fields):
+    elapsed_seconds = time.perf_counter() - started_at
+    threshold_seconds = STOREFRONT_SLOW_LOG_THRESHOLD_SECONDS if threshold_seconds is None else float(threshold_seconds)
+    if elapsed_seconds >= threshold_seconds:
+        suffix = format_perf_fields(**fields)
+        if suffix:
+            logging.warning('Slow event=%s elapsed_ms=%s %s', label, int(elapsed_seconds * 1000), suffix)
+        else:
+            logging.warning('Slow event=%s elapsed_ms=%s', label, int(elapsed_seconds * 1000))
+    return elapsed_seconds
 
 
 def build_admin_dashboard_keyboard(user_id):
@@ -3139,9 +3171,30 @@ class SyncTelegramProxy:
                     try:
                         if attempt > 0:
                             rewind_retry_streams()
+                        call_started_at = time.perf_counter()
                         result = attr(*args, **kwargs)
                         if inspect.isawaitable(result):
                             result = asyncio.run_coroutine_threadsafe(result, self._get_loop()).result()
+                        elapsed_seconds = time.perf_counter() - call_started_at
+                        if elapsed_seconds >= TELEGRAM_SLOW_METHOD_THRESHOLD_SECONDS and target_name in {
+                            'send_message', 'edit_message_text', 'edit_message_caption',
+                            'edit_message_reply_markup', 'answer', 'answer_callback_query'
+                        }:
+                            chat_id = kwargs.get('chat_id')
+                            message_id = kwargs.get('message_id')
+                            if chat_id is None and args and target_name.startswith('send_'):
+                                chat_id = args[0]
+                            if chat_id is None and args and target_name.startswith('edit_message'):
+                                chat_id = args[0]
+                            if message_id is None and len(args) > 1 and target_name.startswith('edit_message'):
+                                message_id = args[1]
+                            logging.warning(
+                                'Slow Telegram API method=%s elapsed_ms=%s attempt=%s %s',
+                                target_name,
+                                int(elapsed_seconds * 1000),
+                                attempt + 1,
+                                format_perf_fields(chat_id=chat_id, message_id=message_id),
+                            )
                         return wrap_sync_telegram_value(result, self._loop_ref)
                     except BadRequest as exc:
                         exc_text = str(exc)
@@ -3229,7 +3282,40 @@ def sync_handler(callback):
         loop = asyncio.get_running_loop()
         sync_update = wrap_sync_telegram_value(update, loop)
         sync_context = SyncCallbackContextProxy(context, loop)
-        return await asyncio.to_thread(callback, sync_update, sync_context)
+
+        scheduled_at = time.perf_counter()
+
+        def run_callback():
+            started_at = time.perf_counter()
+            return started_at, callback(sync_update, sync_context)
+
+        started_at, result = await asyncio.to_thread(run_callback)
+        finished_at = time.perf_counter()
+        queue_wait_seconds = started_at - scheduled_at
+        total_seconds = finished_at - scheduled_at
+        run_seconds = finished_at - started_at
+
+        if queue_wait_seconds >= CALLBACK_QUEUE_WAIT_THRESHOLD_SECONDS or total_seconds >= CALLBACK_TOTAL_SLOW_THRESHOLD_SECONDS:
+            callback_data = ''
+            user_id = None
+            try:
+                if getattr(update, 'callback_query', None) is not None:
+                    callback_data = str(getattr(update.callback_query, 'data', '') or '')
+                    user_id = getattr(getattr(update.callback_query, 'from_user', None), 'id', None)
+                elif getattr(update, 'effective_user', None) is not None:
+                    user_id = getattr(update.effective_user, 'id', None)
+            except Exception:
+                pass
+            logging.warning(
+                'Slow callback handler=%s queue_wait_ms=%s run_ms=%s total_ms=%s %s',
+                getattr(callback, '__name__', 'unknown'),
+                int(queue_wait_seconds * 1000),
+                int(run_seconds * 1000),
+                int(total_seconds * 1000),
+                format_perf_fields(user_id=user_id, callback_data=callback_data),
+            )
+
+        return result
 
     return wrapped
 
@@ -8790,6 +8876,7 @@ def recharge_okpay(update: Update, context: CallbackContext):
 
 def catejflsp(update: Update, context: CallbackContext):
     query = update.callback_query
+    handler_started_at = time.perf_counter()
 
     uid = query.data.replace('catejflsp ', '').split(':')[0]
     zhsl = int(query.data.replace('catejflsp ', '').split(':')[1])
@@ -8804,8 +8891,12 @@ def catejflsp(update: Update, context: CallbackContext):
     bot_id = context.bot.id
     user_id = query.from_user.id
     lang = get_user_lang(user_id)
+    rows_cache_key = f'{normalize_lang_code(lang)}:{uid}'
+    had_cached_rows = get_cached_storefront_value(_category_product_rows_cache, rows_cache_key, CATEGORY_PRODUCT_ROWS_CACHE_TTL_SECONDS) is not None
 
+    rows_started_at = time.perf_counter()
     product_rows = get_category_product_rows_cached(uid, user_id, lang=lang)
+    rows_elapsed_seconds = time.perf_counter() - rows_started_at
     keyboard = []
     for item in product_rows:
         keyboard.append([InlineKeyboardButton(item['button_text'], callback_data=f"gmsp {item['nowuid']}:{item['stock']}")])
@@ -8816,7 +8907,22 @@ def catejflsp(update: Update, context: CallbackContext):
 
     keyboard.append([InlineKeyboardButton(get_ui_text('main_menu', viewer_user_id=user_id), callback_data='backzcd'),
                      InlineKeyboardButton(get_ui_text('back', viewer_user_id=user_id), callback_data='backzcd')])
+    edit_started_at = time.perf_counter()
     query.edit_message_text(fstext, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    edit_elapsed_seconds = time.perf_counter() - edit_started_at
+    total_elapsed_seconds = time.perf_counter() - handler_started_at
+    if (
+        total_elapsed_seconds >= STOREFRONT_SLOW_LOG_THRESHOLD_SECONDS
+        or rows_elapsed_seconds >= STOREFRONT_SLOW_LOG_THRESHOLD_SECONDS
+        or edit_elapsed_seconds >= STOREFRONT_SLOW_LOG_THRESHOLD_SECONDS
+    ):
+        logging.warning(
+            'Slow storefront handler=catejflsp total_ms=%s rows_ms=%s edit_ms=%s %s',
+            int(total_elapsed_seconds * 1000),
+            int(rows_elapsed_seconds * 1000),
+            int(edit_elapsed_seconds * 1000),
+            format_perf_fields(user_id=user_id, uid=uid, lang=lang, product_count=len(product_rows), cache_hit=had_cached_rows),
+        )
     return
 
     product_rows = []
@@ -9092,6 +9198,7 @@ def build_product_purchase_deep_link(bot_username, nowuid):
 
 def gmsp(update: Update, context: CallbackContext):
     query = update.callback_query
+    handler_started_at = time.perf_counter()
 
     data = query.data.replace('gmsp ', '')
     nowuid = data.split(':')[0]
@@ -9099,14 +9206,36 @@ def gmsp(update: Update, context: CallbackContext):
 
     bot_id = context.bot.id
     user_id = query.from_user.id
+    lang = get_user_lang(user_id)
     query.answer()
 
+    view_cache_key = build_product_view_cache_key(nowuid, lang)
+    had_cached_view = get_cached_storefront_value(_product_view_cache, view_cache_key, PRODUCT_VIEW_CACHE_TTL_SECONDS) is not None
+    cache_lookup_started_at = time.perf_counter()
     view_state = get_cached_product_view_state(nowuid, user_id)
+    cache_lookup_elapsed_seconds = time.perf_counter() - cache_lookup_started_at
     if view_state:
+        edit_started_at = time.perf_counter()
         query.edit_message_text(view_state['text'], parse_mode='HTML', reply_markup=InlineKeyboardMarkup(view_state['keyboard']))
+        edit_elapsed_seconds = time.perf_counter() - edit_started_at
+        total_elapsed_seconds = time.perf_counter() - handler_started_at
+        if (
+            total_elapsed_seconds >= STOREFRONT_SLOW_LOG_THRESHOLD_SECONDS
+            or cache_lookup_elapsed_seconds >= STOREFRONT_SLOW_LOG_THRESHOLD_SECONDS
+            or edit_elapsed_seconds >= STOREFRONT_SLOW_LOG_THRESHOLD_SECONDS
+        ):
+            logging.warning(
+                'Slow storefront handler=gmsp total_ms=%s cache_ms=%s edit_ms=%s %s',
+                int(total_elapsed_seconds * 1000),
+                int(cache_lookup_elapsed_seconds * 1000),
+                int(edit_elapsed_seconds * 1000),
+                format_perf_fields(user_id=user_id, nowuid=nowuid, lang=lang, cache_hit=had_cached_view, path='view_cache'),
+            )
         return
 
+    payload_started_at = time.perf_counter()
     payload = get_product_purchase_payload_cached(nowuid)
+    payload_elapsed_seconds = time.perf_counter() - payload_started_at
     if not payload:
         try:
             query.edit_message_text(get_ui_text('product_not_found', viewer_user_id=user_id))
@@ -9128,7 +9257,24 @@ def gmsp(update: Update, context: CallbackContext):
     fstext = build_product_purchase_text(projectname, money, hsl, user_id=user_id)
 
     keyboard = build_product_purchase_keyboard(nowuid, uid, user_id, hsl)
+    edit_started_at = time.perf_counter()
     query.edit_message_text(fstext, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
+    edit_elapsed_seconds = time.perf_counter() - edit_started_at
+    total_elapsed_seconds = time.perf_counter() - handler_started_at
+    if (
+        total_elapsed_seconds >= STOREFRONT_SLOW_LOG_THRESHOLD_SECONDS
+        or cache_lookup_elapsed_seconds >= STOREFRONT_SLOW_LOG_THRESHOLD_SECONDS
+        or payload_elapsed_seconds >= STOREFRONT_SLOW_LOG_THRESHOLD_SECONDS
+        or edit_elapsed_seconds >= STOREFRONT_SLOW_LOG_THRESHOLD_SECONDS
+    ):
+        logging.warning(
+            'Slow storefront handler=gmsp total_ms=%s cache_ms=%s payload_ms=%s edit_ms=%s %s',
+            int(total_elapsed_seconds * 1000),
+            int(cache_lookup_elapsed_seconds * 1000),
+            int(payload_elapsed_seconds * 1000),
+            int(edit_elapsed_seconds * 1000),
+            format_perf_fields(user_id=user_id, nowuid=nowuid, lang=lang, cache_hit=had_cached_view, path='payload_fallback'),
+        )
 
 
 def restocknotice(update: Update, context: CallbackContext):
@@ -10026,6 +10172,7 @@ def get_category_child_products(uid):
         return [dict(item) for item in cached]
 
     rows = []
+    query_started_at = time.perf_counter()
     for item in ejfl.find({'uid': uid}, {'nowuid': 1, 'projectname': 1, 'row': 1, 'money': 1}, sort=[('row', 1)]):
         rows.append({
             'nowuid': str(item.get('nowuid') or ''),
@@ -10033,6 +10180,7 @@ def get_category_child_products(uid):
             'row': int(item.get('row', 1) or 1),
             'money': item.get('money', 0),
         })
+    maybe_log_slow_event('get_category_child_products', query_started_at, uid=uid, row_count=len(rows))
     set_cached_storefront_value(_category_children_cache, uid, rows)
     return [dict(item) for item in rows]
 
@@ -10062,7 +10210,14 @@ def get_batch_stock_cached(nowuid_list):
                 missing.append(nowuid)
 
     if missing:
+        fetch_started_at = time.perf_counter()
         fetched = get_batch_stock(missing)
+        maybe_log_slow_event(
+            'get_batch_stock',
+            fetch_started_at,
+            nowuid_count=len(missing),
+            cache_hit_count=len(stock_map),
+        )
         with _storefront_cache_lock:
             for nowuid in missing:
                 count = int(fetched.get(nowuid, 0) or 0)
@@ -10117,8 +10272,10 @@ def get_product_payload_base(nowuid):
     if cached is not None:
         return dict(cached)
 
+    payload_started_at = time.perf_counter()
     ejfl_list = ejfl.find_one({'nowuid': nowuid}, {'uid': 1, 'projectname': 1, 'money': 1}) or {}
     if not ejfl_list:
+        maybe_log_slow_event('get_product_payload_base', payload_started_at, nowuid=nowuid, found=False)
         return None
 
     uid = ejfl_list.get('uid')
@@ -10134,6 +10291,7 @@ def get_product_payload_base(nowuid):
         'money': ejfl_list.get('money', 0),
         'category_name': category_name,
     }
+    maybe_log_slow_event('get_product_payload_base', payload_started_at, nowuid=nowuid, found=True, uid=uid)
     set_cached_storefront_value(_product_payload_cache, nowuid, payload)
     return dict(payload)
 
@@ -10188,6 +10346,7 @@ def get_category_product_rows_cached(uid, user_id, lang=None):
         return [dict(item) for item in cached]
 
     product_rows = []
+    build_started_at = time.perf_counter()
     ej_list = get_category_child_products(uid)
     stock_map = get_batch_stock_cached([str(item.get('nowuid') or '') for item in ej_list])
     for item in ej_list:
@@ -10217,6 +10376,14 @@ def get_category_product_rows_cached(uid, user_id, lang=None):
         })
 
     product_rows.sort(key=lambda item: (-int(item['stock']), int(item['row']), str(item['projectname'])))
+    maybe_log_slow_event(
+        'get_category_product_rows_cached',
+        build_started_at,
+        uid=uid,
+        lang=lang,
+        source_count=len(ej_list),
+        product_count=len(product_rows),
+    )
     set_cached_storefront_value(_category_product_rows_cache, cache_key, product_rows)
     return [dict(item) for item in product_rows]
 
