@@ -7238,6 +7238,8 @@ def setfenleikeyboard(update: Update, context: CallbackContext):
 按以下格式设置商品列表页底部跳转广告，同一行用 | 隔开
 按钮名称&https://t.me/... | 按钮名称&https://t.me/...
 按钮名称&https://t.me/... | 按钮名称&https://t.me/... | 按钮名称&https://t.me/...
+
+支持直接发送 Telegram 会员自定义 emoji，系统会自动保留。
     '''
     if key_text:
         context.bot.send_message(chat_id=user_id, text=key_text)
@@ -12878,8 +12880,9 @@ def textkeyboard(update: Update, context: CallbackContext):
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                     send_goods_manage_page(context, user_id)
                 elif sign == 'setfenleikeyboard':
-                    text = text.replace('｜', '|').replace(' ', '')
-                    keyboard = parse_urls(text)
+                    save_text = (stored_text or raw_text or text or '').replace('｜', '|').strip()
+                    save_text = '\n'.join(line.strip() for line in save_text.splitlines() if line.strip())
+                    keyboard = parse_urls(save_text)
                     dumped = pickle.dumps(keyboard)
                     try:
                         message_id = context.bot.send_message(
@@ -12889,7 +12892,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                         )
                         shangtext.update_one(
                             {'projectname': '商品管理配置'},
-                            {"$set": {'keyboard': dumped, 'text': text}},
+                            {"$set": {'keyboard': dumped, 'text': save_text}},
                             upsert=True
                         )
                         fenlei.update_many({}, {'$unset': {'keyboard': '', 'key_text': ''}})
