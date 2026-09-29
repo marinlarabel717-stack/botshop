@@ -7117,11 +7117,32 @@ def flxxi(update: Update, context: CallbackContext):
                      InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}新增二级分类', callback_data=f'newejfl {uid}')])
     keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}调整二级分类排序', callback_data=f'paixuejfl {uid}'),
                      InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除二级分类', callback_data=f'delejfl {uid}')])
+    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}设置跳转广告', callback_data=f'setfenleikeyboard {uid}')])
     keyboard.append([InlineKeyboardButton('⬅️返回商品管理', callback_data='spgli')])
     fstext = f'''
 分类: {fl_pro}
     '''
     query.edit_message_text(text=fstext, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+def setfenleikeyboard(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
+    uid = query.data.replace('setfenleikeyboard ', '')
+    category_doc = fenlei.find_one({'uid': uid}) or {}
+    key_text = str(category_doc.get('key_text') or '').strip()
+    text = '''
+按以下格式设置一级分类页底部跳转广告，同一行用 | 隔开
+按钮名称&https://t.me/... | 按钮名称&https://t.me/...
+按钮名称&https://t.me/... | 按钮名称&https://t.me/... | 按钮名称&https://t.me/...
+    '''
+    if key_text:
+        context.bot.send_message(chat_id=user_id, text=key_text)
+    user.update_one({'user_id': user_id}, {"$set": {"sign": f'setfenleikeyboard {uid}'}})
+    keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')]]
+    keyboard.append([InlineKeyboardButton('⬅️返回分类详情', callback_data=f'flxxi {uid}')])
+    query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def fejxxi(update: Update, context: CallbackContext):
@@ -8900,10 +8921,13 @@ def catejflsp(update: Update, context: CallbackContext):
     keyboard = []
     for item in product_rows:
         keyboard.append([InlineKeyboardButton(item['button_text'], callback_data=f"gmsp {item['nowuid']}:{item['stock']}")])
+    jump_ad_keyboard = get_category_jump_ad_keyboard(uid)
 
     fstext = get_ui_text('category_list_text', viewer_user_id=user_id)
     if not keyboard:
         fstext = get_ui_text('category_empty_text', viewer_user_id=user_id)
+    if jump_ad_keyboard:
+        keyboard.extend(jump_ad_keyboard)
 
     keyboard.append([InlineKeyboardButton(get_ui_text('main_menu', viewer_user_id=user_id), callback_data='backzcd'),
                      InlineKeyboardButton(get_ui_text('back', viewer_user_id=user_id), callback_data='backzcd')])
@@ -10161,6 +10185,14 @@ def build_category_catalog_keyboard(user_id):
     built_keyboard = build_category_catalog_keyboard_lang(lang)
     set_cached_storefront_value(_category_catalog_cache, lang, built_keyboard)
     return clone_inline_keyboard_rows(built_keyboard)
+
+
+def get_category_jump_ad_keyboard(uid):
+    uid = str(uid or '').strip()
+    if not uid:
+        return []
+    category_doc = fenlei.find_one({'uid': uid}, {'keyboard': 1, 'key_text': 1}) or {}
+    return load_saved_inline_keyboard(category_doc.get('keyboard'), category_doc.get('key_text'))
 
 
 def get_category_child_products(uid):
@@ -12732,6 +12764,47 @@ def textkeyboard(update: Update, context: CallbackContext):
                                      InlineKeyboardButton('删除一行', callback_data='delfl')])
                     context.bot.send_message(chat_id=user_id, text='商品管理',
                                              reply_markup=InlineKeyboardMarkup(keyboard))
+                elif 'setfenleikeyboard' in sign:
+                    uid = sign.replace('setfenleikeyboard ', '')
+                    text = text.replace('ï½œ', '|').replace(' ', '')
+                    keyboard = parse_urls(text)
+                    dumped = pickle.dumps(keyboard)
+                    try:
+                        message_id = context.bot.send_message(
+                            chat_id=user_id,
+                            text='ä¸€çº§åˆ†ç±»è·³è½¬å¹¿å‘Šè®¾ç½®',
+                            reply_markup=InlineKeyboardMarkup(keyboard)
+                        )
+                        fenlei.update_one({'uid': uid}, {"$set": {'keyboard': dumped, 'key_text': text}}, upsert=False)
+                        timer11 = Timer(3, del_message, args=[message_id])
+                        timer11.start()
+                    except:
+                        keyboard = [[InlineKeyboardButton('æ ¼å¼é…ç½®é”™è¯¯,è¯·æ£€æŸ¥', callback_data='ddd')]]
+                        message_id = context.bot.send_message(chat_id=user_id, text='æ ¼å¼é…ç½®é”™è¯¯,è¯·æ£€æŸ¥',
+                                                              reply_markup=InlineKeyboardMarkup(keyboard))
+                        timer11 = Timer(3, del_message, args=[message_id])
+                        timer11.start()
+                    user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+                    fl_pro = fenlei.find_one({'uid': uid}, {'projectname': 1}) or {}
+                    category_name = fl_pro.get('projectname', '')
+                    keyboard = [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
+                                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
+                                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
+                                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []]
+                    ej_list = ejfl.find({'uid': uid})
+                    for i in ej_list:
+                        nowuid = i['nowuid']
+                        projectname = i['projectname']
+                        row = i['row']
+                        keyboard[row - 1].append(InlineKeyboardButton(f'{projectname}', callback_data=f'fejxxi {nowuid}'))
+                    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}ä¿®æ”¹åˆ†ç±»å', callback_data=f'upspname {uid}'),
+                                     InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}æ–°å¢žäºŒçº§åˆ†ç±»', callback_data=f'newejfl {uid}')])
+                    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}è°ƒæ•´äºŒçº§åˆ†ç±»æŽ’åº', callback_data=f'paixuejfl {uid}'),
+                                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}åˆ é™¤äºŒçº§åˆ†ç±»', callback_data=f'delejfl {uid}')])
+                    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}è®¾ç½®è·³è½¬å¹¿å‘Š', callback_data=f'setfenleikeyboard {uid}')])
+                    keyboard.append([InlineKeyboardButton('⬅️返回商品管理', callback_data='spgli')])
+                    context.bot.send_message(chat_id=user_id, text=f'åˆ†ç±»: {category_name}',
+                                             reply_markup=InlineKeyboardMarkup(keyboard))
                 elif sign == 'settrc20':
                     if not is_valid_trc20_address(text):
                         keyboard = [[InlineKeyboardButton('❌取消输入', callback_data=f'close {user_id}')]]
@@ -14175,7 +14248,7 @@ def main():
         ('qrdelliekey ', qrdelliekey), ('keyxq ', keyxq), ('setkeyname ', setkeyname),
         ('settuwenset ', settuwenset), ('setkeyboard ', setkeyboard), ('cattuwenset ', cattuwenset),
         ('paixuyidong ', paixuyidong), ('close ', close), ('yuecz ', yuecz), ('okyuecz ', okyuecz), ('settrc20', settrc20),
-        ('spgli', spgli), ('newfl', newfl), ('flxxi ', flxxi), ('upspname ', upspname),
+        ('spgli', spgli), ('newfl', newfl), ('flxxi ', flxxi), ('setfenleikeyboard ', setfenleikeyboard), ('upspname ', upspname),
         ('newejfl ', newejfl), ('fejxxi ', fejxxi), ('upejflname ', upejflname),
         ('catejflsp ', catejflsp), ('backzcd', backzcd), ('paixufl', paixufl), ('flpxyd ', flpxyd),
         ('delfl', delfl), ('qrscflrow ', qrscflrow), ('paixuejfl ', paixuejfl), ('ejfpaixu ', ejfpaixu),

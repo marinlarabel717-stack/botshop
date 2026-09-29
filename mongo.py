@@ -862,7 +862,9 @@ def fenleibiao(uid, projectname,row):
     fenlei.insert_one({
         'uid': uid,
         'projectname': projectname,
-        'row': row
+        'row': row,
+        'key_text': '',
+        'keyboard': b'\x80\x03]q\x00.'
     })
 
 def user_logging(uid, projectname , user_id, today_money,today_time):
