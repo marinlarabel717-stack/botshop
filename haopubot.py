@@ -6975,11 +6975,13 @@ def spgli(update: Update, context: CallbackContext):
     query.answer()
     bot_id = context.bot.id
     sp_list = list(fenlei.find({}))
-    keyboard = [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []]
-
+    keyboard = build_goods_manage_keyboard_safe(user_id, sp_list=sp_list, include_back_buttons=True, include_ad_shortcuts=True)
+    text = f'''
+å•†å“ç®¡ç†
+    '''
+    text = '\u5546\u54c1\u7ba1\u7406'
+    query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    return
     for i in sp_list:
         uid = i['uid']
         projectname = i['projectname']
@@ -6997,6 +6999,99 @@ def spgli(update: Update, context: CallbackContext):
     '''
     query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
+
+
+def build_goods_manage_keyboard(user_id, sp_list=None, include_back_buttons=False, include_ad_shortcuts=False):
+    if sp_list is None:
+        sp_list = list(fenlei.find({}, sort=[('row', 1)]))
+    else:
+        sp_list = sorted(sp_list, key=lambda item: (int(item.get('row', 1)), str(item.get('uid', ''))))
+    grouped_rows = {}
+    for item in sp_list:
+        row = max(1, int(item.get('row', 1)))
+        grouped_rows.setdefault(row, []).append(item)
+
+    keyboard = []
+    for row in sorted(grouped_rows):
+        current_row = grouped_rows[row]
+        keyboard.append([
+            InlineKeyboardButton(f"{item['projectname']}", callback_data=f"flxxi {item['uid']}")
+            for item in current_row
+        ])
+        if include_ad_shortcuts:
+            keyboard.append([
+                InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}è·³è½¬å¹¿å‘Š', callback_data=f"setfenleikeyboard {item['uid']}")
+                for item in current_row
+            ])
+
+    if sp_list == []:
+        keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}æ–°å»ºä¸€è¡Œ', callback_data='newfl')])
+    else:
+        keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}æ–°å»ºä¸€è¡Œ', callback_data='newfl'),
+                         InlineKeyboardButton(f'{MOOD_EMOJI_FAST}è°ƒæ•´è¡ŒæŽ’åº', callback_data='paixufl'),
+                         InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}åˆ é™¤ä¸€è¡Œ', callback_data='delfl')])
+    if include_back_buttons:
+        keyboard.append([InlineKeyboardButton('â¬…ï¸è¿”å›žä¸»ç•Œé¢', callback_data='backstart'),
+                         InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}å…³é—­', callback_data=f'close {user_id}')])
+    return keyboard
+
+
+def build_goods_manage_keyboard_safe(user_id, sp_list=None, include_back_buttons=False, include_ad_shortcuts=False):
+    if sp_list is None:
+        sp_list = list(fenlei.find({}, sort=[('row', 1)]))
+    else:
+        sp_list = sorted(sp_list, key=lambda item: (int(item.get('row', 1)), str(item.get('uid', ''))))
+    grouped_rows = {}
+    for item in sp_list:
+        row = max(1, int(item.get('row', 1)))
+        grouped_rows.setdefault(row, []).append(item)
+
+    keyboard = []
+    for row in sorted(grouped_rows):
+        current_row = grouped_rows[row]
+        keyboard.append([
+            InlineKeyboardButton(f"{item['projectname']}", callback_data=f"flxxi {item['uid']}")
+            for item in current_row
+        ])
+        if include_ad_shortcuts:
+            keyboard.append([
+                InlineKeyboardButton(
+                    f'{ADMIN_EMOJI_MENU}\u8bbe\u7f6e\u8df3\u8f6c\u5e7f\u544a',
+                    callback_data=f"setfenleikeyboard {item['uid']}"
+                )
+                for item in current_row
+            ])
+
+    if sp_list == []:
+        keyboard.append([
+            InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}\u65b0\u5efa\u4e00\u884c', callback_data='newfl')
+        ])
+    else:
+        keyboard.append([
+            InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}\u65b0\u5efa\u4e00\u884c', callback_data='newfl'),
+            InlineKeyboardButton(f'{MOOD_EMOJI_FAST}\u8c03\u6574\u884c\u6392\u5e8f', callback_data='paixufl'),
+            InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}\u5220\u9664\u4e00\u884c', callback_data='delfl')
+        ])
+    if include_back_buttons:
+        keyboard.append([
+            InlineKeyboardButton('\u2b05\ufe0f\u8fd4\u56de\u4e3b\u754c\u9762', callback_data='backstart'),
+            InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}\u5173\u95ed', callback_data=f'close {user_id}')
+        ])
+    return keyboard
+
+
+def send_goods_manage_page(context: CallbackContext, user_id, sp_list=None):
+    keyboard = build_goods_manage_keyboard_safe(
+        user_id,
+        sp_list=sp_list,
+        include_back_buttons=True,
+        include_ad_shortcuts=True
+    )
+    context.bot.send_message(
+        chat_id=user_id,
+        text='\u5546\u54c1\u7ba1\u7406',
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 
 def generate_24bit_uid():
@@ -7092,7 +7187,7 @@ def newfl(update: Update, context: CallbackContext):
     keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}新建一行', callback_data='newfl'),
                      InlineKeyboardButton(f'{MOOD_EMOJI_FAST}调整行排序', callback_data='paixufl'),
                      InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除一行', callback_data='delfl')])
-    context.bot.send_message(chat_id=user_id, text='商品管理', reply_markup=InlineKeyboardMarkup(keyboard))
+    send_goods_manage_page(context, user_id)
 
 
 def flxxi(update: Update, context: CallbackContext):
@@ -7117,7 +7212,6 @@ def flxxi(update: Update, context: CallbackContext):
                      InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}新增二级分类', callback_data=f'newejfl {uid}')])
     keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}调整二级分类排序', callback_data=f'paixuejfl {uid}'),
                      InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除二级分类', callback_data=f'delejfl {uid}')])
-    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}设置跳转广告', callback_data=f'setfenleikeyboard {uid}')])
     keyboard.append([InlineKeyboardButton('⬅️返回商品管理', callback_data='spgli')])
     fstext = f'''
 分类: {fl_pro}
@@ -7141,7 +7235,7 @@ def setfenleikeyboard(update: Update, context: CallbackContext):
         context.bot.send_message(chat_id=user_id, text=key_text)
     user.update_one({'user_id': user_id}, {"$set": {"sign": f'setfenleikeyboard {uid}'}})
     keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')]]
-    keyboard.append([InlineKeyboardButton('⬅️返回分类详情', callback_data=f'flxxi {uid}')])
+    keyboard.append([InlineKeyboardButton('⬅️返回商品管理', callback_data='spgli')])
     query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -9522,7 +9616,7 @@ def flpxyd(update: Update, context: CallbackContext):
     keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}新建一行', callback_data='newfl'),
                      InlineKeyboardButton(f'{MOOD_EMOJI_FAST}调整行排序', callback_data='paixufl'),
                      InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除一行', callback_data='delfl')])
-    context.bot.send_message(chat_id=user_id, text='商品管理', reply_markup=InlineKeyboardMarkup(keyboard))
+    send_goods_manage_page(context, user_id)
 
 
 def send_category_detail_page(context: CallbackContext, user_id, uid):
@@ -9690,7 +9784,7 @@ def qrscflrow(update: Update, context: CallbackContext):
     keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}新建一行', callback_data='newfl'),
                      InlineKeyboardButton(f'{MOOD_EMOJI_FAST}调整行排序', callback_data='paixufl'),
                      InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除一行', callback_data='delfl')])
-    context.bot.send_message(chat_id=user_id, text='商品管理', reply_markup=InlineKeyboardMarkup(keyboard))
+    send_goods_manage_page(context, user_id)
 
 
 def backzcd(update: Update, context: CallbackContext):
@@ -12747,23 +12841,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                     uid = sign.replace('upspname ', '')
                     fenlei.update_one({"uid": uid}, {"$set": {"projectname": stored_text}})
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
-
-                    keylist = list(fenlei.find({}, sort=[('row', 1)]))
-                    keyboard = [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                                [], [], [], [], [], [], [], [], []]
-                    for i in keylist:
-                        uid = i['uid']
-                        projectname = i['projectname']
-                        row = i['row']
-                        keyboard[row - 1].append(InlineKeyboardButton(f'{projectname}', callback_data=f'flxxi {uid}'))
-                    keyboard.append([InlineKeyboardButton("新建一行", callback_data='newfl'),
-                                     InlineKeyboardButton('调整行排序', callback_data='paixufl'),
-                                     InlineKeyboardButton('删除一行', callback_data='delfl')])
-                    context.bot.send_message(chat_id=user_id, text='商品管理',
-                                             reply_markup=InlineKeyboardMarkup(keyboard))
+                    send_goods_manage_page(context, user_id)
                 elif 'setfenleikeyboard' in sign:
                     uid = sign.replace('setfenleikeyboard ', '')
                     text = text.replace('｜', '|').replace(' ', '')
@@ -12788,26 +12866,8 @@ def textkeyboard(update: Update, context: CallbackContext):
                         timer11 = Timer(3, del_message, args=[message_id])
                         timer11.start()
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
-                    fl_pro = fenlei.find_one({'uid': uid}, {'projectname': 1}) or {}
-                    category_name = fl_pro.get('projectname', '')
-                    keyboard = [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-                                [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []]
-                    ej_list = ejfl.find({'uid': uid})
-                    for i in ej_list:
-                        nowuid = i['nowuid']
-                        projectname = i['projectname']
-                        row = i['row']
-                        keyboard[row - 1].append(InlineKeyboardButton(f'{projectname}', callback_data=f'fejxxi {nowuid}'))
-                    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}修改分类名', callback_data=f'upspname {uid}'),
-                                     InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}新增二级分类', callback_data=f'newejfl {uid}')])
-                    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}调整二级分类排序', callback_data=f'paixuejfl {uid}'),
-                                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除二级分类', callback_data=f'delejfl {uid}')])
-                    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}设置跳转广告', callback_data=f'setfenleikeyboard {uid}')])
-                    keyboard.append([InlineKeyboardButton('⬅️返回商品管理', callback_data='spgli')])
-                    context.bot.send_message(chat_id=user_id, text=f'分类: {category_name}',
-                                             reply_markup=InlineKeyboardMarkup(keyboard))
+                    send_goods_manage_page(context, user_id)
+                    return
                 elif sign == 'settrc20':
                     if not is_valid_trc20_address(text):
                         keyboard = [[InlineKeyboardButton('❌取消输入', callback_data=f'close {user_id}')]]
