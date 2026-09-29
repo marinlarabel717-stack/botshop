@@ -7055,12 +7055,21 @@ def build_goods_manage_keyboard_safe(user_id, sp_list=None, include_back_buttons
         ])
 
     if include_ad_shortcuts:
-        keyboard.append([
+        config_doc = get_goods_manage_jump_ad_config()
+        ad_row = [
             InlineKeyboardButton(
                 f'{ADMIN_EMOJI_MENU}\u5546\u54c1\u7ba1\u7406\u914d\u7f6e',
                 callback_data='setfenleikeyboard'
             )
-        ])
+        ]
+        if config_doc.get('key_text') or config_doc.get('keyboard'):
+            ad_row.append(
+                InlineKeyboardButton(
+                    f'{ADMIN_EMOJI_CLOSE}\u5220\u9664\u914d\u7f6e',
+                    callback_data='clearfenleikeyboard'
+                )
+            )
+        keyboard.append(ad_row)
 
     if sp_list == []:
         keyboard.append([
@@ -9014,13 +9023,9 @@ def catejflsp(update: Update, context: CallbackContext):
     keyboard = []
     for item in product_rows:
         keyboard.append([InlineKeyboardButton(item['button_text'], callback_data=f"gmsp {item['nowuid']}:{item['stock']}")])
-    jump_ad_keyboard = get_category_jump_ad_keyboard(uid)
-
     fstext = get_ui_text('category_list_text', viewer_user_id=user_id)
     if not keyboard:
         fstext = get_ui_text('category_empty_text', viewer_user_id=user_id)
-    if jump_ad_keyboard:
-        keyboard.extend(jump_ad_keyboard)
 
     keyboard.append([InlineKeyboardButton(get_ui_text('main_menu', viewer_user_id=user_id), callback_data='backzcd'),
                      InlineKeyboardButton(get_ui_text('back', viewer_user_id=user_id), callback_data='backzcd')])
@@ -10119,7 +10124,12 @@ def build_category_catalog_keyboard_lang(lang):
         projectname = localize_catalog_name(item.get('projectname'), 0, lang=lang)
         button_text = shorten_catalog_button_label(projectname, stock_count=hsl, lang=lang)
         keyboard[row].append(InlineKeyboardButton(button_text, callback_data=f'catejflsp {uid}:{hsl}'))
-    return [row for row in keyboard if row]
+    keyboard = [row for row in keyboard if row]
+    jump_ad_config = get_goods_manage_jump_ad_config()
+    jump_ad_keyboard = load_saved_inline_keyboard(jump_ad_config.get('keyboard'), jump_ad_config.get('key_text'))
+    if jump_ad_keyboard:
+        keyboard.extend(jump_ad_keyboard)
+    return keyboard
 
 
 def build_user_home_reply_keyboard(user_id):
@@ -10301,6 +10311,17 @@ def get_goods_manage_jump_ad_config():
 def get_category_jump_ad_keyboard(uid):
     config_doc = get_goods_manage_jump_ad_config()
     return load_saved_inline_keyboard(config_doc.get('keyboard'), config_doc.get('key_text'))
+
+
+def clearfenleikeyboard(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer('已删除')
+    shangtext.delete_one({'projectname': '商品管理配置'})
+    fenlei.update_many({}, {'$unset': {'keyboard': '', 'key_text': ''}})
+    invalidate_storefront_runtime_cache(catalog=True)
+    user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
+    send_goods_manage_page(context, user_id)
 
 
 def get_category_child_products(uid):
@@ -12872,6 +12893,7 @@ def textkeyboard(update: Update, context: CallbackContext):
                             upsert=True
                         )
                         fenlei.update_many({}, {'$unset': {'keyboard': '', 'key_text': ''}})
+                        invalidate_storefront_runtime_cache(catalog=True)
                         timer11 = Timer(3, del_message, args=[message_id])
                         timer11.start()
                     except:
@@ -14329,7 +14351,7 @@ def main():
         ('qrdelliekey ', qrdelliekey), ('keyxq ', keyxq), ('setkeyname ', setkeyname),
         ('settuwenset ', settuwenset), ('setkeyboard ', setkeyboard), ('cattuwenset ', cattuwenset),
         ('paixuyidong ', paixuyidong), ('close ', close), ('yuecz ', yuecz), ('okyuecz ', okyuecz), ('settrc20', settrc20),
-        ('spgli', spgli), ('newfl', newfl), ('flxxi ', flxxi), ('setfenleikeyboard', setfenleikeyboard), ('upspname ', upspname),
+        ('spgli', spgli), ('newfl', newfl), ('flxxi ', flxxi), ('setfenleikeyboard', setfenleikeyboard), ('clearfenleikeyboard', clearfenleikeyboard), ('upspname ', upspname),
         ('newejfl ', newejfl), ('fejxxi ', fejxxi), ('upejflname ', upejflname),
         ('catejflsp ', catejflsp), ('backzcd', backzcd), ('paixufl', paixufl), ('flpxyd ', flpxyd),
         ('delfl', delfl), ('qrscflrow ', qrscflrow), ('paixuejfl ', paixuejfl), ('ejfpaixu ', ejfpaixu),
