@@ -1313,6 +1313,7 @@ def set_user_lang(user_id, lang):
     user.update_one({'user_id': user_id}, {'$set': {'lang': lang}})
     _user_lang_cache[user_id] = lang
     _localized_button_cache.clear()
+    invalidate_storefront_runtime_cache(home=True, catalog=True)
     return lang
 
 
@@ -9987,6 +9988,45 @@ def clone_inline_keyboard_rows(rows):
     return cloned_rows
 
 
+def localize_inline_keyboard_rows(rows, user_id=None, lang=None):
+    lang = normalize_lang_code(lang or (get_user_lang(user_id) if user_id is not None else DEFAULT_LANG))
+    if lang == 'zh':
+        return clone_inline_keyboard_rows(rows)
+
+    localized_rows = []
+    fallback_user_id = user_id if user_id is not None else 0
+    for row in rows or []:
+        localized_row = []
+        for button in row or []:
+            source_text = getattr(button, 'text', '') or ''
+            localized_text = localize_button_label(source_text, user_id=fallback_user_id, lang=lang) or source_text
+            if contains_cjk(localized_text):
+                translated_text = localize_dynamic_text(source_text, user_id=fallback_user_id, lang=lang)
+                if translated_text and not contains_cjk(translated_text):
+                    localized_text = translated_text
+
+            localized_row.append(
+                InlineKeyboardButton(
+                    text=localized_text,
+                    url=getattr(button, 'url', None),
+                    callback_data=getattr(button, 'callback_data', None),
+                    callback_game=getattr(button, 'callback_game', None),
+                    copy_text=getattr(button, 'copy_text', None),
+                    login_url=getattr(button, 'login_url', None),
+                    pay=getattr(button, 'pay', None),
+                    style=getattr(button, 'style', None),
+                    icon_custom_emoji_id=getattr(button, 'icon_custom_emoji_id', None),
+                    switch_inline_query_chosen_chat=getattr(button, 'switch_inline_query_chosen_chat', None),
+                    switch_inline_query_current_chat=getattr(button, 'switch_inline_query_current_chat', None),
+                    switch_inline_query=getattr(button, 'switch_inline_query', None),
+                    web_app=getattr(button, 'web_app', None),
+                    api_kwargs=dict(getattr(button, 'api_kwargs', {}) or {}),
+                )
+            )
+        localized_rows.append(localized_row)
+    return localized_rows
+
+
 def clone_reply_keyboard_rows(rows):
     cloned_rows = []
     for row in rows or []:
@@ -10043,6 +10083,7 @@ def invalidate_storefront_runtime_cache(*, home=False, catalog=False, admin=Fals
 def warm_storefront_runtime_cache():
     try:
         invalidate_storefront_runtime_cache(home=True, catalog=True, admin=True)
+        warm_storefront_translation_cache(lang='en', wait=True)
         for lang in ('zh', 'en'):
             set_cached_storefront_value(_home_keyboard_cache, lang, build_user_home_reply_keyboard_lang(lang))
             set_cached_storefront_value(_category_catalog_cache, lang, build_category_catalog_keyboard_lang(lang))
@@ -10130,7 +10171,7 @@ def build_category_catalog_keyboard_lang(lang):
     jump_ad_config = get_goods_manage_jump_ad_config()
     jump_ad_keyboard = load_saved_inline_keyboard(jump_ad_config.get('keyboard'), jump_ad_config.get('key_text'))
     if jump_ad_keyboard:
-        keyboard.extend(jump_ad_keyboard)
+        keyboard.extend(localize_inline_keyboard_rows(jump_ad_keyboard, user_id=0, lang=lang))
     return keyboard
 
 
