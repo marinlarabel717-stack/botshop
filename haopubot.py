@@ -12766,22 +12766,25 @@ def textkeyboard(update: Update, context: CallbackContext):
                                              reply_markup=InlineKeyboardMarkup(keyboard))
                 elif 'setfenleikeyboard' in sign:
                     uid = sign.replace('setfenleikeyboard ', '')
-                    text = text.replace('ï½œ', '|').replace(' ', '')
+                    text = text.replace('｜', '|').replace(' ', '')
                     keyboard = parse_urls(text)
                     dumped = pickle.dumps(keyboard)
                     try:
                         message_id = context.bot.send_message(
                             chat_id=user_id,
-                            text='ä¸€çº§åˆ†ç±»è·³è½¬å¹¿å‘Šè®¾ç½®',
+                            text='一级分类跳转广告设置',
                             reply_markup=InlineKeyboardMarkup(keyboard)
                         )
                         fenlei.update_one({'uid': uid}, {"$set": {'keyboard': dumped, 'key_text': text}}, upsert=False)
                         timer11 = Timer(3, del_message, args=[message_id])
                         timer11.start()
                     except:
-                        keyboard = [[InlineKeyboardButton('æ ¼å¼é…ç½®é”™è¯¯,è¯·æ£€æŸ¥', callback_data='ddd')]]
-                        message_id = context.bot.send_message(chat_id=user_id, text='æ ¼å¼é…ç½®é”™è¯¯,è¯·æ£€æŸ¥',
-                                                              reply_markup=InlineKeyboardMarkup(keyboard))
+                        keyboard = [[InlineKeyboardButton('格式配置错误,请检查', callback_data='ddd')]]
+                        message_id = context.bot.send_message(
+                            chat_id=user_id,
+                            text='格式配置错误,请检查',
+                            reply_markup=InlineKeyboardMarkup(keyboard)
+                        )
                         timer11 = Timer(3, del_message, args=[message_id])
                         timer11.start()
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
@@ -12797,13 +12800,13 @@ def textkeyboard(update: Update, context: CallbackContext):
                         projectname = i['projectname']
                         row = i['row']
                         keyboard[row - 1].append(InlineKeyboardButton(f'{projectname}', callback_data=f'fejxxi {nowuid}'))
-                    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}ä¿®æ”¹åˆ†ç±»å', callback_data=f'upspname {uid}'),
-                                     InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}æ–°å¢žäºŒçº§åˆ†ç±»', callback_data=f'newejfl {uid}')])
-                    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}è°ƒæ•´äºŒçº§åˆ†ç±»æŽ’åº', callback_data=f'paixuejfl {uid}'),
-                                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}åˆ é™¤äºŒçº§åˆ†ç±»', callback_data=f'delejfl {uid}')])
-                    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}è®¾ç½®è·³è½¬å¹¿å‘Š', callback_data=f'setfenleikeyboard {uid}')])
+                    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_WELCOME}修改分类名', callback_data=f'upspname {uid}'),
+                                     InlineKeyboardButton(f'{MOOD_EMOJI_SPARKLE}新增二级分类', callback_data=f'newejfl {uid}')])
+                    keyboard.append([InlineKeyboardButton(f'{MOOD_EMOJI_FAST}调整二级分类排序', callback_data=f'paixuejfl {uid}'),
+                                     InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}删除二级分类', callback_data=f'delejfl {uid}')])
+                    keyboard.append([InlineKeyboardButton(f'{ADMIN_EMOJI_MENU}设置跳转广告', callback_data=f'setfenleikeyboard {uid}')])
                     keyboard.append([InlineKeyboardButton('⬅️返回商品管理', callback_data='spgli')])
-                    context.bot.send_message(chat_id=user_id, text=f'åˆ†ç±»: {category_name}',
+                    context.bot.send_message(chat_id=user_id, text=f'分类: {category_name}',
                                              reply_markup=InlineKeyboardMarkup(keyboard))
                 elif sign == 'settrc20':
                     if not is_valid_trc20_address(text):
