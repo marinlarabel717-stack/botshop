@@ -7053,14 +7053,14 @@ def build_goods_manage_keyboard_safe(user_id, sp_list=None, include_back_buttons
             InlineKeyboardButton(f"{item['projectname']}", callback_data=f"flxxi {item['uid']}")
             for item in current_row
         ])
-        if include_ad_shortcuts:
-            keyboard.append([
-                InlineKeyboardButton(
-                    f'{ADMIN_EMOJI_MENU}\u8bbe\u7f6e\u8df3\u8f6c\u5e7f\u544a',
-                    callback_data=f"setfenleikeyboard {item['uid']}"
-                )
-                for item in current_row
-            ])
+
+    if include_ad_shortcuts:
+        keyboard.append([
+            InlineKeyboardButton(
+                f'{ADMIN_EMOJI_MENU}\u5546\u54c1\u7ba1\u7406\u914d\u7f6e',
+                callback_data='setfenleikeyboard'
+            )
+        ])
 
     if sp_list == []:
         keyboard.append([
@@ -7223,17 +7223,16 @@ def setfenleikeyboard(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
     query.answer()
-    uid = query.data.replace('setfenleikeyboard ', '')
-    category_doc = fenlei.find_one({'uid': uid}) or {}
-    key_text = str(category_doc.get('key_text') or '').strip()
+    config_doc = get_goods_manage_jump_ad_config()
+    key_text = config_doc['key_text']
     text = '''
-按以下格式设置一级分类页底部跳转广告，同一行用 | 隔开
+按以下格式设置商品列表页底部跳转广告，同一行用 | 隔开
 按钮名称&https://t.me/... | 按钮名称&https://t.me/...
 按钮名称&https://t.me/... | 按钮名称&https://t.me/... | 按钮名称&https://t.me/...
     '''
     if key_text:
         context.bot.send_message(chat_id=user_id, text=key_text)
-    user.update_one({'user_id': user_id}, {"$set": {"sign": f'setfenleikeyboard {uid}'}})
+    user.update_one({'user_id': user_id}, {"$set": {"sign": 'setfenleikeyboard'}})
     keyboard = [[InlineKeyboardButton(f'{ADMIN_EMOJI_CLOSE}关闭', callback_data=f'close {user_id}')]]
     keyboard.append([InlineKeyboardButton('⬅️返回商品管理', callback_data='spgli')])
     query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard))
@@ -10281,12 +10280,27 @@ def build_category_catalog_keyboard(user_id):
     return clone_inline_keyboard_rows(built_keyboard)
 
 
+def get_goods_manage_jump_ad_config():
+    config_doc = shangtext.find_one({'projectname': '商品管理配置'}, {'keyboard': 1, 'text': 1}) or {}
+    key_text = str(config_doc.get('text') or '').strip()
+    keyboard = config_doc.get('keyboard')
+    if key_text or keyboard:
+        return {'key_text': key_text, 'keyboard': keyboard}
+
+    legacy_doc = fenlei.find_one(
+        {'key_text': {'$exists': True, '$ne': ''}},
+        {'keyboard': 1, 'key_text': 1},
+        sort=[('row', 1)],
+    ) or {}
+    return {
+        'key_text': str(legacy_doc.get('key_text') or '').strip(),
+        'keyboard': legacy_doc.get('keyboard'),
+    }
+
+
 def get_category_jump_ad_keyboard(uid):
-    uid = str(uid or '').strip()
-    if not uid:
-        return []
-    category_doc = fenlei.find_one({'uid': uid}, {'keyboard': 1, 'key_text': 1}) or {}
-    return load_saved_inline_keyboard(category_doc.get('keyboard'), category_doc.get('key_text'))
+    config_doc = get_goods_manage_jump_ad_config()
+    return load_saved_inline_keyboard(config_doc.get('keyboard'), config_doc.get('key_text'))
 
 
 def get_category_child_products(uid):
@@ -12842,18 +12856,22 @@ def textkeyboard(update: Update, context: CallbackContext):
                     fenlei.update_one({"uid": uid}, {"$set": {"projectname": stored_text}})
                     user.update_one({'user_id': user_id}, {"$set": {'sign': 0}})
                     send_goods_manage_page(context, user_id)
-                elif 'setfenleikeyboard' in sign:
-                    uid = sign.replace('setfenleikeyboard ', '')
+                elif sign == 'setfenleikeyboard':
                     text = text.replace('｜', '|').replace(' ', '')
                     keyboard = parse_urls(text)
                     dumped = pickle.dumps(keyboard)
                     try:
                         message_id = context.bot.send_message(
                             chat_id=user_id,
-                            text='一级分类跳转广告设置',
+                            text='商品管理配置预览',
                             reply_markup=InlineKeyboardMarkup(keyboard)
                         )
-                        fenlei.update_one({'uid': uid}, {"$set": {'keyboard': dumped, 'key_text': text}}, upsert=False)
+                        shangtext.update_one(
+                            {'projectname': '商品管理配置'},
+                            {"$set": {'keyboard': dumped, 'text': text}},
+                            upsert=True
+                        )
+                        fenlei.update_many({}, {'$unset': {'keyboard': '', 'key_text': ''}})
                         timer11 = Timer(3, del_message, args=[message_id])
                         timer11.start()
                     except:
@@ -14311,7 +14329,7 @@ def main():
         ('qrdelliekey ', qrdelliekey), ('keyxq ', keyxq), ('setkeyname ', setkeyname),
         ('settuwenset ', settuwenset), ('setkeyboard ', setkeyboard), ('cattuwenset ', cattuwenset),
         ('paixuyidong ', paixuyidong), ('close ', close), ('yuecz ', yuecz), ('okyuecz ', okyuecz), ('settrc20', settrc20),
-        ('spgli', spgli), ('newfl', newfl), ('flxxi ', flxxi), ('setfenleikeyboard ', setfenleikeyboard), ('upspname ', upspname),
+        ('spgli', spgli), ('newfl', newfl), ('flxxi ', flxxi), ('setfenleikeyboard', setfenleikeyboard), ('upspname ', upspname),
         ('newejfl ', newejfl), ('fejxxi ', fejxxi), ('upejflname ', upejflname),
         ('catejflsp ', catejflsp), ('backzcd', backzcd), ('paixufl', paixufl), ('flpxyd ', flpxyd),
         ('delfl', delfl), ('qrscflrow ', qrscflrow), ('paixuejfl ', paixuejfl), ('ejfpaixu ', ejfpaixu),
