@@ -10126,6 +10126,16 @@ def warm_storefront_runtime_cache():
         logging.warning('Warm storefront runtime cache failed', exc_info=True)
 
 
+def start_storefront_runtime_warmup_async():
+    def worker():
+        try:
+            warm_storefront_runtime_cache()
+        except Exception:
+            logging.warning('Async storefront runtime warmup failed', exc_info=True)
+
+    threading.Thread(target=worker, daemon=True, name='storefront-runtime-warmup').start()
+
+
 def build_menu_route_index_lang(lang):
     lang = normalize_lang_code(lang)
     rows = list(get_key.find({}))
@@ -11394,7 +11404,7 @@ async def on_post_init(application):
     APP_BOT = SyncTelegramProxy(application.bot, lambda: APP_EVENT_LOOP)
     start_okpay_callback_server(APP_BOT)
     warm_storefront_translation_cache(lang='en')
-    await asyncio.to_thread(warm_storefront_runtime_cache)
+    start_storefront_runtime_warmup_async()
 
 
 def create_trc20_deposit_order(context, user_id, amount):
