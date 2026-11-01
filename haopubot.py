@@ -106,6 +106,30 @@ def startup_notice(message):
     print(f'[startup] {message}', flush=True)
 
 
+def startup_telegram_probe(bot_token):
+    try:
+        addr_rows = socket.getaddrinfo('api.telegram.org', 443, type=socket.SOCK_STREAM)
+        addr_list = []
+        for row in addr_rows:
+            host = str((row[4] or [''])[0] or '').strip()
+            if host and host not in addr_list:
+                addr_list.append(host)
+        if addr_list:
+            startup_notice(f"telegram dns: {', '.join(addr_list[:3])}")
+    except Exception as exc:
+        startup_notice(f'telegram dns failed: {type(exc).__name__}: {exc}')
+
+    probe_url = f'https://api.telegram.org/bot{bot_token}/getMe'
+    try:
+        response = requests.get(
+            probe_url,
+            timeout=(min(10.0, TELEGRAM_CONNECT_TIMEOUT), min(15.0, TELEGRAM_READ_TIMEOUT)),
+        )
+        startup_notice(f'telegram probe status={response.status_code}')
+    except Exception as exc:
+        startup_notice(f'telegram probe failed: {type(exc).__name__}: {exc}')
+
+
 REFERRAL_RATE_TIERS = (
     (Decimal('1000'), Decimal('0.05')),
     (Decimal('500'), Decimal('0.03')),
@@ -14432,6 +14456,7 @@ def main():
         f'booting botshop connect={TELEGRAM_CONNECT_TIMEOUT}s read={TELEGRAM_READ_TIMEOUT}s '
         f'write={TELEGRAM_WRITE_TIMEOUT}s pool={TELEGRAM_POOL_TIMEOUT}s retries={TELEGRAM_BOOTSTRAP_RETRIES}'
     )
+    startup_telegram_probe(bot_token)
     application = (
         ApplicationBuilder()
         .token(bot_token)
