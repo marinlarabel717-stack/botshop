@@ -35,6 +35,7 @@ from telegram import InlineKeyboardMarkup,ForceReply, InlineKeyboardButton as TG
     ChatMemberRestricted, ChatMember, ChatMemberAdministrator, KeyboardButton as TGKeyboardButton, ReplyKeyboardMarkup, \
     InlineQueryResultArticle, InputTextMessageContent,InputMediaPhoto, MessageEntity
 from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter, TimedOut
+from telegram.request import HTTPXRequest
 import time, json, pickle, re
 from threading import Timer
 from decimal import Decimal
@@ -78,6 +79,27 @@ def patch_zipfile_duplicate_name_warning():
 
 
 patch_zipfile_duplicate_name_warning()
+
+
+TELEGRAM_CONNECT_TIMEOUT = max(float(os.getenv('TELEGRAM_CONNECT_TIMEOUT', '20') or 20), 5.0)
+TELEGRAM_READ_TIMEOUT = max(float(os.getenv('TELEGRAM_READ_TIMEOUT', '60') or 60), 20.0)
+TELEGRAM_WRITE_TIMEOUT = max(float(os.getenv('TELEGRAM_WRITE_TIMEOUT', '60') or 60), 20.0)
+TELEGRAM_POOL_TIMEOUT = max(float(os.getenv('TELEGRAM_POOL_TIMEOUT', '20') or 20), 5.0)
+
+
+def build_telegram_timeout_kwargs(
+    *,
+    connect_timeout=None,
+    read_timeout=None,
+    write_timeout=None,
+    pool_timeout=None,
+):
+    return {
+        'connect_timeout': float(TELEGRAM_CONNECT_TIMEOUT if connect_timeout is None else connect_timeout),
+        'read_timeout': float(TELEGRAM_READ_TIMEOUT if read_timeout is None else read_timeout),
+        'write_timeout': float(TELEGRAM_WRITE_TIMEOUT if write_timeout is None else write_timeout),
+        'pool_timeout': float(TELEGRAM_POOL_TIMEOUT if pool_timeout is None else pool_timeout),
+    }
 
 
 REFERRAL_RATE_TIERS = (
@@ -14387,7 +14409,16 @@ def main():
     if not bot_token:
         raise RuntimeError('缺少 BOT_TOKEN，请先在 .env 里配置 Telegram Bot Token')
 
-    application = ApplicationBuilder().token(bot_token).post_init(on_post_init).build()
+    request = HTTPXRequest(**build_telegram_timeout_kwargs())
+    get_updates_request = HTTPXRequest(**build_telegram_timeout_kwargs(read_timeout=60, write_timeout=60))
+    application = (
+        ApplicationBuilder()
+        .token(bot_token)
+        .request(request)
+        .get_updates_request(get_updates_request)
+        .post_init(on_post_init)
+        .build()
+    )
 
     for command_name, callback in [
         ('start', start),
@@ -14433,7 +14464,7 @@ def main():
     ))
 
     application.job_queue.run_repeating(sync_job(suoyouchengxu), interval=1, first=1, name='suoyouchengxu')
-    application.run_polling(timeout=600)
+    application.run_polling(timeout=600, drop_pending_updates=True)
 
 
 if __name__ == '__main__':
