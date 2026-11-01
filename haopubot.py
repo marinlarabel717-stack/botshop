@@ -85,6 +85,8 @@ TELEGRAM_READ_TIMEOUT = max(float(os.getenv('TELEGRAM_READ_TIMEOUT', '60') or 60
 TELEGRAM_WRITE_TIMEOUT = max(float(os.getenv('TELEGRAM_WRITE_TIMEOUT', '60') or 60), 20.0)
 TELEGRAM_POOL_TIMEOUT = max(float(os.getenv('TELEGRAM_POOL_TIMEOUT', '20') or 20), 5.0)
 TELEGRAM_BOOTSTRAP_RETRIES = max(int(os.getenv('TELEGRAM_BOOTSTRAP_RETRIES', '3') or 3), 0)
+TELEGRAM_FORCE_IPV4 = str(os.getenv('TELEGRAM_FORCE_IPV4', '1') or '1').strip().lower() not in {'0', 'false', 'no'}
+_ORIGINAL_SOCKET_GETADDRINFO = socket.getaddrinfo
 
 
 def build_telegram_timeout_kwargs(
@@ -104,6 +106,19 @@ def build_telegram_timeout_kwargs(
 
 def startup_notice(message):
     print(f'[startup] {message}', flush=True)
+
+
+def telegram_preferred_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    rows = _ORIGINAL_SOCKET_GETADDRINFO(host, port, family, type, proto, flags)
+    host_text = str(host or '').strip().lower().rstrip('.')
+    if TELEGRAM_FORCE_IPV4 and host_text == 'api.telegram.org':
+        ipv4_rows = [row for row in rows if row and row[0] == socket.AF_INET]
+        if ipv4_rows:
+            return ipv4_rows
+    return rows
+
+
+socket.getaddrinfo = telegram_preferred_getaddrinfo
 
 
 def startup_telegram_probe(bot_token):
