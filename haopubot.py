@@ -85,6 +85,7 @@ TELEGRAM_CONNECT_TIMEOUT = max(float(os.getenv('TELEGRAM_CONNECT_TIMEOUT', '20')
 TELEGRAM_READ_TIMEOUT = max(float(os.getenv('TELEGRAM_READ_TIMEOUT', '60') or 60), 20.0)
 TELEGRAM_WRITE_TIMEOUT = max(float(os.getenv('TELEGRAM_WRITE_TIMEOUT', '60') or 60), 20.0)
 TELEGRAM_POOL_TIMEOUT = max(float(os.getenv('TELEGRAM_POOL_TIMEOUT', '20') or 20), 5.0)
+TELEGRAM_BOOTSTRAP_RETRIES = max(int(os.getenv('TELEGRAM_BOOTSTRAP_RETRIES', '3') or 3), 0)
 
 
 def build_telegram_timeout_kwargs(
@@ -14464,7 +14465,7 @@ def main():
     ))
 
     application.job_queue.run_repeating(sync_job(suoyouchengxu), interval=1, first=1, name='suoyouchengxu')
-    application.run_polling(timeout=600, drop_pending_updates=True)
+    application.run_polling(timeout=600, drop_pending_updates=True, bootstrap_retries=TELEGRAM_BOOTSTRAP_RETRIES)
 
 
 if __name__ == '__main__':
