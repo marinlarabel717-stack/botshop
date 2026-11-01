@@ -103,6 +103,10 @@ def build_telegram_timeout_kwargs(
     }
 
 
+def startup_notice(message):
+    print(f'[startup] {message}', flush=True)
+
+
 REFERRAL_RATE_TIERS = (
     (Decimal('1000'), Decimal('0.05')),
     (Decimal('500'), Decimal('0.03')),
@@ -10129,9 +10133,12 @@ def warm_storefront_runtime_cache():
 def start_storefront_runtime_warmup_async():
     def worker():
         try:
+            startup_notice('storefront runtime warmup started')
             warm_storefront_runtime_cache()
+            startup_notice('storefront runtime warmup finished')
         except Exception:
             logging.warning('Async storefront runtime warmup failed', exc_info=True)
+            startup_notice('storefront runtime warmup failed')
 
     threading.Thread(target=worker, daemon=True, name='storefront-runtime-warmup').start()
 
@@ -11400,11 +11407,13 @@ def start_okpay_callback_server(bot):
 
 async def on_post_init(application):
     global APP_EVENT_LOOP, APP_BOT
+    startup_notice('post_init reached')
     APP_EVENT_LOOP = asyncio.get_running_loop()
     APP_BOT = SyncTelegramProxy(application.bot, lambda: APP_EVENT_LOOP)
     start_okpay_callback_server(APP_BOT)
     warm_storefront_translation_cache(lang='en')
     start_storefront_runtime_warmup_async()
+    startup_notice('post_init completed')
 
 
 def create_trc20_deposit_order(context, user_id, amount):
@@ -14420,6 +14429,10 @@ def main():
     if not bot_token:
         raise RuntimeError('缺少 BOT_TOKEN，请先在 .env 里配置 Telegram Bot Token')
 
+    startup_notice(
+        f'booting botshop connect={TELEGRAM_CONNECT_TIMEOUT}s read={TELEGRAM_READ_TIMEOUT}s '
+        f'write={TELEGRAM_WRITE_TIMEOUT}s pool={TELEGRAM_POOL_TIMEOUT}s retries={TELEGRAM_BOOTSTRAP_RETRIES}'
+    )
     request = HTTPXRequest(**build_telegram_timeout_kwargs())
     get_updates_request = HTTPXRequest(**build_telegram_timeout_kwargs(read_timeout=60, write_timeout=60))
     application = (
@@ -14430,6 +14443,7 @@ def main():
         .post_init(on_post_init)
         .build()
     )
+    startup_notice('application built')
 
     for command_name, callback in [
         ('start', start),
@@ -14475,6 +14489,7 @@ def main():
     ))
 
     application.job_queue.run_repeating(sync_job(suoyouchengxu), interval=1, first=1, name='suoyouchengxu')
+    startup_notice('entering run_polling')
     application.run_polling(timeout=600, drop_pending_updates=True, bootstrap_retries=TELEGRAM_BOOTSTRAP_RETRIES)
 
 
