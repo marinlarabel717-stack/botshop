@@ -35,7 +35,6 @@ from telegram import InlineKeyboardMarkup,ForceReply, InlineKeyboardButton as TG
     ChatMemberRestricted, ChatMember, ChatMemberAdministrator, KeyboardButton as TGKeyboardButton, ReplyKeyboardMarkup, \
     InlineQueryResultArticle, InputTextMessageContent,InputMediaPhoto, MessageEntity
 from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter, TimedOut
-from telegram.request import HTTPXRequest
 import time, json, pickle, re
 from threading import Timer
 from decimal import Decimal
@@ -14433,13 +14432,17 @@ def main():
         f'booting botshop connect={TELEGRAM_CONNECT_TIMEOUT}s read={TELEGRAM_READ_TIMEOUT}s '
         f'write={TELEGRAM_WRITE_TIMEOUT}s pool={TELEGRAM_POOL_TIMEOUT}s retries={TELEGRAM_BOOTSTRAP_RETRIES}'
     )
-    request = HTTPXRequest(**build_telegram_timeout_kwargs())
-    get_updates_request = HTTPXRequest(**build_telegram_timeout_kwargs(read_timeout=60, write_timeout=60))
     application = (
         ApplicationBuilder()
         .token(bot_token)
-        .request(request)
-        .get_updates_request(get_updates_request)
+        .connect_timeout(float(TELEGRAM_CONNECT_TIMEOUT))
+        .read_timeout(float(TELEGRAM_READ_TIMEOUT))
+        .write_timeout(float(TELEGRAM_WRITE_TIMEOUT))
+        .pool_timeout(float(TELEGRAM_POOL_TIMEOUT))
+        .get_updates_connect_timeout(float(TELEGRAM_CONNECT_TIMEOUT))
+        .get_updates_read_timeout(float(TELEGRAM_READ_TIMEOUT))
+        .get_updates_write_timeout(float(TELEGRAM_WRITE_TIMEOUT))
+        .get_updates_pool_timeout(float(TELEGRAM_POOL_TIMEOUT))
         .post_init(on_post_init)
         .build()
     )
